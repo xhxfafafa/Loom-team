@@ -283,6 +283,69 @@ describe("ChatPanel session targeting", () => {
     expect(screen.getByText("Done")).toBeTruthy();
   });
 
+  it("scrolls a reopened session to its latest hydrated message", () => {
+    const requestAnimationFrame = vi.spyOn(window, "requestAnimationFrame");
+    let queuedFrame: FrameRequestCallback | undefined;
+    requestAnimationFrame.mockImplementation((callback) => {
+      queuedFrame = callback;
+      return 1;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+
+    mockVisibleMessages.splice(0, mockVisibleMessages.length, {
+      id: "assistant-latest",
+      role: "assistant",
+      content: "Latest message",
+      timestamp: new Date(),
+    });
+    const acp = {
+      connected: true,
+      sessionId: "session-123",
+      updates: [],
+      providers: [],
+      selectedProvider: "codex",
+      loading: false,
+      error: null,
+      authError: null,
+      dockerConfigError: null,
+      connect: vi.fn(),
+      createSession: vi.fn(),
+      resumeSession: vi.fn(),
+      forkSession: vi.fn(),
+      selectSession: vi.fn(),
+      setProvider: vi.fn(),
+      setMode: vi.fn(),
+      prompt: vi.fn(),
+      promptSession: vi.fn(async () => {}),
+      respondToUserInput: vi.fn(),
+      respondToUserInputForSession: vi.fn(),
+      writeTerminal: vi.fn(),
+      resizeTerminal: vi.fn(),
+      cancel: vi.fn(),
+      disconnect: vi.fn(),
+      clearAuthError: vi.fn(),
+      clearDockerConfigError: vi.fn(),
+      listProviderModels: vi.fn(),
+    } satisfies Partial<UseAcpState & UseAcpActions> as UseAcpState & UseAcpActions;
+
+    render(
+      <ChatPanel
+        acp={acp}
+        activeSessionId="session-123"
+        onEnsureSession={vi.fn(async () => "session-123")}
+        onSelectSession={vi.fn(async () => {})}
+        repoSelection={null}
+        onRepoChange={vi.fn()}
+      />,
+    );
+
+    const shell = screen.getByTestId("chat-panel-message-shell");
+    Object.defineProperty(shell, "scrollHeight", { configurable: true, value: 960 });
+    queuedFrame?.(0);
+
+    expect(shell.scrollTop).toBe(960);
+  });
+
   it("disables the Canvas prompt action while the composer is disconnected", () => {
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
     const onPrepareCanvasPrompt = vi.fn();

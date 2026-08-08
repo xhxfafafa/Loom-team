@@ -147,7 +147,7 @@ export function ChatPanel({
   const { t } = useTranslation();
   const { connected, loading, error, authError, updates, promptSession, clearAuthError } = acp;
   const canvasPromptDisabled = !connected;
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageShellRef = useRef<HTMLDivElement>(null);
   const [copiedRepoPath, setCopiedRepoPath] = useState(false);
   // View mode: 'chat' or 'trace'
   const [viewMode, setViewMode] = useState<"chat" | "trace">("chat");
@@ -263,10 +263,16 @@ export function ChatPanel({
     return summary;
   }, [fileChangesState]);
 
-  // Auto-scroll
+  // History arrives asynchronously when a session is reopened. Scroll the actual
+  // overflow container after its layout has committed so it lands on the latest turn.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [visibleMessages]);
+    const frame = window.requestAnimationFrame(() => {
+      const messageShell = messageShellRef.current;
+      if (!messageShell) return;
+      messageShell.scrollTop = messageShell.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeSessionId, visibleMessages.length]);
 
   // Fetch sessions on mount and when active session changes
   useEffect(() => {
@@ -613,7 +619,7 @@ export function ChatPanel({
         /* ── Active Chat State ── */
         <>
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto min-h-0" data-testid="chat-panel-message-shell">
+          <div ref={messageShellRef} className="flex-1 overflow-y-auto min-h-0" data-testid="chat-panel-message-shell">
             <div className="max-w-3xl mx-auto px-5 py-5 space-y-2">
               {visibleMessages.length === 0 && activeSessionId && (
                 <div className="text-center py-20 text-sm text-slate-400 dark:text-slate-500">
@@ -664,7 +670,6 @@ export function ChatPanel({
                     onTerminalResize={activeSessionId ? handleTerminalResize : undefined}
                   />
                 ))}
-              <div ref={messagesEndRef} />
             </div>
           </div>
 

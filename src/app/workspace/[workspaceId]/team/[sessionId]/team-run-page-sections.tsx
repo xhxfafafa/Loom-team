@@ -1,8 +1,7 @@
 "use client";
 
-import React from "react";
 import { useTranslation } from "@/i18n";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MessageBubble } from "@/client/components/message-bubble";
 import type { ChatMessage } from "@/client/components/chat-panel/types";
 import { AskUserQuestionBubble } from "@/client/components/message-bubble";
@@ -135,6 +134,18 @@ export function SessionTimelineSection({
   sessionBlockRef: (sessionId: string, node: HTMLDivElement | null) => void;
 }) {
   const { t } = useTranslation();
+  const timelineScrollRef = useRef<HTMLDivElement>(null);
+  const latestMessage = leadMessages.at(-1);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const timeline = timelineScrollRef.current;
+      if (!timeline) return;
+      timeline.scrollTop = timeline.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [latestMessage?.content, latestMessage?.id, leadMessages.length]);
+
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-desktop-bg-primary">
       <div className="border-b border-desktop-border px-3 py-1.5">
@@ -155,7 +166,7 @@ export function SessionTimelineSection({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1.5">
+      <div ref={timelineScrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-1.5" data-testid="team-timeline-scroll-region">
         {leadMessages.length === 0 ? (
           <EmptyPanel message={t.team.noLeadTimelineYet} />
         ) : (

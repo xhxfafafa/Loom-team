@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import type { AcpProviderInfo } from "../acp-client";
 import { SettingsPanel } from "./settings-panel";
@@ -30,6 +30,8 @@ interface AcpProviderDropdownProps {
 }
 
 type DropdownPosition = { left: number; top?: number; bottom?: number; maxHeight: number };
+
+const subscribeToMount = () => () => {};
 
 function orderProviders(providerIds: string[], visibleProviderIds: string[]): string[] {
   const preferredOrder = new Map(
@@ -68,6 +70,7 @@ export function AcpProviderDropdown({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [dropdownPos, setDropdownPos] = useState<DropdownPosition | null>(null);
+  const hasMounted = useSyncExternalStore(subscribeToMount, () => true, () => false);
   const [visibleProviderIds, setVisibleProviderIds] = useState<string[]>(() =>
     getOrderedVisibleProviderIds([])
   );
@@ -229,9 +232,9 @@ export function AcpProviderDropdown({
       >
         {showStatusDot && (
           <span className={`w-1.5 h-1.5 rounded-full ${
-            selectedProviderInfo?.status === "available"
+            hasMounted && selectedProviderInfo?.status === "available"
               ? "bg-emerald-500"
-              : selectedProviderInfo?.status === "checking"
+              : hasMounted && selectedProviderInfo?.status === "checking"
                 ? "bg-amber-400 animate-pulse"
                 : "bg-slate-400"
           }`} />

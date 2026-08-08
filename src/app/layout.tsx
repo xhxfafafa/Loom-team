@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 import { I18nProvider } from "@/i18n";
 import { ThemeInitializer } from "@/client/components/theme-initializer";
@@ -39,7 +40,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <Script id="theme-init" strategy="beforeInteractive">
+          {themeInitScript}
+        </Script>
       </head>
       <body className="antialiased">
         <ThemeInitializer />

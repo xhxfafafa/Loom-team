@@ -30,6 +30,9 @@ vi.mock("../team-run-deletion-ports", () => ({
     hasActiveProcess: () => false,
     killSessionProcess: async () => {},
     system: {
+      agentStore: { listByWorkspace: async () => [], delete: async () => {} },
+      conversationStore: { deleteConversation: async () => {} },
+      eventBus: { removeAgentData: () => {} },
       taskStore: {
         listByWorkspace: async () => state.tasks,
         delete: async (id: string) => {
@@ -86,7 +89,7 @@ function resetState() {
 beforeEach(resetState);
 
 function callDelete(rootSessionId: string, init?: { search?: string; body?: unknown }) {
-  const search = init?.search ?? "";
+  const search = init?.search ?? (init?.body !== undefined ? "" : "?workspaceId=ws-1");
   const url = `http://localhost/api/team-runs/${rootSessionId}${search}`;
   const request =
     init?.body !== undefined
@@ -129,6 +132,15 @@ describe("DELETE /api/team-runs/:rootSessionId", () => {
     expect(response.status).toBe(409);
     expect(body.ok).toBe(false);
     expect(body.error.code).toBe("TEAM_RUN_WORKSPACE_MISMATCH");
+    expect(state.deletedTasks).toEqual([]);
+  });
+
+  it("requires the workspace guard for destructive requests", async () => {
+    const response = await callDelete("root-1", { search: "" });
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error.code).toBe("TEAM_RUN_WORKSPACE_REQUIRED");
     expect(state.deletedTasks).toEqual([]);
   });
 

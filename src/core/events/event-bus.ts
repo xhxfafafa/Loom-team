@@ -179,6 +179,27 @@ export class EventBus {
     return events;
   }
 
+  /**
+   * Remove all in-memory event state owned by an agent that is being deleted.
+   * Persistent event rows are removed by the caller's database transaction.
+   */
+  removeAgentData(agentId: string): void {
+    this.handlers.delete(agentId);
+    this.pendingEvents.delete(agentId);
+
+    for (const [subscriptionId, subscription] of this.subscriptions) {
+      if (subscription.agentId === agentId) {
+        this.subscriptions.delete(subscriptionId);
+      }
+    }
+
+    for (const [waitGroupId, waitGroup] of this.waitGroups) {
+      if (waitGroup.parentAgentId === agentId || waitGroup.expectedAgentIds.includes(agentId)) {
+        this.waitGroups.delete(waitGroupId);
+      }
+    }
+  }
+
   // ─── Wait groups ────────────────────────────────────────────────────
 
   /**

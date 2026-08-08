@@ -58,6 +58,7 @@ export class TeamRunDeletionError extends Error {
 export interface TeamRunSessionRecord extends TeamRunSessionShape {
   cwd: string;
   workspaceId: string;
+  routaAgentId?: string;
   executionMode?: string;
 }
 
@@ -71,7 +72,14 @@ export interface TeamRunDeletionPorts {
   /** Domain stores used for ownership checks and in-memory driver deletes. */
   system: Pick<
     RoutaSystem,
-    "taskStore" | "artifactStore" | "worktreeStore" | "noteStore" | "backgroundTaskStore"
+    | "agentStore"
+    | "conversationStore"
+    | "eventBus"
+    | "taskStore"
+    | "artifactStore"
+    | "worktreeStore"
+    | "noteStore"
+    | "backgroundTaskStore"
   >;
   /** Remove a session from the in-memory HTTP store (buffers, SSE, activity). */
   clearInMemorySession(sessionId: string): void;
@@ -95,6 +103,10 @@ export interface TeamRunDeletionPlan {
   activeSessionIds: string[];
   /** Sessions running in runner mode — deletion is refused while present. */
   runnerSessionIds: string[];
+  /** Agent records owned exclusively by this Team Run. */
+  agentIds: string[];
+  /** Agent records referenced by an outside session and therefore preserved. */
+  sharedAgentIds: string[];
   /** Kanban cards owned exclusively by this team; will be deleted. */
   kanbanTaskIds: string[];
   /** Cards linked to the team but shared with live outside sessions; kept. */
@@ -211,6 +223,38 @@ async function buildPlanFromSessions(
     (id) => sessionById.get(id)?.executionMode === "runner",
   );
 
+  // Agents are private only when their owning session belongs to this tree
+  // and no surviving session references the same routaAgentId. Include child
+  // Agent records recursively because the orchestrator creates child agents
+  // under the Team Lead even when they do not own an ACP session themselves.
+  const treeSessionAgentIds = new Set(
+    sessionIds
+      .map((id) => sessionById.get(id)?.routaAgentId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const outsideSessionAgentIds = new Set(
+    sessions
+      .filter((session) => !treeSet.has(session.sessionId))
+      .map((session) => session.routaAgentId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const workspaceAgents = await ports.system.agentStore.listByWorkspace(root.workspaceId);
+  const privateAgentIds = new Set(
+    [...treeSessionAgentIds].filter((agentId) => !outsideSessionAgentIds.has(agentId)),
+  );
+  let agentTreeGrew = true;
+  while (agentTreeGrew) {
+    agentTreeGrew = false;
+    for (const agent of workspaceAgents) {
+      if (!agent.parentId || !privateAgentIds.has(agent.parentId) || privateAgentIds.has(agent.id)) continue;
+      privateAgentIds.add(agent.id);
+      agentTreeGrew = true;
+    }
+  }
+  const workspaceAgentIds = new Set(workspaceAgents.map((agent) => agent.id));
+  const agentIds = [...privateAgentIds].filter((agentId) => workspaceAgentIds.has(agentId));
+  const sharedAgentIds = [...treeSessionAgentIds].filter((agentId) => outsideSessionAgentIds.has(agentId));
+
   // Kanban cards: delete when linked to the tree and NOT referenced by any
   // live session outside the tree.
   const tasks = await ports.system.taskStore.listByWorkspace(root.workspaceId);
@@ -305,6 +349,8 @@ async function buildPlanFromSessions(
     sessionIds,
     activeSessionIds,
     runnerSessionIds,
+    agentIds,
+    sharedAgentIds,
     kanbanTaskIds,
     sharedKanbanTaskIds,
     artifactIds,
@@ -347,6 +393,7 @@ async function waitForProcessesToStop(
 async function deleteTeamRunDataPersistent(plan: TeamRunDeletionPlan): Promise<void> {
   const taskIds = plan.kanbanTaskIds;
   const worktreeIds = plan.worktrees.map((worktree) => worktree.id);
+  const agentIds = plan.agentIds;
 
   const driver = getDatabaseDriver();
 
@@ -378,6 +425,12 @@ async function deleteTeamRunDataPersistent(plan: TeamRunDeletionPlan): Promise<v
       if (worktreeIds.length > 0) {
         deletes.push(db.delete(pgSchema.worktrees).where(inArray(pgSchema.worktrees.id, worktreeIds)));
       }
+      if (agentIds.length > 0) {
+        deletes.push(db.delete(pgSchema.messages).where(inArray(pgSchema.messages.agentId, agentIds)));
+        deletes.push(db.delete(pgSchema.pendingEvents).where(inArray(pgSchema.pendingEvents.agentId, agentIds)));
+        deletes.push(db.delete(pgSchema.eventSubscriptions).where(inArray(pgSchema.eventSubscriptions.agentId, agentIds)));
+        deletes.push(db.delete(pgSchema.agents).where(inArray(pgSchema.agents.id, agentIds)));
+      }
       if (plan.sessionIds.length > 0) {
         deletes.push(db.delete(pgSchema.traces).where(inArray(pgSchema.traces.sessionId, plan.sessionIds)));
         deletes.push(db.delete(pgSchema.sessionMessages).where(inArray(pgSchema.sessionMessages.sessionId, plan.sessionIds)));
@@ -405,6 +458,12 @@ async function deleteTeamRunDataPersistent(plan: TeamRunDeletionPlan): Promise<v
       }
       if (worktreeIds.length > 0) {
         await tx.delete(pgSchema.worktrees).where(inArray(pgSchema.worktrees.id, worktreeIds));
+      }
+      if (agentIds.length > 0) {
+        await tx.delete(pgSchema.messages).where(inArray(pgSchema.messages.agentId, agentIds));
+        await tx.delete(pgSchema.pendingEvents).where(inArray(pgSchema.pendingEvents.agentId, agentIds));
+        await tx.delete(pgSchema.eventSubscriptions).where(inArray(pgSchema.eventSubscriptions.agentId, agentIds));
+        await tx.delete(pgSchema.agents).where(inArray(pgSchema.agents.id, agentIds));
       }
       if (plan.sessionIds.length > 0) {
         await tx.delete(pgSchema.traces).where(inArray(pgSchema.traces.sessionId, plan.sessionIds));
@@ -440,6 +499,12 @@ async function deleteTeamRunDataPersistent(plan: TeamRunDeletionPlan): Promise<v
       if (worktreeIds.length > 0) {
         tx.delete(sqliteSchema.worktrees).where(inArray(sqliteSchema.worktrees.id, worktreeIds)).run();
       }
+      if (agentIds.length > 0) {
+        tx.delete(sqliteSchema.messages).where(inArray(sqliteSchema.messages.agentId, agentIds)).run();
+        tx.delete(sqliteSchema.pendingEvents).where(inArray(sqliteSchema.pendingEvents.agentId, agentIds)).run();
+        tx.delete(sqliteSchema.eventSubscriptions).where(inArray(sqliteSchema.eventSubscriptions.agentId, agentIds)).run();
+        tx.delete(sqliteSchema.agents).where(inArray(sqliteSchema.agents.id, agentIds)).run();
+      }
       if (plan.sessionIds.length > 0) {
         tx.delete(sqliteSchema.sessionMessages).where(inArray(sqliteSchema.sessionMessages.sessionId, plan.sessionIds)).run();
         tx.delete(sqliteSchema.acpSessions).where(inArray(sqliteSchema.acpSessions.id, plan.sessionIds)).run();
@@ -455,7 +520,22 @@ async function deleteTeamRunDataInMemory(
   ports: TeamRunDeletionPorts,
   plan: TeamRunDeletionPlan,
 ): Promise<void> {
-  const { taskStore, artifactStore, worktreeStore, noteStore, backgroundTaskStore } = ports.system;
+  const {
+    agentStore,
+    conversationStore,
+    eventBus,
+    taskStore,
+    artifactStore,
+    worktreeStore,
+    noteStore,
+    backgroundTaskStore,
+  } = ports.system;
+
+  for (const agentId of plan.agentIds) {
+    await conversationStore.deleteConversation(agentId);
+    eventBus.removeAgentData(agentId);
+    await agentStore.delete(agentId);
+  }
 
   for (const taskId of plan.kanbanTaskIds) {
     await artifactStore.deleteByTask(taskId);

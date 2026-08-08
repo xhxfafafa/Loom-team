@@ -51,6 +51,19 @@ export async function DELETE(
     }
   }
 
+  if (!expectedWorkspaceId) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: {
+          code: "TEAM_RUN_WORKSPACE_REQUIRED",
+          message: "workspaceId is required to delete a Team Run",
+        },
+      },
+      { status: 400 },
+    );
+  }
+
   try {
     const result = await deleteTeamRun(
       createTeamRunDeletionPorts(),

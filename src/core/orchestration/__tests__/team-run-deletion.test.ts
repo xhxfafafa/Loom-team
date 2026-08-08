@@ -97,6 +97,7 @@ interface NoteFixture {
 
 interface FixtureOptions {
   sessions?: TeamRunSessionRecord[];
+  agents?: Array<{ id: string; parentId?: string }>;
   tasks?: TaskFixture[];
   artifactsByTask?: Record<string, string[]>;
   worktrees?: WorktreeFixture[];
@@ -133,12 +134,14 @@ function createPorts(options: FixtureOptions, events: string[] = []): TeamRunDel
   const active = new Set(options.activeSessionIds ?? []);
   const artifactsByTask = options.artifactsByTask ?? {};
   const deleted: {
+    agents: string[];
+    conversations: string[];
     tasks: string[];
     artifactsByTask: string[];
     worktrees: string[];
     notes: string[];
     backgroundTasks: string[];
-  } = { tasks: [], artifactsByTask: [], worktrees: [], notes: [], backgroundTasks: [] };
+  } = { agents: [], conversations: [], tasks: [], artifactsByTask: [], worktrees: [], notes: [], backgroundTasks: [] };
 
   const ports = {
     listSessions: () => options.sessions ?? [],
@@ -148,6 +151,20 @@ function createPorts(options: FixtureOptions, events: string[] = []): TeamRunDel
       active.delete(sessionId);
     },
     system: {
+      agentStore: {
+        listByWorkspace: async () => options.agents ?? [],
+        delete: async (id: string) => {
+          events.push(`store:agent:${id}`);
+          deleted.agents.push(id);
+        },
+      },
+      conversationStore: {
+        deleteConversation: async (id: string) => {
+          events.push(`store:conversation:${id}`);
+          deleted.conversations.push(id);
+        },
+      },
+      eventBus: { removeAgentData: (id: string) => events.push(`event-bus:agent:${id}`) },
       taskStore: {
         listByWorkspace: async () => options.tasks ?? [],
         delete: async (id: string) => {
@@ -218,7 +235,7 @@ function worktreeFixture(fixture: WorktreeFixture): Worktree {
 }
 
 function getTrackedState(ports: TeamRunDeletionPorts) {
-  return (ports as unknown as { _deleted: { tasks: string[]; artifactsByTask: string[]; worktrees: string[]; notes: string[]; backgroundTasks: string[] } })._deleted;
+  return (ports as unknown as { _deleted: { agents: string[]; conversations: string[]; tasks: string[]; artifactsByTask: string[]; worktrees: string[]; notes: string[]; backgroundTasks: string[] } })._deleted;
 }
 
 function getActiveSet(ports: TeamRunDeletionPorts) {
@@ -227,6 +244,8 @@ function getActiveSet(ports: TeamRunDeletionPorts) {
 
 function expectNoMutations(ports: TeamRunDeletionPorts, events: string[]) {
   const deleted = getTrackedState(ports);
+  expect(deleted.agents).toEqual([]);
+  expect(deleted.conversations).toEqual([]);
   expect(deleted.tasks).toEqual([]);
   expect(deleted.artifactsByTask).toEqual([]);
   expect(deleted.worktrees).toEqual([]);
@@ -255,6 +274,34 @@ afterEach(() => {
 // ─── Scenario: empty team ────────────────────────────────────────────────
 
 describe("deleteTeamRun", () => {
+  it("deletes only Team-private agent records and their in-memory conversations", async () => {
+    const events: string[] = [];
+    const ports = createPorts({
+      sessions: [
+        teamSession("root-1", { routaAgentId: "agent-root" }),
+        teamSession("child-1", { parentSessionId: "root-1", routaAgentId: "agent-child" }),
+        teamSession("outsider-1", { routaAgentId: "agent-shared" }),
+        teamSession("child-with-shared-agent", { parentSessionId: "root-1", routaAgentId: "agent-shared" }),
+      ],
+      agents: [
+        { id: "agent-root" },
+        { id: "agent-child", parentId: "agent-root" },
+        { id: "agent-grandchild", parentId: "agent-child" },
+        { id: "agent-shared" },
+        { id: "agent-shared-child", parentId: "agent-shared" },
+      ],
+    }, events);
+
+    const result = await deleteTeamRun(ports, "root-1");
+    const deleted = getTrackedState(ports);
+
+    expect(new Set(deleted.agents)).toEqual(new Set(["agent-root", "agent-child", "agent-grandchild"]));
+    expect(new Set(deleted.conversations)).toEqual(new Set(["agent-root", "agent-child", "agent-grandchild"]));
+    expect(deleted.agents).not.toContain("agent-shared");
+    expect(deleted.agents).not.toContain("agent-shared-child");
+    expect(result.preserved.sharedKanbanCards).toBe(0);
+  });
+
   it("deletes an empty team (root only) without touching any store", async () => {
     const events: string[] = [];
     const ports = createPorts({ sessions: [teamSession("root-1")] }, events);

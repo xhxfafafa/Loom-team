@@ -21,6 +21,16 @@ import {
 import type { TaskCreationSource } from "../kanban/task-creation-policy";
 import type { KanbanColumn } from "../models/kanban";
 import type {
+  DevPlanFeedbackEntry,
+  DevPlanRisk,
+  DevPlanTeamAllocation,
+  DevPlanUserStory,
+} from "../plan/dev-plan";
+import type {
+  ProductGoalRepo,
+  ProductGoalRequirementDoc,
+} from "../models/product-goal";
+import type {
   FallbackAgent,
   TaskCommentEntry,
   TaskContextSearchSpec,
@@ -550,6 +560,39 @@ export const artifactRequests = sqliteTable("artifact_requests", {
   status: text("status").notNull().default("pending"),
   /** ID of artifact that fulfilled this request */
   artifactId: text("artifact_id"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+
+// ─── Product Goals (structured product intent) ─────────────────────────
+
+export const productGoals = sqliteTable("product_goals", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  goalText: text("goal_text").notNull(),
+  repos: text("repos", { mode: "json" }).$type<ProductGoalRepo[]>().notNull().default([]),
+  requirementDocs: text("requirement_docs", { mode: "json" }).$type<ProductGoalRequirementDoc[]>().notNull().default([]),
+  constraints: text("constraints", { mode: "json" }).$type<string[]>().notNull().default([]),
+  status: text("status").notNull().default("draft"), // draft | active
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+
+// ─── Dev Plans (structured product development plans) ──────────────────
+
+export const devPlans = sqliteTable("dev_plans", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  goalId: text("goal_id").notNull().references(() => productGoals.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("draft"), // draft | confirmed | rejected
+  scope: text("scope", { mode: "json" }).$type<string[]>().notNull().default([]),
+  nonGoals: text("non_goals", { mode: "json" }).$type<string[]>().notNull().default([]),
+  risks: text("risks", { mode: "json" }).$type<DevPlanRisk[]>().notNull().default([]),
+  userStories: text("user_stories", { mode: "json" }).$type<DevPlanUserStory[]>().notNull().default([]),
+  technicalApproach: text("technical_approach").notNull().default(""),
+  teamAllocation: text("team_allocation", { mode: "json" }).$type<DevPlanTeamAllocation[]>().notNull().default([]),
+  feedbackLog: text("feedback_log", { mode: "json" }).$type<DevPlanFeedbackEntry[]>().notNull().default([]),
+  confirmedAt: integer("confirmed_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
 });

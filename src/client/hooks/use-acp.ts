@@ -256,6 +256,8 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
   const sessionIdRef = useRef<string | null>(null);
   const tearingDownRef = useRef(false);
   const connectingRef = useRef(false);
+  const pendingUpdatesRef = useRef<AcpSessionNotification[]>([]);
+  const pendingUpdatesFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track if user manually cancelled the session (to suppress "process exited" errors)
   const userCancelledRef = useRef(false);
 
@@ -290,6 +292,11 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
 
       return () => {
         tearingDownRef.current = true;
+        if (pendingUpdatesFlushTimerRef.current) {
+          clearTimeout(pendingUpdatesFlushTimerRef.current);
+          pendingUpdatesFlushTimerRef.current = null;
+        }
+        pendingUpdatesRef.current = [];
         window.removeEventListener("pagehide", markTearingDown);
         window.removeEventListener("beforeunload", markTearingDown);
         clientRef.current?.disconnect();
@@ -298,6 +305,11 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
 
     return () => {
       tearingDownRef.current = true;
+      if (pendingUpdatesFlushTimerRef.current) {
+        clearTimeout(pendingUpdatesFlushTimerRef.current);
+        pendingUpdatesFlushTimerRef.current = null;
+      }
+      pendingUpdatesRef.current = [];
       clientRef.current?.disconnect();
     };
   }, []);
@@ -349,11 +361,24 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
       );
 
       client.onUpdate((update) => {
-        setState((s) => ({
-          ...s,
-          updates: [...s.updates, update],
-          error: null,
-        }));
+        pendingUpdatesRef.current.push(update);
+        if (pendingUpdatesFlushTimerRef.current) return;
+
+        // SSE can deliver a burst of tool and thought events in the same turn.
+        // Batch them into one state update so a busy team run cannot trigger a
+        // render cascade for every individual notification.
+        pendingUpdatesFlushTimerRef.current = setTimeout(() => {
+          pendingUpdatesFlushTimerRef.current = null;
+          const updates = pendingUpdatesRef.current;
+          pendingUpdatesRef.current = [];
+          if (tearingDownRef.current || updates.length === 0) return;
+
+          setState((s) => ({
+            ...s,
+            updates: [...s.updates, ...updates],
+            error: null,
+          }));
+        }, 0);
       });
       client.onConnectionIssue((issue) => {
         if (tearingDownRef.current) return;
@@ -659,7 +684,9 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
     // Skip if sessionId is a placeholder (static export mode)
     if (sessionId === "__placeholder__") return;
     if (sessionIdRef.current === sessionId) {
-      setState((s) => ({ ...s, sessionId, error: null }));
+      // The active Kanban task asks to select its session after every live
+      // update. Identical selections must be a no-op, otherwise each SSE
+      // event schedules another render while the stream is still active.
       return;
     }
 
@@ -777,6 +804,11 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
   }, []);
 
   const disconnect = useCallback(() => {
+    if (pendingUpdatesFlushTimerRef.current) {
+      clearTimeout(pendingUpdatesFlushTimerRef.current);
+      pendingUpdatesFlushTimerRef.current = null;
+    }
+    pendingUpdatesRef.current = [];
     clientRef.current?.disconnect();
     clientRef.current = null;
     sessionIdRef.current = null;

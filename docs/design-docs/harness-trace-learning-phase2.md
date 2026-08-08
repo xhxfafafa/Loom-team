@@ -2,6 +2,8 @@
 title: Harness Trace Learning Phase 2
 ---
 
+> **Status: frozen** — not part of Loom v1 scope; see [loom-v1-scope.md](./loom-v1-scope.md).
+
 # Harness Trace Learning - Phase 2: Runtime Integration
 
 **Status**: In Development  

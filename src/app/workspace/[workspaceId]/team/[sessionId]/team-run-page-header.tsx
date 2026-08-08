@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronLeft, ExternalLink, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronLeft, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "@/i18n";
 import type { SessionInfo } from "../../types";
 
@@ -17,8 +17,10 @@ interface TeamRunPageHeaderProps {
   openLabel: string;
   activeLabel: string;
   waitingLabel: string;
+  deleteLabel: string;
   onRefresh: () => void;
   onSwitchTeamRun: (sessionId: string) => void;
+  onDelete: () => void;
 }
 
 export function TeamRunPageHeader({
@@ -32,8 +34,10 @@ export function TeamRunPageHeader({
   openLabel,
   activeLabel,
   waitingLabel,
+  deleteLabel,
   onRefresh,
   onSwitchTeamRun,
+  onDelete,
 }: TeamRunPageHeaderProps) {
   const { t } = useTranslation();
   const [showTeamRunMenu, setShowTeamRunMenu] = useState(false);
@@ -141,6 +145,16 @@ export function TeamRunPageHeader({
           >
             <RefreshCw className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} />
             {refreshLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            title={deleteLabel}
+            aria-label={deleteLabel}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-desktop-border bg-desktop-bg-secondary px-2.5 py-1.5 text-[11px] font-medium text-red-600 transition-colors hover:bg-red-500/10 dark:text-red-400"
+          >
+            <Trash2 className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} />
+            {deleteLabel}
           </button>
           <Link
             href={`/workspace/${workspaceId}/sessions/${selectedSessionId}`}

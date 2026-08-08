@@ -63,6 +63,7 @@ import {
 } from "./team-run-page-sections";
 import { TeamRunSessionModal } from "./team-run-session-modal";
 import { TeamRunPageHeader } from "./team-run-page-header";
+import { DeleteTeamRunDialog, type TeamRunDeletionResultSummary } from "../delete-team-run-dialog";
 import { useRealTeamRunParams } from "./use-real-team-run-params";
 import { useTranslation } from "@/i18n";
 
@@ -1341,6 +1342,19 @@ export function TeamRunPageClient() {
     requestTranscriptRefresh([sessionId, ...descendantSessions.map((entry) => entry.sessionId)], 0);
   }, [descendantSessions, requestMetadataRefresh, requestTranscriptRefresh, sessionId]);
 
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
+  const handleTeamRunDeleted = useCallback((result: TeamRunDeletionResultSummary) => {
+    setIsDeleteDialogOpen(false);
+    const query = new URLSearchParams({
+      teamRunDeleted: "1",
+      sessions: String(result.deleted.sessions),
+      kanbanCards: String(result.deleted.kanbanCards),
+      worktrees: String(result.deleted.worktrees),
+    });
+    router.push(`/workspace/${workspaceId}/team?${query.toString()}`);
+  }, [router, workspaceId]);
+
   const handleSelectSessionForModal = useCallback((nextSessionId: string) => {
     setSelectedSessionForModal(nextSessionId);
     void selectModalSession(nextSessionId);
@@ -1379,8 +1393,17 @@ export function TeamRunPageClient() {
           openLabel={t.team.openSession}
           activeLabel={t.team.active}
           waitingLabel={t.team.waitingForDelegation}
+          deleteLabel={t.team.deleteTeam}
           onRefresh={handleRefreshTeamRun}
           onSwitchTeamRun={handleSwitchTeamRun}
+          onDelete={() => setIsDeleteDialogOpen(true)}
+        />
+
+        <DeleteTeamRunDialog
+          workspaceId={workspaceId}
+          teamRun={isDeleteDialogOpen ? { sessionId, name: selectedTeamRunName } : null}
+          onClose={() => setIsDeleteDialogOpen(false)}
+          onDeleted={handleTeamRunDeleted}
         />
 
         <div className="grid min-h-0 flex-1 lg:grid-cols-[248px_minmax(0,1fr)_280px] xl:grid-cols-[260px_minmax(0,1fr)_300px]">

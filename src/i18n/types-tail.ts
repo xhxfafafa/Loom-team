@@ -380,4 +380,116 @@ export interface TailTranslationDictionarySections {
     parents: string;
     files: string;
   };
+
+  // Delivery View
+  delivery: {
+    title: string;
+    subtitle: string;
+    loading: string;
+    errorLoading: string;
+    retry: string;
+    progress: {
+      title: string;
+      total: string;
+      done: string;
+      inProgress: string;
+      review: string;
+      blocked: string;
+    };
+    completed: {
+      title: string;
+      empty: string;
+      verdict: string;
+      evidence: string;
+      noEvidence: string;
+    };
+    outstanding: {
+      title: string;
+      empty: string;
+      status: string;
+      blocker: string;
+    };
+    risks: {
+      title: string;
+      empty: string;
+    };
+    howToRun: {
+      title: string;
+      empty: string;
+      copy: string;
+      copied: string;
+    };
+    audit: {
+      title: string;
+      traceCount: string;
+      viewTraces: string;
+      recentRuns: string;
+      noRuns: string;
+    };
+    generatedAt: string;
+  };
+
+  // Plan Page
+  plan: {
+    title: string;
+    subtitle: string;
+    loading: string;
+    errorLoading: string;
+    noActiveGoalTitle: string;
+    noActiveGoalDescription: string;
+    goToGoal: string;
+    generatePlan: string;
+    regeneratePlan: string;
+    regenerateWithFeedback: string;
+    generating: string;
+    status: {
+      draft: string;
+      confirmed: string;
+      rejected: string;
+    };
+    sections: {
+      scope: string;
+      nonGoals: string;
+      risks: string;
+      userStories: string;
+      technicalApproach: string;
+      teamAllocation: string;
+      feedbackLog: string;
+    };
+    stories: {
+      acceptanceCriteria: string;
+      story: string;
+    };
+    risks: {
+      risk: string;
+      mitigation: string;
+      none: string;
+    };
+    team: {
+      role: string;
+      responsibility: string;
+    };
+    feedback: {
+      label: string;
+      placeholder: string;
+    };
+    confirm: {
+      button: string;
+      confirming: string;
+      successTitle: string;
+      successDescription: string;
+      goToKanban: string;
+      error: string;
+    };
+    reject: {
+      button: string;
+      rejecting: string;
+      successTitle: string;
+      error: string;
+    };
+    generationFailed: string;
+    sourceLlm: string;
+    sourceFallback: string;
+    sourceLabel: string;
+  };
 }

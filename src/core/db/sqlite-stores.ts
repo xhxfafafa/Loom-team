@@ -27,6 +27,8 @@ import type { ArtifactStore } from "../store/artifact-store";
 export { SqliteWorkspaceStore } from "./sqlite-workspace-store";
 export { SqliteCodebaseStore } from "./sqlite-codebase-store";
 export { SqliteTaskStore } from "./sqlite-task-store";
+export { SqliteProductGoalStore } from "./sqlite-product-goal-store";
+export { SqliteDevPlanStore } from "./sqlite-dev-plan-store";
 
 type SqliteDb = BetterSQLite3Database<typeof sqliteSchema>;
 

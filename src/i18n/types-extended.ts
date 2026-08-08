@@ -1244,6 +1244,32 @@ export interface ExtendedTranslationDictionarySections extends TailTranslationDi
     updates: string;
     waitingForDelegation: string;
     watchWhoIsRunning: string;
+    // Team Run deletion
+    deleteTeam: string;
+    moreActions: string;
+    deleteDialogTitle: string;
+    deleteDialogWarning: string;
+    deleteDialogActiveWarning: string;
+    deleteDialogRunnerBlocked: string;
+    deleteDialogConfirmHint: string;
+    deleteDialogConfirmPlaceholder: string;
+    deleteDialogPreviewLoading: string;
+    deleteDialogPreviewFailed: string;
+    deleteDialogStatsSessions: string;
+    deleteDialogStatsActiveAgents: string;
+    deleteDialogStatsKanbanCards: string;
+    deleteDialogStatsArtifacts: string;
+    deleteDialogStatsWorktrees: string;
+    deleteDialogStatsNotes: string;
+    deleteDialogStatsBackgroundTasks: string;
+    deleteDialogPreservedHint: string;
+    deleteSuccess: string;
+    deleteFailed: string;
+    deleteErrorNotFound: string;
+    deleteErrorNotTeamRoot: string;
+    deleteErrorWorkspaceMismatch: string;
+    deleteErrorRunnerUnsupported: string;
+    deleteErrorStopFailed: string;
   };
 
   // Kanban create modal

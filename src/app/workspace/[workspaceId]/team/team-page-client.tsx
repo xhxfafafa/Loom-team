@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslation } from "@/i18n";
 import { DesktopAppShell } from "@/client/components/desktop-app-shell";
@@ -11,7 +11,12 @@ import { desktopAwareFetch } from "@/client/utils/diagnostics";
 import { filterSpecialistsByCategory } from "@/client/utils/specialist-categories";
 import { formatRelativeTime } from "../ui-components";
 import type { SessionInfo } from "../types";
-import { PieChart } from "lucide-react";
+import { MoreHorizontal, PieChart, Trash2, X } from "lucide-react";
+import {
+  DeleteTeamRunDialog,
+  type TeamRunDeletionResultSummary,
+  type TeamRunTarget,
+} from "./delete-team-run-dialog";
 
 
 const TEAM_LEAD_SPECIALIST_ID = "team-agent-lead";
@@ -71,6 +76,44 @@ export function TeamPageClient() {
   const [specialists, setSpecialists] = useState<SpecialistSummary[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isBenchPaused, setIsBenchPaused] = useState(false);
+  const [openMenuSessionId, setOpenMenuSessionId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TeamRunTarget | null>(null);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+  const menuContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Close the more-actions menu on outside click.
+  useEffect(() => {
+    if (!openMenuSessionId) return undefined;
+    const handleMouseDown = (event: MouseEvent) => {
+      if (menuContainerRef.current && !menuContainerRef.current.contains(event.target as Node)) {
+        setOpenMenuSessionId(null);
+      }
+    };
+    window.addEventListener("mousedown", handleMouseDown);
+    return () => window.removeEventListener("mousedown", handleMouseDown);
+  }, [openMenuSessionId]);
+
+  // Auto-dismiss the success toast.
+  useEffect(() => {
+    if (!successToast) return undefined;
+    const timer = setTimeout(() => setSuccessToast(null), 6000);
+    return () => clearTimeout(timer);
+  }, [successToast]);
+
+  // When returning from a detail-page deletion, show the toast and clean the URL.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const search = new URLSearchParams(window.location.search);
+    if (search.get("teamRunDeleted") !== "1") return;
+    setSuccessToast(
+      t.team.deleteSuccess
+        .replace("{sessions}", search.get("sessions") ?? "0")
+        .replace("{kanbanCards}", search.get("kanbanCards") ?? "0")
+        .replace("{worktrees}", search.get("worktrees") ?? "0"),
+    );
+    router.replace(`/workspace/${workspaceId}/team`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -179,6 +222,28 @@ export function TeamPageClient() {
     }).catch(() => {});
     setRefreshKey((current) => current + 1);
   }, [workspaceId]);
+
+  const handleTeamRunDeleted = useCallback((result: TeamRunDeletionResultSummary) => {
+    setTeamRuns((current) => current.filter((run) => run.sessionId !== result.rootSessionId));
+    setDeleteTarget(null);
+    setOpenMenuSessionId(null);
+    setSuccessToast(
+      t.team.deleteSuccess
+        .replace("{sessions}", String(result.deleted.sessions))
+        .replace("{kanbanCards}", String(result.deleted.kanbanCards))
+        .replace("{worktrees}", String(result.deleted.worktrees)),
+    );
+  }, [t]);
+
+  const openTeamRun = useCallback((sessionId: string) => {
+    router.push(`/workspace/${workspaceId}/team/${sessionId}`);
+  }, [router, workspaceId]);
+
+  const handleTeamRunCardKeyDown = useCallback((event: React.KeyboardEvent, sessionId: string) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openTeamRun(sessionId);
+  }, [openTeamRun]);
 
   if (workspacesHook.loading && workspaceId !== "default") {
     return (
@@ -361,11 +426,13 @@ export function TeamPageClient() {
             ) : (
               <div className="space-y-2">
                 {teamRuns.slice(0, 8).map((run) => (
-                  <button
+                  <div
                     key={run.sessionId}
-                    type="button"
-                    onClick={() => router.push(`/workspace/${workspaceId}/team/${run.sessionId}`)}
-                    className="w-full rounded-[18px] border border-black/6 bg-[#fbfaf7] px-4 py-3 text-left transition-colors hover:bg-white dark:border-white/8 dark:bg-white/4 dark:hover:bg-white/[0.07]"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openTeamRun(run.sessionId)}
+                    onKeyDown={(event) => handleTeamRunCardKeyDown(event, run.sessionId)}
+                    className="w-full cursor-pointer rounded-[18px] border border-black/6 bg-[#fbfaf7] px-4 py-3 text-left transition-colors hover:bg-white dark:border-white/8 dark:bg-white/4 dark:hover:bg-white/[0.07]"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -382,14 +449,75 @@ export function TeamPageClient() {
                           ) : null}
                         </div>
                       </div>
-                      <StatusPill status={run.acpStatus} />
+                      <div className="flex shrink-0 items-center gap-2">
+                        <StatusPill status={run.acpStatus} />
+                        <div ref={openMenuSessionId === run.sessionId ? menuContainerRef : undefined} className="relative">
+                          <button
+                            type="button"
+                            aria-label={t.team.moreActions}
+                            title={t.team.moreActions}
+                            aria-haspopup="menu"
+                            aria-expanded={openMenuSessionId === run.sessionId}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setOpenMenuSessionId((current) => (current === run.sessionId ? null : run.sessionId));
+                            }}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-black/5 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-slate-200"
+                          >
+                            <MoreHorizontal className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} />
+                          </button>
+                          {openMenuSessionId === run.sessionId ? (
+                            <div
+                              role="menu"
+                              className="absolute right-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-lg border border-black/8 bg-white py-1 shadow-xl dark:border-white/10 dark:bg-[#161c26]"
+                            >
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setOpenMenuSessionId(null);
+                                  setDeleteTarget({ sessionId: run.sessionId, name: run.name ?? t.team.unnamedRun });
+                                }}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} />
+                                {t.team.deleteTeam}
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
           </div>
         </aside>
+
+        {successToast ? (
+          <div className="pointer-events-none fixed bottom-6 right-6 z-50">
+            <div className="pointer-events-auto flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-lg dark:border-emerald-500/25 dark:bg-emerald-500/15 dark:text-emerald-200">
+              <span>{successToast}</span>
+              <button
+                type="button"
+                onClick={() => setSuccessToast(null)}
+                aria-label={t.common.dismiss}
+                className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded text-emerald-600 transition-colors hover:text-emerald-800 dark:text-emerald-300 dark:hover:text-emerald-100"
+              >
+                <X className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} />
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <DeleteTeamRunDialog
+          workspaceId={workspaceId}
+          teamRun={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={handleTeamRunDeleted}
+        />
       </div>
     </DesktopAppShell>
   );

@@ -10,6 +10,7 @@ Use it for:
 Directory structure:
 - `active/`: plans that are currently in execution
 - `completed/`: plans that match work already shipped or intentionally closed
+- `archived/`: plans frozen out of current product scope (preserved for reference, not active instructions)
 - `tech-debt-tracker.md`: debt items that cut across multiple features or subsystems
 
 Rules:

@@ -174,6 +174,17 @@ metrics:
 - 入口文件：`docs/fitness/rust-api-test.md`
 - 下一个批次：补 `acp / agents / sessions / polling` 用例与健康检查场景
 
+## Team Run Deletion (Web)
+
+- `src/core/orchestration/__tests__/team-run-identity.test.ts`
+  - 锁定 Team Run 身份识别规则：显式标记（team-agent-lead / ROUTA + team 名称）、parentSessionId 树收集（含环保护）、根判定（顶层 + 标记或 ROUTA 有后代）。
+- `src/core/orchestration/__tests__/team-run-deletion.test.ts`
+  - 锁定删除服务安全边界：空 team、多级子会话、先停活进程再删数据、无法停止时零变更中止、runner 会话拒绝、仅删除 team 专属看板卡、共享 worktree/卡片保留、非 team 根/跨 workspace 拒绝、sqlite 单事务删除路径。
+- `src/app/api/team-runs/__tests__/route.test.ts`
+  - 锁定 `DELETE /api/team-runs/:rootSessionId` 与 `GET /api/team-runs/:rootSessionId/preview` 的语义响应：成功计数、404/409/422/500 错误码映射、预览 no-store。
+- `src/app/workspace/[workspaceId]/team/__tests__/delete-team-run-dialog.test.tsx`
+  - 锁定删除确认对话框：预览统计展示、输入 DELETE/Team 名才可确认、取消、runner 阻断、删除/预览失败的本地化错误。
+
 ## Session Persistence / Recovery Characterization
 
 - `src/core/__tests__/session-history.test.ts`

@@ -852,6 +852,40 @@ export interface TranslationDictionary extends ExtendedTranslationDictionarySect
     updatingRepository: string;
     defaultLabel: string;
     saving: string;
+    defineGoal: string;
+  };
+
+  // Product Goal
+  goal: {
+    title: string;
+    description: string;
+    goalText: string;
+    goalTextPlaceholder: string;
+    repos: string;
+    reposDescription: string;
+    addRepo: string;
+    requirementDocs: string;
+    requirementDocsDescription: string;
+    addDoc: string;
+    docName: string;
+    docContent: string;
+    docNamePlaceholder: string;
+    docContentPlaceholder: string;
+    constraints: string;
+    constraintsDescription: string;
+    addConstraint: string;
+    constraintPlaceholder: string;
+    save: string;
+    startPlanning: string;
+    saveSuccess: string;
+    saveError: string;
+    loadError: string;
+    draft: string;
+    active: string;
+    repoKindLocal: string;
+    repoKindGithub: string;
+    repoPath: string;
+    repoUrl: string;
   };
 
   // Notifications

@@ -109,6 +109,7 @@ test-results
 .entrix/
 docs/fitness/reports/
 crates/docs/fitness/reports/
+docs/fitness/playbooks/*.json
 apps/desktop/src-tauri/icons/android/
 apps/desktop/src-tauri/icons/ios/
 .next-desktop/

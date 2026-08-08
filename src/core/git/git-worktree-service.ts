@@ -252,6 +252,39 @@ export class GitWorktreeService {
   }
 
   /**
+   * Remove a worktree directory from the filesystem WITHOUT touching the
+   * DB record. Used by bulk-deletion flows that remove the DB row inside
+   * their own transaction. The branch is intentionally preserved.
+   *
+   * Best-effort: a missing path or unavailable git bridge is not an error.
+   */
+  async removeWorktreeFilesystem(
+    worktree: Pick<Worktree, "id" | "codebaseId" | "worktreePath">
+  ): Promise<void> {
+    const codebase = await this.codebaseStore.get(worktree.codebaseId);
+    if (!codebase) {
+      // Without the repo path there is nothing to remove/prune against.
+      return;
+    }
+
+    const repoPath = codebase.repoPath;
+
+    await this.withRepoLock(repoPath, async () => {
+      try {
+        await execGit(
+          ["worktree", "remove", "--force", worktree.worktreePath],
+          repoPath
+        );
+      } catch {
+        // Path may already be gone
+      }
+
+      // Prune stale references
+      await execGit(["worktree", "prune"], repoPath).catch(() => {});
+    });
+  }
+
+  /**
    * List worktrees for a codebase.
    */
   async listWorktrees(codebaseId: string): Promise<Worktree[]> {

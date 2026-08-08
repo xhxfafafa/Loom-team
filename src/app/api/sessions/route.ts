@@ -9,7 +9,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getHttpSessionStore, type RoutaSessionRecord } from "@/core/acp/http-session-store";
 import { getAcpProcessManager } from "@/core/acp/processer";
 import { getPresetById } from "@/core/acp/acp-presets";
-import { TEAM_LEAD_SPECIALIST_ID } from "./team-run";
+import {
+  buildSessionChildMap,
+  countDescendantSessions,
+  hasExplicitTeamRunMarker,
+} from "@/core/orchestration/team-run-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -69,67 +73,14 @@ function toSessionSummary(session: RoutaSessionRecord, hasActiveProcess: boolean
   };
 }
 
-function normalizeSessionName(name: string | undefined): string {
-  return (name ?? "").replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-function hasExplicitTeamRunMarker(session: RoutaSessionRecord): boolean {
-  if (session.specialistId === TEAM_LEAD_SPECIALIST_ID) {
-    return true;
-  }
-
-  if (session.role?.toUpperCase() !== "ROUTA") {
-    return false;
-  }
-
-  const normalizedName = normalizeSessionName(session.name);
-  if (!normalizedName) {
-    return false;
-  }
-
-  return (
-    normalizedName.startsWith("team -")
-    || normalizedName.startsWith("team run")
-    || normalizedName.includes("team lead")
-  );
-}
-
 function listTeamRuns(sessions: RoutaSessionRecord[]): TeamRunSummary[] {
-  const childMap = new Map<string, RoutaSessionRecord[]>();
-  for (const session of sessions) {
-    if (!session.parentSessionId) continue;
-    const existing = childMap.get(session.parentSessionId) ?? [];
-    existing.push(session);
-    childMap.set(session.parentSessionId, existing);
-  }
-
-  const descendantsBySessionId = new Map<string, number>();
-  const countDescendants = (sessionId: string, visiting = new Set<string>()): number => {
-    const cached = descendantsBySessionId.get(sessionId);
-    if (cached !== undefined) return cached;
-    if (visiting.has(sessionId)) {
-      return 0;
-    }
-
-    visiting.add(sessionId);
-    const children = childMap.get(sessionId) ?? [];
-    const total = children.reduce((sum, child) => {
-      if (visiting.has(child.sessionId)) {
-        return sum;
-      }
-
-      return sum + 1 + countDescendants(child.sessionId, visiting);
-    }, 0);
-    visiting.delete(sessionId);
-    descendantsBySessionId.set(sessionId, total);
-    return total;
-  };
+  const childMap = buildSessionChildMap(sessions);
 
   return sessions
     .filter((session) => !session.parentSessionId)
     .map((session) => {
       const directDelegates = (childMap.get(session.sessionId) ?? []).length;
-      const descendants = countDescendants(session.sessionId);
+      const descendants = countDescendantSessions(session.sessionId, sessions);
       return { session, directDelegates, descendants };
     })
     .filter(({ session, descendants }) => {

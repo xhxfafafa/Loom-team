@@ -158,6 +158,12 @@ export function SessionsPageClient() {
                       {latestSession ? formatRelativeTime(latestSession.createdAt) : t.workspace.noRecentSession}
                     </span>
                   </div>
+                  <a
+                    href={`/workspace/${workspaceId}/goal`}
+                    className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white/75 px-4 py-2 text-slate-600 transition-colors hover:bg-white dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+                  >
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.18em]">{t.workspace.defineGoal}</span>
+                  </a>
                 </div>
               </section>
             </div>

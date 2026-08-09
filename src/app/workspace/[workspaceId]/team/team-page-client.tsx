@@ -372,6 +372,7 @@ export function TeamPageClient() {
                   allowCustomSpecialist: false,
                   lockedSpecialistId: TEAM_LEAD_SPECIALIST_ID,
                   requireRepoSelection: true,
+                  attachSelectedRepoToWorkspace: true,
                   dispatchMode: "pending-prompt",
                   buildSessionUrl: (nextWorkspaceId, sessionId) =>
                     `/workspace/${nextWorkspaceId ?? workspaceId}/team/${sessionId}`,

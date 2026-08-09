@@ -115,6 +115,8 @@ const zh: TranslationDictionary = {
     customSpecialist: "自定义专家",
     specialistMode: "专家模式",
     repoPath: "仓库路径",
+    repoAttachFailed: "无法将所选仓库关联到当前工作区。",
+    launchFailed: "会话启动失败，请重试。",
     openKanbanDescription: "查看卡片流转、自动化状态和当前执行队列。",
     workspaceOverviewDescription: "查看最近运行、恢复入口和工作区级摘要。",
     checkEnvironment: "检查运行环境",

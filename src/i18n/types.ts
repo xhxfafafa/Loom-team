@@ -121,6 +121,8 @@ export interface TranslationDictionary extends ExtendedTranslationDictionarySect
     customSpecialist: string;
     specialistMode: string;
     repoPath: string;
+    repoAttachFailed: string;
+    launchFailed: string;
     openKanbanDescription: string;
     workspaceOverviewDescription: string;
     checkEnvironment: string;

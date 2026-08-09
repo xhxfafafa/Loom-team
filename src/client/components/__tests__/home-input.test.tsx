@@ -146,6 +146,8 @@ vi.mock("@/i18n", () => ({
         multiAgent: "Multi-agent",
         crafter: "Crafter",
         repoPath: "Repo path",
+        repoAttachFailed: "Failed to attach repository",
+        launchFailed: "Failed to launch session",
         multiAgentDesc: "Multi-agent orchestration",
       },
       workspace: {
@@ -318,6 +320,64 @@ describe("HomeInput", () => {
         undefined,
       );
     });
+  });
+
+  it("attaches an unregistered repository before launching a Team session", async () => {
+    desktopAwareFetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/workspaces/ws-1/codebases" && init?.method === "POST") {
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({ codebase: { id: "cb-2" } }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ specialists: [] }),
+      };
+    });
+
+    render(
+      <HomeInput
+        workspaceId="ws-1"
+        initialLaunchModeId="team"
+        launchModes={[{
+          id: "team",
+          label: "Team",
+          description: "Team run",
+          requireRepoSelection: true,
+          attachSelectedRepoToWorkspace: true,
+        }]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-selection").textContent).toBe("/repo/main");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Select other repo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(desktopAwareFetchMock).toHaveBeenCalledWith(
+        "/api/workspaces/ws-1/codebases",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            repoPath: "/repo/other",
+            branch: "main",
+            label: "Other Repo",
+          }),
+        }),
+      );
+      expect(createSessionMock).toHaveBeenCalledTimes(1);
+    });
+
+    const attachCall = desktopAwareFetchMock.mock.invocationCallOrder.find((_, index) => {
+      const [url, init] = desktopAwareFetchMock.mock.calls[index] ?? [];
+      return url === "/api/workspaces/ws-1/codebases" && init?.method === "POST";
+    });
+    expect(attachCall).toBeLessThan(createSessionMock.mock.invocationCallOrder[0]);
   });
 
   it("stores pending prompts for the default dispatch mode", async () => {

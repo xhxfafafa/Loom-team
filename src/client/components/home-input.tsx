@@ -47,6 +47,8 @@ export interface LaunchModeConfig {
   allowCustomSpecialist?: boolean;
   lockedSpecialistId?: string;
   requireRepoSelection?: boolean;
+  /** Attach the selected repository to the workspace before launching. */
+  attachSelectedRepoToWorkspace?: boolean;
   dispatchMode?: HomeInputDispatchMode;
   buildSessionUrl?: (workspaceId: string | null, sessionId: string) => string | null;
   sessionConfig?: HomeInputSessionConfig;
@@ -177,6 +179,7 @@ export function HomeInput({
   const [selectedRole, setSelectedRole] = useState<AgentRole>(defaultAgentRole);
   const [repoSelection, setRepoSelection] = useState<RepoSelection | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [launchError, setLaunchError] = useState<string | null>(null);
   const isSubmittingRef = useRef(false);
   const repoSelectionRef = useRef<RepoSelection | null>(null);
   const [pendingSkill, setPendingSkill] = useState<string | null>(null);
@@ -196,6 +199,7 @@ export function HomeInput({
   const allowRoleSwitch = activeLaunchMode?.allowRoleSwitch ?? true;
   const allowCustomSpecialist = activeLaunchMode?.allowCustomSpecialist ?? true;
   const effectiveRequireRepoSelection = activeLaunchMode?.requireRepoSelection ?? requireRepoSelection;
+  const effectiveAttachSelectedRepoToWorkspace = activeLaunchMode?.attachSelectedRepoToWorkspace ?? false;
   const effectiveDispatchMode = activeLaunchMode?.dispatchMode ?? (extraSessionParams ? "direct-prompt" : "pending-prompt");
   const effectiveBuildSessionUrl = activeLaunchMode?.buildSessionUrl ?? buildSessionUrl;
   const activeSessionConfig = activeLaunchMode?.sessionConfig ?? extraSessionParams;
@@ -372,6 +376,7 @@ export function HomeInput({
       if (isSubmittingRef.current) return;
       isSubmittingRef.current = true;
       setIsSubmitting(true);
+      setLaunchError(null);
 
       try {
         const idempotencyKey = `home-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -380,6 +385,31 @@ export function HomeInput({
         const effectiveCwd = context.cwd ?? effectiveRepoSelection?.path;
         if (effectiveRequireRepoSelection && !effectiveCwd) {
           return;
+        }
+        if (
+          effectiveAttachSelectedRepoToWorkspace
+          && wsId
+          && effectiveRepoSelection
+          && !codebases.some((codebase) => codebase.repoPath === effectiveRepoSelection.path)
+        ) {
+          const response = await desktopAwareFetch(
+            `/api/workspaces/${encodeURIComponent(wsId)}/codebases`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                repoPath: effectiveRepoSelection.path,
+                branch: effectiveRepoSelection.branch || undefined,
+                label: effectiveRepoSelection.name || undefined,
+              }),
+            },
+          );
+          // A concurrent launcher may register the same repository after this
+          // component loads. Treat that duplicate race as an idempotent success.
+          if (!response.ok && response.status !== 409) {
+            setLaunchError(t.home.repoAttachFailed);
+            return;
+          }
         }
         const effectiveSpecialistId = resolveHomeInputSpecialistId({
           lockedSpecialistId: effectiveLockedSpecialistId,
@@ -445,12 +475,14 @@ export function HomeInput({
             router.push(url);
           }
         }
+      } catch (error) {
+        setLaunchError(t.home.launchFailed);
       } finally {
         isSubmittingRef.current = false;
         setIsSubmitting(false);
       }
     },
-    [acp, activeSessionConfig, allowCustomSpecialist, effectiveBuildSessionUrl, effectiveDispatchMode, effectiveLockedSpecialistId, effectiveRequireRepoSelection, router, onSessionCreated, selectedRole, selectedSpecialistId, selectedWorkspaceId, specialists],
+    [acp, activeSessionConfig, allowCustomSpecialist, codebases, effectiveAttachSelectedRepoToWorkspace, effectiveBuildSessionUrl, effectiveDispatchMode, effectiveLockedSpecialistId, effectiveRequireRepoSelection, router, onSessionCreated, selectedRole, selectedSpecialistId, selectedWorkspaceId, specialists, t.home.launchFailed, t.home.repoAttachFailed],
   );
 
   const activeWorkspace = workspacesHook.workspaces.find((w) => w.id === selectedWorkspaceId);
@@ -712,6 +744,11 @@ export function HomeInput({
 
       {/* ─── Mode Tips ──────────────────────────────────────────────── */}
       <div className="mt-1.5 min-h-5 px-1">
+        {launchError && (
+          <div role="alert" className="mb-1 text-[10px] text-red-600 dark:text-red-400">
+            {launchError}
+          </div>
+        )}
         {repoSelection?.path && (
           <div className="mb-1 flex items-center gap-1.5 text-[10px] text-slate-400 dark:text-slate-500">
             <span className="font-medium text-slate-500 dark:text-slate-400">

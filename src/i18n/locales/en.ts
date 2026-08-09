@@ -116,6 +116,8 @@ const en: TranslationDictionary = {
     customSpecialist: "Custom Specialist",
     specialistMode: "Specialist mode",
     repoPath: "Repo path",
+    repoAttachFailed: "Failed to attach the selected repository to this workspace.",
+    launchFailed: "Failed to start the session. Please try again.",
     openKanbanDescription: "Review card flow, automation state, and the current execution queue.",
     workspaceOverviewDescription: "Review recent runs, recovery entry points, and workspace-level context.",
     checkEnvironment: "Check environment",

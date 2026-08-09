@@ -48,6 +48,7 @@ vi.mock("../tiptap-input", () => ({
     pendingSkill?: string | null;
     disabled?: boolean;
     repoSelection?: { path?: string; name?: string; branch?: string } | null;
+    onRepoChange?: (selection: { path: string; name: string; branch: string }) => void;
     skills?: Array<{ name: string }>;
     repoSkills?: Array<{ name: string }>;
   }) => (
@@ -68,6 +69,16 @@ vi.mock("../tiptap-input", () => ({
         })}
       >
         Send
+      </button>
+      <button
+        type="button"
+        onClick={() => props.onRepoChange?.({
+          path: "/repo/other",
+          name: "Other Repo",
+          branch: "main",
+        })}
+      >
+        Select other repo
       </button>
     </div>
   ),
@@ -247,6 +258,66 @@ describe("HomeInput", () => {
     fireEvent.click(screen.getByRole("button", { name: /fix-tests/i }));
 
     expect(screen.getByTestId("pending-skill").textContent).toBe("fix-tests");
+  });
+
+  it("preserves an explicit repository selection when codebases refresh", async () => {
+    const { rerender } = render(<HomeInput workspaceId="ws-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-selection").textContent).toBe("/repo/main");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Select other repo" }));
+    expect(screen.getByTestId("repo-selection").textContent).toBe("/repo/other");
+
+    useCodebasesMock.mockReturnValue({
+      codebases: [
+        {
+          id: "cb-1",
+          workspaceId: "ws-1",
+          repoPath: "/repo/main",
+          branch: "main",
+          label: "Main Repo",
+          isDefault: true,
+        },
+        {
+          id: "cb-2",
+          workspaceId: "ws-1",
+          repoPath: "/repo/other",
+          branch: "main",
+          label: "Other Repo",
+          isDefault: false,
+        },
+      ],
+    });
+    collectAccessibleRepoPathsMock.mockResolvedValue(new Set(["/repo/main", "/repo/other"]));
+    rerender(<HomeInput workspaceId="ws-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-selection").textContent).toBe("/repo/other");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => {
+      expect(createSessionMock).toHaveBeenCalledWith(
+        "/repo/other",
+        "provider-x",
+        "mode-fast",
+        "ROUTA",
+        "ws-1",
+        "resolved-model",
+        expect.anything(),
+        undefined,
+        undefined,
+        "https://models.example",
+        "model-secret",
+        "main",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      );
+    });
   });
 
   it("stores pending prompts for the default dispatch mode", async () => {

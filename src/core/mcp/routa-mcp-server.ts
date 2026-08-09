@@ -84,6 +84,7 @@ export function createRoutaMcpServer(
       return [];
     }
   });
+  toolManager.setCodebaseStore(routaSystem.codebaseStore);
 
   // Wire in orchestrator — auto-initialize if not yet created (e.g. after server restart).
   // initRoutaOrchestrator is idempotent: returns existing instance if already created.

@@ -595,6 +595,7 @@ describe("RoutaMcpToolManager", () => {
         name: "Team - Alpha",
         specialistId: "team-agent-lead",
         parentSessionId: undefined,
+        cwd: "/repo/team",
       },
       {
         sessionId: "sub-agent",
@@ -625,6 +626,13 @@ describe("RoutaMcpToolManager", () => {
       manager.setToolMode("full");
       manager.setSessionId(sessionId);
       manager.setTeamRunSessionLister(() => teamSessions);
+      manager.setCodebaseStore({
+        findByRepoPath: vi.fn(async (workspaceId, repoPath) => (
+          workspaceId === "ws-1" && repoPath === "/repo/team"
+            ? { id: "codebase-team" }
+            : undefined
+        )),
+      } as never);
       manager.setKanbanTools({
         createCard: vi.fn(async (params) => ({ success: true, data: params })),
         decomposeTasks: vi.fn(async (params) => ({ success: true, data: params })),
@@ -645,7 +653,12 @@ describe("RoutaMcpToolManager", () => {
       await createTaskTool!.handler({ title: "Lead task", objective: "Coordinate" });
 
       expect(tools.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Lead task", workspaceId: "ws-1", teamRunId: "team-root" }),
+        expect.objectContaining({
+          title: "Lead task",
+          workspaceId: "ws-1",
+          teamRunId: "team-root",
+          codebaseIds: ["codebase-team"],
+        }),
       );
     });
 
@@ -654,14 +667,14 @@ describe("RoutaMcpToolManager", () => {
       const createTaskTool = registrations.find((entry) => entry.name === "create_task");
       await createTaskTool!.handler({ title: "Worker task", objective: "Work" });
       expect(tools.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({ teamRunId: "team-root" }),
+        expect.objectContaining({ teamRunId: "team-root", codebaseIds: ["codebase-team"] }),
       );
 
       const nested = createOwnershipManager("nested-sub-agent");
       const nestedCreateTask = nested.registrations.find((entry) => entry.name === "create_task");
       await nestedCreateTask!.handler({ title: "Nested task", objective: "Work" });
       expect(nested.tools.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({ teamRunId: "team-root" }),
+        expect.objectContaining({ teamRunId: "team-root", codebaseIds: ["codebase-team"] }),
       );
     });
 
@@ -681,6 +694,7 @@ describe("RoutaMcpToolManager", () => {
           title: "Card",
           sessionId: "sub-agent",
           teamRunId: "team-root",
+          codebaseIds: ["codebase-team"],
           workspaceId: "ws-1",
         }),
       );
@@ -688,13 +702,22 @@ describe("RoutaMcpToolManager", () => {
       const decomposeTool = registrations.find((entry) => entry.name === "decompose_tasks");
       await decomposeTool!.handler({ tasks: [{ title: "Subtask" }] });
       expect(kanbanTools.decomposeTasks).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: "sub-agent", teamRunId: "team-root" }),
+        expect.objectContaining({
+          sessionId: "sub-agent",
+          teamRunId: "team-root",
+          codebaseIds: ["codebase-team"],
+        }),
       );
 
       const convertTool = registrations.find((entry) => entry.name === "convert_task_blocks");
       await convertTool!.handler({ noteId: "spec" });
       expect(noteTools.convertTaskBlocks).toHaveBeenCalledWith(
-        expect.objectContaining({ noteId: "spec", workspaceId: "ws-1", teamRunId: "team-root" }),
+        expect.objectContaining({
+          noteId: "spec",
+          workspaceId: "ws-1",
+          teamRunId: "team-root",
+          codebaseIds: ["codebase-team"],
+        }),
       );
     });
 

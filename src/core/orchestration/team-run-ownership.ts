@@ -23,6 +23,8 @@ import { isTeamRunRoot, type TeamRunSessionShape } from "./team-run-identity";
 /** Minimal session shape needed for ownership resolution. */
 export interface OwnershipSessionShape extends TeamRunSessionShape {
   workspaceId: string;
+  /** Repository selected by the Team Run or descendant ACP session. */
+  cwd?: string;
 }
 
 /**

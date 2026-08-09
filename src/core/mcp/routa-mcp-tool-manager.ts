@@ -47,11 +47,9 @@ import {
   blockedUpdateTaskFieldsForProfile,
   updateTaskBoundaryError,
 } from "./mcp-task-write-boundary";
-import {
-  resolveOwningTeamRunIdFromSessions,
-  type OwnershipSessionShape,
-} from "../orchestration/team-run-ownership";
-
+import type { OwnershipSessionShape } from "../orchestration/team-run-ownership";
+import type { CodebaseStore } from "../db/pg-codebase-store";
+import { resolveTeamTaskContext, withoutClientTeamTaskContext } from "./team-run-task-context";
 /**
  * Tool registration mode for MCP server.
  * - "essential": 12 core coordination tools (Agent + Note) for Routa workflow
@@ -111,6 +109,7 @@ export class RoutaMcpToolManager {
    * from `sessionId`. Clients never supply a teamRunId directly.
    */
   private teamRunSessionLister?: () => Promise<OwnershipSessionShape[]> | OwnershipSessionShape[];
+  private codebaseStore?: Pick<CodebaseStore, "findByRepoPath">;
 
   constructor(
     private tools: AgentTools,
@@ -185,14 +184,15 @@ export class RoutaMcpToolManager {
     this.teamRunSessionLister = lister;
   }
 
+  setCodebaseStore(store: Pick<CodebaseStore, "findByRepoPath">): void { this.codebaseStore = store; }
+
   /**
    * Resolve the top-level Team Run ID that owns the current session, if any.
    * Returns undefined for normal (non-team) sessions or when resolution is
    * unavailable, so cards are never given a guessed ownership.
    */
-  private async resolveTeamRunId(): Promise<string | undefined> {
-    if (!this.sessionId || !this.teamRunSessionLister) return undefined;
-    return resolveOwningTeamRunIdFromSessions(this.sessionId, this.teamRunSessionLister);
+  private resolveTeamRunContext(workspaceId = this.workspaceId) {
+    return resolveTeamTaskContext(this.sessionId, workspaceId, this.teamRunSessionLister, this.codebaseStore);
   }
 
   /**
@@ -353,11 +353,11 @@ export class RoutaMcpToolManager {
         creationSource: z.enum(["manual", "agent", "api", "session"]).optional().describe("How the task was created"),
       },
       async (params) => {
-        const teamRunId = await this.resolveTeamRunId();
+        const teamContext = await this.resolveTeamRunContext(params.workspaceId);
         const result = await this.tools.createTask({
-          ...params,
+          ...withoutClientTeamTaskContext(params),
           workspaceId: params.workspaceId ?? this.workspaceId,
-          teamRunId,
+          ...teamContext,
         });
         return this.toMcpResult(result);
       }
@@ -944,11 +944,11 @@ Note: taskId must be a UUID from create_task, not a task name.`,
         if (!this.noteTools) {
           return this.toMcpResult({ success: false, error: "Note tools not available." });
         }
-        const teamRunId = await this.resolveTeamRunId();
+        const teamContext = await this.resolveTeamRunContext(params.workspaceId);
         const result = await this.noteTools.convertTaskBlocks({
           noteId: params.noteId,
           workspaceId: params.workspaceId ?? this.workspaceId,
-          teamRunId,
+          ...teamContext,
         });
         return this.toMcpResult(result);
       }
@@ -1199,7 +1199,7 @@ Note: taskId must be a UUID from create_task, not a task name.`,
         if (!this.kanbanTools) {
           return this.toMcpResult({ success: false, error: "Kanban tools not available." });
         }
-        const teamRunId = await this.resolveTeamRunId();
+        const teamContext = await this.resolveTeamRunContext(params.workspaceId);
         const result = await this.kanbanTools.createCard({
           boardId: params.boardId,
           columnId: params.columnId ?? params.column,
@@ -1207,7 +1207,7 @@ Note: taskId must be a UUID from create_task, not a task name.`,
           description: params.description,
           contextSearchSpec: params.contextSearchSpec,
           sessionId: this.sessionId,
-          teamRunId,
+          ...teamContext,
           priority: params.priority,
           labels: params.labels,
           workspaceId: params.workspaceId ?? this.workspaceId,
@@ -1455,14 +1455,14 @@ Note: taskId must be a UUID from create_task, not a task name.`,
         if (!this.kanbanTools) {
           return this.toMcpResult({ success: false, error: "Kanban tools not available." });
         }
-        const teamRunId = await this.resolveTeamRunId();
+        const teamContext = await this.resolveTeamRunContext(params.workspaceId);
         const result = await this.kanbanTools.decomposeTasks({
           boardId: params.boardId,
           workspaceId: params.workspaceId ?? this.workspaceId,
           tasks: params.tasks,
           columnId: params.columnId ?? params.column,
           sessionId: this.sessionId,
-          teamRunId,
+          ...teamContext,
         });
         return this.toMcpResult(result);
       }

@@ -68,7 +68,7 @@ describe("/api/canvas/specialist/materialize", () => {
   });
 
   it("stores canvases for managed clone repos under the current project storage root", async () => {
-    const cloneRepoPath = path.join(process.cwd(), ".routa", "repos", "phodal--routa");
+    const cloneRepoPath = path.join(tempHome, ".routa", "repos", "phodal--routa");
     const request = new NextRequest("http://localhost/api/canvas/specialist/materialize", {
       method: "POST",
       body: JSON.stringify({

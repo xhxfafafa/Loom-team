@@ -862,7 +862,8 @@ export function getRepoDeliveryStatus(
 
 // ─── Repo Directory Helpers ─────────────────────────────────────────────
 
-const CLONE_BASE_DIR = ".routa/repos";
+const ROUTA_DATA_DIR = ".routa";
+const CLONE_DIR = "repos";
 
 /**
  * Get the base directory for cloned repos.
@@ -872,18 +873,78 @@ export function getCloneBaseDir(): string {
   const pathMod = require("path");
   const os = require("os");
 
+  const configuredRoot = process.env.ROUTA_CLONE_BASE_DIR?.trim();
+  if (configuredRoot) {
+    return pathMod.resolve(configuredRoot);
+  }
+
   // Check if we're in a serverless environment (Vercel sets VERCEL env var)
   const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
 
   if (isServerless) {
     // On serverless, use /tmp which is the only writable location
     // Note: This is ephemeral and won't persist across invocations
-    return pathMod.join(os.tmpdir(), CLONE_BASE_DIR);
+    return pathMod.join(os.tmpdir(), ROUTA_DATA_DIR, CLONE_DIR);
   }
 
-  // On local/traditional servers, use the current directory
+  // Keep managed repositories outside the Routa source checkout. Nesting a
+  // cloned project under the server's repository lets coding agents discover
+  // ancestor AGENTS.md/CLAUDE.md files from Routa itself.
+  return pathMod.join(os.homedir(), ROUTA_DATA_DIR, CLONE_DIR);
+}
+
+/** Previous clone location used before managed repos moved to the user data dir. */
+export function getLegacyCloneBaseDir(): string {
+  const pathMod = require("path");
+  const configuredRoot = process.env.ROUTA_LEGACY_CLONE_BASE_DIR?.trim();
+  if (configuredRoot) {
+    return pathMod.resolve(configuredRoot);
+  }
+
   const bridge = getServerBridge();
-  return pathMod.join(bridge.env.currentDir(), CLONE_BASE_DIR);
+  return pathMod.join(bridge.env.currentDir(), ROUTA_DATA_DIR, CLONE_DIR);
+}
+
+/**
+ * Copy a managed clone out of the legacy in-repository directory.
+ *
+ * The source is intentionally retained so historical sessions that reference
+ * its cwd remain restorable. New codebase/session records use the detached
+ * target and no longer inherit instructions from the Routa source checkout.
+ */
+export function migrateLegacyManagedClone(repoPath: string): string {
+  const fs = require("fs");
+  const pathMod = require("path");
+  const sourcePath = pathMod.resolve(repoPath);
+  const legacyRoot = pathMod.resolve(getLegacyCloneBaseDir());
+  const targetRoot = pathMod.resolve(getCloneBaseDir());
+  const relativePath = pathMod.relative(legacyRoot, sourcePath);
+
+  if (
+    targetRoot === legacyRoot
+    || relativePath.length === 0
+    || relativePath.startsWith(`..${pathMod.sep}`)
+    || relativePath === ".."
+    || pathMod.isAbsolute(relativePath)
+  ) {
+    return repoPath;
+  }
+
+  const targetPath = pathMod.join(targetRoot, relativePath);
+  if (fs.existsSync(targetPath)) {
+    return targetPath;
+  }
+  if (!fs.existsSync(sourcePath)) {
+    return repoPath;
+  }
+
+  fs.mkdirSync(pathMod.dirname(targetPath), { recursive: true });
+  fs.cpSync(sourcePath, targetPath, {
+    recursive: true,
+    errorOnExist: true,
+    preserveTimestamps: true,
+  });
+  return targetPath;
 }
 
 /**

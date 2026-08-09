@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const codebaseStore = {
+  listByWorkspace: vi.fn(),
+  update: vi.fn(),
   findByRepoPath: vi.fn(),
   countByWorkspace: vi.fn(),
   add: vi.fn(),
@@ -14,12 +16,13 @@ const gitMocks = vi.hoisted(() => ({
   normalizeLocalRepoPath: vi.fn((value: string) => value),
   validateRepoInput: vi.fn(),
   isBareGitRepository: vi.fn(),
+  migrateLegacyManagedClone: vi.fn((value: string) => value),
 }));
 
 vi.mock("@/core/git", () => gitMocks);
 
 import { NextRequest } from "next/server";
-import { POST } from "../route";
+import { GET, POST } from "../route";
 
 function buildRequest(body: unknown) {
   return new NextRequest("http://localhost/api/workspaces/ws-1/codebases", {
@@ -36,6 +39,9 @@ describe("POST /api/workspaces/[workspaceId]/codebases", () => {
     vi.clearAllMocks();
     gitMocks.normalizeLocalRepoPath.mockImplementation((value: string) => value);
     gitMocks.isBareGitRepository.mockReturnValue(false);
+    gitMocks.migrateLegacyManagedClone.mockImplementation((value: string) => value);
+    codebaseStore.listByWorkspace.mockResolvedValue([]);
+    codebaseStore.update.mockResolvedValue(undefined);
     codebaseStore.findByRepoPath.mockResolvedValue(null);
     codebaseStore.countByWorkspace.mockResolvedValue(0);
     codebaseStore.add.mockResolvedValue(undefined);
@@ -132,5 +138,34 @@ describe("POST /api/workspaces/[workspaceId]/codebases", () => {
 
     expect(response.status).toBe(400);
     expect(data.error).toBe("repoPath is required");
+  });
+});
+
+describe("GET /api/workspaces/[workspaceId]/codebases", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    codebaseStore.update.mockResolvedValue(undefined);
+  });
+
+  it("persists the detached path when a legacy managed clone is migrated", async () => {
+    codebaseStore.listByWorkspace.mockResolvedValue([{
+      id: "cb-1",
+      workspaceId: "ws-1",
+      repoPath: "/host/routa/.routa/repos/owner--personal",
+      branch: "main",
+      label: "owner/personal",
+      isDefault: true,
+      createdAt: new Date("2026-08-10T00:00:00Z"),
+      updatedAt: new Date("2026-08-10T00:00:00Z"),
+    }]);
+    gitMocks.migrateLegacyManagedClone.mockReturnValue("/home/user/.routa/repos/owner--personal");
+
+    const response = await GET(new NextRequest("http://localhost"), params);
+    const data = await response.json();
+
+    expect(codebaseStore.update).toHaveBeenCalledWith("cb-1", {
+      repoPath: "/home/user/.routa/repos/owner--personal",
+    });
+    expect(data.codebases[0].repoPath).toBe("/home/user/.routa/repos/owner--personal");
   });
 });

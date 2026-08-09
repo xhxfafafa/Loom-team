@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { getCloneBaseDir } from "@/core/git/git-utils";
+import { getCloneBaseDir, getLegacyCloneBaseDir } from "@/core/git/git-utils";
 import { getCanvasesDir } from "@/core/storage/folder-slug";
 
 function sanitizeSegment(value: string): string {
@@ -20,12 +20,12 @@ function deriveRepoSegment(repoPath: string, repoLabel?: string): string {
 
 function resolveCanvasStorageRoot(repoPath: string): string {
   const resolvedRepoPath = path.resolve(repoPath);
-  const cloneBaseDir = path.resolve(getCloneBaseDir());
-  if (
-    resolvedRepoPath === cloneBaseDir
-    || resolvedRepoPath.startsWith(`${cloneBaseDir}${path.sep}`)
-  ) {
-    return path.resolve(cloneBaseDir, "..", "..");
+  const managedCloneRoots = [getCloneBaseDir(), getLegacyCloneBaseDir()].map((root) => path.resolve(root));
+  if (managedCloneRoots.some((root) => (
+    resolvedRepoPath === root
+    || resolvedRepoPath.startsWith(`${root}${path.sep}`)
+  ))) {
+    return path.resolve(process.cwd());
   }
 
   return resolvedRepoPath;

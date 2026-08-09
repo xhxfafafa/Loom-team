@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 const { gitExecMock } = vi.hoisted(() => ({
   gitExecMock: vi.fn(),
@@ -29,7 +32,24 @@ const {
   getBranchStatus,
   listBranches,
   listRemoteBranches,
+  getCloneBaseDir,
+  migrateLegacyManagedClone,
 } = await import("../git-utils");
+
+const originalCloneBaseDir = process.env.ROUTA_CLONE_BASE_DIR;
+const originalLegacyCloneBaseDir = process.env.ROUTA_LEGACY_CLONE_BASE_DIR;
+const temporaryRoots: string[] = [];
+
+afterEach(() => {
+  if (originalCloneBaseDir === undefined) delete process.env.ROUTA_CLONE_BASE_DIR;
+  else process.env.ROUTA_CLONE_BASE_DIR = originalCloneBaseDir;
+  if (originalLegacyCloneBaseDir === undefined) delete process.env.ROUTA_LEGACY_CLONE_BASE_DIR;
+  else process.env.ROUTA_LEGACY_CLONE_BASE_DIR = originalLegacyCloneBaseDir;
+
+  for (const root of temporaryRoots.splice(0)) {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 function formatGitArgs(args: string[]): string {
   return ["git", ...args].join(" ");
@@ -114,6 +134,42 @@ describe("GitHub URL parsing", () => {
       repo: "routa-js",
     });
     expect(parseGitHubUrl("/tmp/repo")).toBeNull();
+  });
+});
+
+describe("managed clone directories", () => {
+  it("supports an explicit detached clone root", () => {
+    process.env.ROUTA_CLONE_BASE_DIR = "/var/tmp/routa-managed-repos";
+    expect(getCloneBaseDir()).toBe("/var/tmp/routa-managed-repos");
+  });
+
+  it("copies legacy nested clones to the detached root and retains the source", () => {
+    const root = mkdtempSync(join(tmpdir(), "routa-clone-root-"));
+    temporaryRoots.push(root);
+    const legacyRoot = join(root, "host-repo", ".routa", "repos");
+    const detachedRoot = join(root, "user-data", ".routa", "repos");
+    const legacyRepo = join(legacyRoot, "owner--personal");
+    mkdirSync(legacyRepo, { recursive: true });
+    writeFileSync(join(legacyRepo, "package.json"), "{\"name\":\"personal\"}\n");
+    process.env.ROUTA_LEGACY_CLONE_BASE_DIR = legacyRoot;
+    process.env.ROUTA_CLONE_BASE_DIR = detachedRoot;
+
+    const migratedPath = migrateLegacyManagedClone(legacyRepo);
+
+    expect(migratedPath).toBe(join(detachedRoot, "owner--personal"));
+    expect(readFileSync(join(migratedPath, "package.json"), "utf8")).toContain("personal");
+    expect(existsSync(legacyRepo)).toBe(true);
+    expect(migrateLegacyManagedClone(legacyRepo)).toBe(migratedPath);
+  });
+
+  it("does not relocate repositories outside the legacy managed root", () => {
+    const root = mkdtempSync(join(tmpdir(), "routa-clone-root-"));
+    temporaryRoots.push(root);
+    process.env.ROUTA_LEGACY_CLONE_BASE_DIR = join(root, "legacy");
+    process.env.ROUTA_CLONE_BASE_DIR = join(root, "detached");
+    const externalRepo = join(root, "external", "personal");
+
+    expect(migrateLegacyManagedClone(externalRepo)).toBe(externalRepo);
   });
 });
 

@@ -23,6 +23,8 @@ export {
   getRepoRefSha,
   parseGitStatusPorcelain,
   getCloneBaseDir,
+  getLegacyCloneBaseDir,
+  migrateLegacyManagedClone,
   repoToDirName,
   dirNameToRepo,
   listClonedRepos,

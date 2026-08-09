@@ -53,7 +53,7 @@ describe("local canvas storage", () => {
   });
 
   it("stores canvases for managed clone repos under the current project storage root", () => {
-    const cloneRepoPath = path.join(process.cwd(), ".routa", "repos", "phodal--routa");
+    const cloneRepoPath = path.join(tempHome, ".routa", "repos", "phodal--routa");
 
     expect(getStoredFitnessCanvasPath(cloneRepoPath, "phodal/routa")).toBe(
       path.join(
@@ -77,7 +77,7 @@ describe("local canvas storage", () => {
   });
 
   it("persists managed clone canvases under the current project storage root", async () => {
-    const cloneRepoPath = path.join(process.cwd(), ".routa", "repos", "phodal--routa");
+    const cloneRepoPath = path.join(tempHome, ".routa", "repos", "phodal--routa");
     const result = await persistFitnessCanvasSource({
       repoPath: cloneRepoPath,
       repoLabel: "phodal/routa",
@@ -92,5 +92,17 @@ describe("local canvas storage", () => {
       ),
     );
     await expect(fs.readFile(result.filePath, "utf-8")).resolves.toContain("Clone");
+  });
+
+  it("keeps legacy nested clone canvases on the current project storage root", () => {
+    const legacyClonePath = path.join(process.cwd(), ".routa", "repos", "phodal--routa");
+
+    expect(getStoredFitnessCanvasPath(legacyClonePath, "phodal/routa")).toBe(
+      path.join(
+        getProjectStorageDir(process.cwd()),
+        "canvases",
+        "phodal-routa-fitness-overview.canvas.tsx",
+      ),
+    );
   });
 });

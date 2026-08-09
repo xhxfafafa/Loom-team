@@ -8,7 +8,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRoutaSystem } from "@/core/routa-system";
 import { createCodebase } from "@/core/models/codebase";
-import { normalizeLocalRepoPath, validateRepoInput, isBareGitRepository } from "@/core/git";
+import {
+  isBareGitRepository,
+  migrateLegacyManagedClone,
+  normalizeLocalRepoPath,
+  validateRepoInput,
+} from "@/core/git";
 
 export const dynamic = "force-dynamic";
 
@@ -20,8 +25,25 @@ export async function GET(
   const system = getRoutaSystem();
 
   const codebases = await system.codebaseStore.listByWorkspace(workspaceId);
+  const resolvedCodebases = await Promise.all(codebases.map(async (codebase) => {
+    try {
+      const repoPath = migrateLegacyManagedClone(codebase.repoPath);
+      if (repoPath === codebase.repoPath) {
+        return codebase;
+      }
 
-  return NextResponse.json({ codebases });
+      await system.codebaseStore.update(codebase.id, { repoPath });
+      return { ...codebase, repoPath, updatedAt: new Date() };
+    } catch (error) {
+      console.warn(
+        `[codebases] Failed to migrate managed clone ${codebase.repoPath}:`,
+        error,
+      );
+      return codebase;
+    }
+  }));
+
+  return NextResponse.json({ codebases: resolvedCodebases });
 }
 
 export async function POST(

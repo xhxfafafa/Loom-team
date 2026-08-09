@@ -1360,6 +1360,7 @@ describe("KanbanTools", () => {
       title: "Team card",
       columnId: "backlog",
       teamRunId: "team-root-1",
+      codebaseIds: ["codebase-team"],
     });
     expect(teamResult.success).toBe(true);
 
@@ -1374,6 +1375,7 @@ describe("KanbanTools", () => {
     const teamCard = tasks.find((task) => task.title === "Team card");
     const normalCard = tasks.find((task) => task.title === "Normal card");
     expect(teamCard?.teamRunId).toBe("team-root-1");
+    expect(teamCard?.codebaseIds).toEqual(["codebase-team"]);
     expect(normalCard?.teamRunId).toBeUndefined();
   });
 
@@ -1395,6 +1397,7 @@ describe("KanbanTools", () => {
       tasks: [{ title: "Subtask A" }, { title: "Subtask B" }],
       columnId: "backlog",
       teamRunId: "team-root-1",
+      codebaseIds: ["codebase-team"],
     });
 
     expect(result.success).toBe(true);
@@ -1402,6 +1405,7 @@ describe("KanbanTools", () => {
     expect(tasks).toHaveLength(2);
     for (const task of tasks) {
       expect(task.teamRunId).toBe("team-root-1");
+      expect(task.codebaseIds).toEqual(["codebase-team"]);
     }
   });
 

@@ -218,9 +218,7 @@ export class AgentTools {
   getEventBus() {
     return this.eventBus;
   }
-
   // ─── Tool 0: Create Task ────────────────────────────────────────────
-
   async createTask(params: {
     title: string;
     objective: string;
@@ -233,6 +231,7 @@ export class AgentTools {
     parallelGroup?: string;
     creationSource?: TaskCreationSource;
     teamRunId?: string;
+    codebaseIds?: string[];
   }): Promise<ToolResult> {
     const task = createTaskModel({
       id: uuidv4(),
@@ -247,6 +246,7 @@ export class AgentTools {
       parallelGroup: params.parallelGroup,
       creationSource: params.creationSource,
       teamRunId: params.teamRunId,
+      codebaseIds: params.codebaseIds,
     });
 
     await this.taskStore.save(task);

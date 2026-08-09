@@ -229,6 +229,7 @@ export class KanbanTools {
     contextSearchSpec?: TaskContextSearchSpec;
     sessionId?: string;
     teamRunId?: string;
+    codebaseIds?: string[];
     priority?: "low" | "medium" | "high" | "urgent";
     labels?: string[];
     assignedProvider?: string;
@@ -274,6 +275,7 @@ export class KanbanTools {
       assignedProvider: params.assignedProvider,
       contextSearchSpec: filteredContextSearchSpec.contextSearchSpec,
       teamRunId: params.teamRunId,
+      codebaseIds: params.codebaseIds,
     });
 
     await this.taskStore.save(task);
@@ -843,6 +845,7 @@ export class KanbanTools {
     columnId?: string;
     sessionId?: string;
     teamRunId?: string;
+    codebaseIds?: string[];
   }): Promise<ToolResult> {
     const board = await this.resolveBoard(params.workspaceId, params.boardId);
     if (!board) {
@@ -890,6 +893,7 @@ export class KanbanTools {
         assignedProvider: item.assignedProvider,
         contextSearchSpec: filteredContextSearchSpec.contextSearchSpec,
         teamRunId: params.teamRunId,
+        codebaseIds: params.codebaseIds,
       });
       await this.taskStore.save(task);
       await this.triggerCreatedCardAutomation(board, column, task);

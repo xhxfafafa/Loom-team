@@ -39,6 +39,21 @@ describe("AgentTools.createTask", () => {
     const task = await taskStore.get(taskId);
     expect(task?.creationSource).toBe("session");
   });
+
+  it("persists the server-resolved Team codebase", async () => {
+    const result = await tools.createTask({
+      title: "Team task",
+      objective: "Stay in the selected repository",
+      workspaceId: "workspace-1",
+      teamRunId: "team-root",
+      codebaseIds: ["codebase-team"],
+    });
+
+    const taskId = (result.data as { taskId: string }).taskId;
+    const task = await taskStore.get(taskId);
+    expect(task?.teamRunId).toBe("team-root");
+    expect(task?.codebaseIds).toEqual(["codebase-team"]);
+  });
 });
 
 describe("AgentTools.updateTask synthetic completion", () => {

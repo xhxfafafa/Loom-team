@@ -193,6 +193,42 @@ describe("ClaudeCodeProcess", () => {
     vi.useRealTimers();
   });
 
+  it("keeps a prompt alive when Claude continues streaming activity", async () => {
+    vi.useFakeTimers();
+    const fakeProcess = new FakeProcess();
+    spawnMock.mockReturnValue(fakeProcess);
+
+    const process = createProcess();
+    const startPromise = process.start();
+    await vi.advanceTimersByTimeAsync(500);
+    await startPromise;
+
+    const promptPromise = process.prompt("session-1", "Investigate the repository");
+    await vi.advanceTimersByTimeAsync(299_000);
+    fakeProcess.stdout.emit(
+      "data",
+      Buffer.from(`${JSON.stringify({
+        type: "stream_event",
+        event: {
+          type: "content_block_delta",
+          delta: { type: "text_delta", text: "Still working" },
+        },
+      })}\n`, "utf-8"),
+    );
+
+    await vi.advanceTimersByTimeAsync(299_000);
+    fakeProcess.stdout.emit(
+      "data",
+      Buffer.from(
+        `${JSON.stringify({ type: "result", result: "done", stop_reason: "end_turn" })}\n`,
+        "utf-8",
+      ),
+    );
+
+    await expect(promptPromise).resolves.toEqual({ stopReason: "end_turn" });
+    vi.useRealTimers();
+  });
+
   it("translates streaming thinking and tool parameter deltas into session updates", async () => {
     vi.useFakeTimers();
     const onNotification = vi.fn();

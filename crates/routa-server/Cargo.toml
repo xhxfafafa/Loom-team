@@ -24,7 +24,7 @@ trace-parser = { path = "../trace-parser" }
 axum = { version = "0.8", features = ["macros"] }
 axum-extra = { version = "0.10", features = ["multipart"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "fs", "limit"] }
 
 # Async runtime (re-used from routa-core, but needed for server bootstrap)
 tokio = { version = "1", features = ["full"] }

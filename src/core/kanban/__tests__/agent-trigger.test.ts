@@ -11,10 +11,6 @@ const { dispatchSessionPromptMock } = vi.hoisted(() => ({
   dispatchSessionPromptMock: vi.fn(),
 }));
 
-vi.mock("../../acp/claude-code-sdk-adapter", () => ({
-  isClaudeCodeSdkConfigured: vi.fn(),
-}));
-
 vi.mock("@/core/acp/session-prompt", () => ({
   dispatchSessionPrompt: dispatchSessionPromptMock,
 }));
@@ -28,8 +24,6 @@ vi.mock("../../a2a", () => ({
     waitForCompletion: waitForCompletionMock,
   })),
 }));
-
-import { isClaudeCodeSdkConfigured } from "../../acp/claude-code-sdk-adapter";
 
 describe("buildTaskPrompt", () => {
   it("keeps backlog automation in planning mode", () => {
@@ -816,19 +810,7 @@ describe.skip("triggerAssignedTaskAgent", () => {
 });
 
 describe("resolveKanbanAutomationProvider", () => {
-  afterEach(() => {
-    vi.mocked(isClaudeCodeSdkConfigured).mockReset();
-  });
-
-  it("falls back to the Claude SDK when automation targets claude and the SDK is configured", () => {
-    vi.mocked(isClaudeCodeSdkConfigured).mockReturnValue(true);
-
-    expect(resolveKanbanAutomationProvider("claude")).toBe("claude-code-sdk");
-  });
-
-  it("preserves the configured provider when no Claude SDK fallback is needed", () => {
-    vi.mocked(isClaudeCodeSdkConfigured).mockReturnValue(false);
-
+  it("preserves the configured provider even when SDK credentials are available", () => {
     expect(resolveKanbanAutomationProvider("claude")).toBe("claude");
     expect(resolveKanbanAutomationProvider("codex")).toBe("codex");
     expect(resolveKanbanAutomationProvider(undefined)).toBe("opencode");

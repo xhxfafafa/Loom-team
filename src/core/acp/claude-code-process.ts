@@ -4,6 +4,8 @@ import { awaitProcessReady, needsShell } from "@/core/acp/utils";
 import type { IProcessHandle } from "@/core/platform/interfaces";
 import { getServerBridge } from "@/core/platform";
 
+const PROMPT_IDLE_TIMEOUT_MS = 300_000;
+
 /**
  * Claude Code stream-json protocol types.
  *
@@ -194,6 +196,22 @@ export class ClaudeCodeProcess {
         this._config.permissionMode = mode;
     }
 
+    private refreshPromptIdleTimeout(): void {
+        if (!this.promptReject) return;
+
+        if (this.promptTimeout) {
+            clearTimeout(this.promptTimeout);
+        }
+
+        this.promptTimeout = setTimeout(() => {
+            const reject = this.promptReject;
+            this.promptResolve = null;
+            this.promptReject = null;
+            this.promptTimeout = null;
+            reject?.(new Error(`Timeout waiting for session/prompt (${PROMPT_IDLE_TIMEOUT_MS / 1000}s without activity)`));
+        }, PROMPT_IDLE_TIMEOUT_MS);
+    }
+
     /**
      * Spawn the Claude Code process with stream-json mode.
      */
@@ -354,8 +372,6 @@ export class ClaudeCodeProcess {
             session_id: this._sessionId ?? undefined,
         });
 
-        const PROMPT_TIMEOUT_MS = 300_000; // 5 min — matches ACP process
-
         return new Promise<{ stopReason: string }>((resolve, reject) => {
             if (this.promptResolve || this.promptReject) {
                 reject(new Error("Claude Code already has a prompt in flight"));
@@ -371,14 +387,10 @@ export class ClaudeCodeProcess {
             this.promptResolve = resolve;
             this.promptReject = reject;
 
-            // Timeout guard: prevents the POST handler from blocking forever
-            // when Claude Code runs a long task or the process hangs.
-            this.promptTimeout = setTimeout(() => {
-                this.promptResolve = null;
-                this.promptReject = null;
-                this.promptTimeout = null;
-                reject(new Error(`Timeout waiting for session/prompt (${PROMPT_TIMEOUT_MS / 1000}s)`));
-            }, PROMPT_TIMEOUT_MS);
+            // Fail only after five minutes without any Claude output. Long
+            // running agents commonly stream tool/thinking updates beyond five
+            // minutes, and must not be marked failed while they are active.
+            this.refreshPromptIdleTimeout();
 
             // Write to stdin
             if (!this.process?.stdin?.writable) {
@@ -478,6 +490,10 @@ export class ClaudeCodeProcess {
      * Handle a parsed Claude output message and translate to ACP session/update.
      */
     private handleClaudeMessage(msg: ClaudeOutputMessage): void {
+        // Any protocol message proves that the active CLI process is still
+        // responsive, so extend the inactivity deadline for this prompt.
+        this.refreshPromptIdleTimeout();
+
         const sid = this._sessionId ?? "claude-session";
 
         switch (msg.type) {

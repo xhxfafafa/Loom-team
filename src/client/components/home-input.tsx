@@ -318,14 +318,17 @@ export function HomeInput({
     };
   }, [codebases]);
 
-  // Auto-select default codebase
+  // RepoPicker also supports cloned repositories that have not yet been
+  // registered as workspace codebases. Treat a user's explicit selection as
+  // authoritative across codebase/accessibility refreshes; use the default
+  // codebase only to initialize an empty selection.
   useEffect(() => {
+    if (repoSelectionRef.current) {
+      return;
+    }
+
     const validCodebases = codebases.filter((codebase) => accessibleCodebasePaths.has(codebase.repoPath));
     if (validCodebases.length === 0) {
-      if (repoSelectionRef.current && codebases.some((codebase) => codebase.repoPath === repoSelectionRef.current?.path)) {
-        repoSelectionRef.current = null;
-        setRepoSelection(null);
-      }
       return;
     }
 

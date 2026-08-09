@@ -7,13 +7,19 @@ const {
   mockDesktopAwareFetch,
   mockSelectSession,
   mockConnect,
+  mockPromptSession,
+  mockConsumePendingPrompt,
   mockHeaderProps,
 } = vi.hoisted(() => ({
   mockDesktopAwareFetch: vi.fn(),
   mockSelectSession: vi.fn(),
   mockConnect: vi.fn(async () => {}),
+  mockPromptSession: vi.fn(async () => {}),
+  mockConsumePendingPrompt: vi.fn((): string | null => null),
   mockHeaderProps: [] as Array<{ teamRuns: Array<{ sessionId: string; name?: string }> }>,
 }));
+
+let mockAcpSessionId: string | null = "session-1";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -49,16 +55,20 @@ vi.mock("@/client/hooks/use-acp", () => ({
   useAcp: () => ({
     connected: true,
     loading: false,
-    sessionId: "session-1",
-    updates: [],
+    sessionId: mockAcpSessionId,
+    updates: [{ update: { sessionUpdate: "acp_status", status: "ready" } }],
     providers: [{ id: "codex", name: "Codex", description: "Codex", command: "codex-acp" }],
     selectedProvider: "codex",
     connect: mockConnect,
     prompt: vi.fn(async () => {}),
-    promptSession: vi.fn(async () => {}),
+    promptSession: mockPromptSession,
     setProvider: vi.fn(),
     selectSession: mockSelectSession,
   }),
+}));
+
+vi.mock("@/client/utils/pending-prompt", () => ({
+  consumePendingPrompt: mockConsumePendingPrompt,
 }));
 
 vi.mock("@/client/hooks/use-workspaces", () => ({
@@ -124,6 +134,7 @@ describe("TeamRunPageClient", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockHeaderProps.length = 0;
+    mockAcpSessionId = "session-1";
 
     mockDesktopAwareFetch.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -213,5 +224,32 @@ describe("TeamRunPageClient", () => {
       "session-1",
       "session-2",
     ]);
+  });
+
+  it("waits for the target ACP session before consuming and sending the initial prompt", async () => {
+    mockAcpSessionId = null;
+    mockConsumePendingPrompt.mockReturnValue("Coordinate this team run");
+
+    const { rerender } = render(<TeamRunPageClient />);
+
+    await waitFor(() => {
+      expect(mockDesktopAwareFetch).toHaveBeenCalledWith(
+        "/api/sessions/session-1",
+        expect.objectContaining({ cache: "no-store" }),
+      );
+    });
+    expect(mockConsumePendingPrompt).not.toHaveBeenCalled();
+    expect(mockPromptSession).not.toHaveBeenCalled();
+
+    mockAcpSessionId = "session-1";
+    rerender(<TeamRunPageClient />);
+
+    await waitFor(() => {
+      expect(mockConsumePendingPrompt).toHaveBeenCalledWith("session-1");
+      expect(mockPromptSession).toHaveBeenCalledWith(
+        "session-1",
+        "Coordinate this team run",
+      );
+    });
   });
 });

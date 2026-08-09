@@ -152,7 +152,6 @@ export function TeamRunPageClient() {
     providers: acpProviders,
     selectedProvider: acpSelectedProvider,
     connect: connectAcp,
-    prompt: acpPrompt,
     promptSession: acpPromptSession,
     setProvider: acpSetProvider,
     selectSession,
@@ -182,6 +181,7 @@ export function TeamRunPageClient() {
   const sessionBlockRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const lastUpdateIndexRef = useRef(0);
   const pendingPromptSentRef = useRef<Set<string>>(new Set());
+  const pendingPromptInFlightRef = useRef<Set<string>>(new Set());
   const pendingPromptTextRef = useRef<string | null>(null);
   const contextKeyRef = useRef(`${workspaceId}:${sessionId}`);
   const metadataRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -455,7 +455,9 @@ export function TeamRunPageClient() {
 
   useEffect(() => {
     if (!sessionId || !acpConnected || acpLoading) return;
+    if (acp.sessionId !== sessionId || session?.sessionId !== sessionId) return;
     if (pendingPromptSentRef.current.has(sessionId)) return;
+    if (pendingPromptInFlightRef.current.has(sessionId)) return;
 
     if (!pendingPromptTextRef.current) {
       const text = consumePendingPrompt(sessionId);
@@ -474,23 +476,37 @@ export function TeamRunPageClient() {
     const acpReady = lastStatusUpdate &&
       ((lastStatusUpdate as Record<string, unknown>).update as Record<string, unknown>).status === "ready";
 
+    const sendPendingPrompt = async () => {
+      if (pendingPromptSentRef.current.has(sessionId)) return;
+      if (pendingPromptInFlightRef.current.has(sessionId)) return;
+
+      pendingPromptInFlightRef.current.add(sessionId);
+      try {
+        await acpPromptSession(sessionId, pendingText);
+        pendingPromptSentRef.current.add(sessionId);
+        pendingPromptTextRef.current = null;
+      } finally {
+        pendingPromptInFlightRef.current.delete(sessionId);
+      }
+    };
+
     if (acpReady) {
-      pendingPromptSentRef.current.add(sessionId);
-      pendingPromptTextRef.current = null;
-      void acpPrompt(pendingText);
+      void sendPendingPrompt();
       return;
     }
 
     const timer = setTimeout(() => {
-      if (!pendingPromptSentRef.current.has(sessionId) && pendingPromptTextRef.current) {
-        pendingPromptSentRef.current.add(sessionId);
-        pendingPromptTextRef.current = null;
-        void acpPrompt(pendingText);
+      if (
+        !pendingPromptSentRef.current.has(sessionId) &&
+        !pendingPromptInFlightRef.current.has(sessionId) &&
+        pendingPromptTextRef.current
+      ) {
+        void sendPendingPrompt();
       }
     }, 8000);
 
     return () => clearTimeout(timer);
-  }, [sessionId, acpConnected, acpLoading, acpUpdates, acpPrompt]);
+  }, [sessionId, session?.sessionId, acp.sessionId, acpConnected, acpLoading, acpUpdates, acpPromptSession]);
 
   useEffect(() => {
     lastUpdateIndexRef.current = 0;

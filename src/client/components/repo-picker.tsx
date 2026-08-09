@@ -15,7 +15,6 @@ import { createPortal } from "react-dom";
 import { BranchSelector } from "./branch-selector";
 import { dangerGhostButtonClassName, dangerSurfaceClassName } from "./color-system";
 import { useTranslation } from "@/i18n";
-import { getPlatformBridge, isDesktop } from "@/core/platform";
 import { Check, ChevronDown, Copy, Download, PieChart, Search, X, GitBranch, Book, Folder, FolderOpen, RefreshCcw } from "lucide-react";
 
 
@@ -135,6 +134,17 @@ function isLikelyLocalPath(text: string): boolean {
     t.startsWith("./") ||
     t.startsWith("../") ||
     /^[a-zA-Z]:[\\/]/.test(t)
+  );
+}
+
+/**
+ * Native file dialogs are available only inside the Tauri renderer. Keep this
+ * check in the client component instead of importing the platform bridge:
+ * that bridge includes Node.js-only web/server implementations.
+ */
+function isTauriRenderer(): boolean {
+  return typeof window !== "undefined" && (
+    "__TAURI__" in window || "__TAURI_INTERNALS__" in window
   );
 }
 // ─── Component ──────────────────────────────────────────────────────────
@@ -428,7 +438,10 @@ export function RepoPicker({
 
   const handleBrowseFolder = useCallback(async () => {
     try {
-      const selected = await getPlatformBridge().dialog.open({
+      // The plugin is loaded only when the desktop-only action is used. This
+      // keeps Node.js server bridge modules out of the browser dependency graph.
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
         directory: true,
         multiple: false,
         title: t.repoPicker.selectFolderDialogTitle,
@@ -812,7 +825,7 @@ export function RepoPicker({
                     onKeyDown={handleLocalPathKeyDown}
                     autoFocus
                   />
-                  {isDesktop() && (
+                  {isTauriRenderer() && (
                     <button
                       type="button"
                       onClick={() => void handleBrowseFolder()}

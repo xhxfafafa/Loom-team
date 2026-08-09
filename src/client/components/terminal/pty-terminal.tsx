@@ -10,7 +10,6 @@
  */
 
 import { useRef, useEffect, useState, useCallback } from "react";
-import { getPlatformBridge } from "@/core/platform";
 import { Terminal as TerminalIcon1 } from "lucide-react";
 
 
@@ -114,9 +113,11 @@ export function PtyTerminal({
       terminalRef.current = terminal;
       fitAddonRef.current = fitAddon;
 
-      // Create PTY session via Tauri
-      const bridge = getPlatformBridge();
-      const sessionId = await bridge.invoke<string>("pty_create", {
+      // Import the browser-safe Tauri IPC client on demand. Importing the
+      // shared platform bridge here would also pull its Node.js web bridge
+      // (fs, child_process, database drivers) into the Next.js client bundle.
+      const { invoke } = await import("@tauri-apps/api/core");
+      const sessionId = await invoke<string>("pty_create", {
         command,
         args,
         cwd,
@@ -129,7 +130,7 @@ export function PtyTerminal({
       // Handle user input -> PTY
       terminal.onData(async (data) => {
         if (sessionIdRef.current) {
-          await bridge.invoke("pty_write", {
+          await invoke("pty_write", {
             sessionId: sessionIdRef.current,
             data,
           });
@@ -139,7 +140,7 @@ export function PtyTerminal({
       // Handle resize
       terminal.onResize(async ({ rows, cols }) => {
         if (sessionIdRef.current) {
-          await bridge.invoke("pty_resize", {
+          await invoke("pty_resize", {
             sessionId: sessionIdRef.current,
             rows,
             cols,
@@ -151,7 +152,7 @@ export function PtyTerminal({
       const readLoop = async () => {
         if (!sessionIdRef.current) return;
         try {
-          const data = await bridge.invoke<string | null>("pty_read", {
+          const data = await invoke<string | null>("pty_read", {
             sessionId: sessionIdRef.current,
           });
           if (data) {
@@ -183,8 +184,9 @@ export function PtyTerminal({
         cancelAnimationFrame(readLoopRef.current);
       }
       if (sessionIdRef.current && isTauri) {
-        const bridge = getPlatformBridge();
-        bridge.invoke("pty_kill", { sessionId: sessionIdRef.current }).catch(() => {});
+        void import("@tauri-apps/api/core")
+          .then(({ invoke }) => invoke("pty_kill", { sessionId: sessionIdRef.current }))
+          .catch(() => {});
       }
       terminalRef.current?.dispose();
     };

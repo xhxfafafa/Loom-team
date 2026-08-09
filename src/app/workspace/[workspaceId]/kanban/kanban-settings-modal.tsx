@@ -2,6 +2,7 @@
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AcpProviderInfo } from "@/client/acp-client";
+import { resolveApiPath } from "@/client/config/backend";
 import { desktopAwareFetch } from "@/client/utils/diagnostics";
 import { getSpecialistCategory, type SpecialistCategory } from "@/client/utils/specialist-categories";
 import {
@@ -38,6 +39,9 @@ import {
 export type { ColumnAutomationConfig } from "./kanban-settings-modal-parts";
 
 const BOARD_VIEW_ID = "__kanban_board__";
+
+/** Confirmation token required to delete unassigned historical cards. */
+const UNASSIGNED_DELETE_CONFIRM_TOKEN = "DELETE";
 
 export interface KanbanSettingsModalProps {
   board: KanbanBoardInfo;
@@ -92,6 +96,12 @@ export function KanbanSettingsModal({
   const [selectedViewId, setSelectedViewId] = useState<string>(() => board.columns[0]?.id ?? BOARD_VIEW_ID);
   const [saving, setSaving] = useState(false);
   const [clearingAll, setClearingAll] = useState(false);
+  const [unassignedCount, setUnassignedCount] = useState<number | null>(null);
+  const [unassignedLoadFailed, setUnassignedLoadFailed] = useState(false);
+  const [unassignedConfirmOpen, setUnassignedConfirmOpen] = useState(false);
+  const [unassignedConfirmText, setUnassignedConfirmText] = useState("");
+  const [deletingUnassigned, setDeletingUnassigned] = useState(false);
+  const [unassignedMessage, setUnassignedMessage] = useState<{ tone: "error" | "success"; text: string } | null>(null);
   const [specialistCategory, setSpecialistCategory] = useState<SpecialistCategory>("kanban");
   const [kanbanExportWorkspaceId, setKanbanExportWorkspaceId] = useState<string>(() =>
     loadKanbanExportWorkspaceId(board.workspaceId || "default"),
@@ -399,6 +409,60 @@ export function KanbanSettingsModal({
       await onClearAll();
     } finally {
       setClearingAll(false);
+    }
+  };
+
+  const loadUnassignedCount = useCallback(async () => {
+    setUnassignedLoadFailed(false);
+    try {
+      const response = await desktopAwareFetch(
+        resolveApiPath(`/tasks/unassigned?workspaceId=${encodeURIComponent(board.workspaceId)}`),
+        { cache: "no-store" },
+      );
+      if (!response.ok) {
+        setUnassignedLoadFailed(true);
+        return;
+      }
+      const data = (await response.json()) as { count: number };
+      setUnassignedCount(data.count);
+    } catch {
+      setUnassignedLoadFailed(true);
+    }
+  }, [board.workspaceId]);
+
+  useEffect(() => {
+    void loadUnassignedCount();
+  }, [loadUnassignedCount]);
+
+  const handleDeleteUnassignedCards = async () => {
+    if (unassignedConfirmText.trim() !== UNASSIGNED_DELETE_CONFIRM_TOKEN || deletingUnassigned) return;
+    setDeletingUnassigned(true);
+    setUnassignedMessage(null);
+    try {
+      const response = await desktopAwareFetch(
+        resolveApiPath(`/tasks/unassigned?workspaceId=${encodeURIComponent(board.workspaceId)}`),
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirm: UNASSIGNED_DELETE_CONFIRM_TOKEN }),
+        },
+      );
+      if (!response.ok) {
+        setUnassignedMessage({ tone: "error", text: t.kanban.unassignedCardsDeleteFailed });
+        return;
+      }
+      const data = (await response.json()) as { deletedCount: number };
+      setUnassignedMessage({
+        tone: "success",
+        text: t.kanban.unassignedCardsDeleted.replace("{count}", String(data.deletedCount)),
+      });
+      setUnassignedConfirmOpen(false);
+      setUnassignedConfirmText("");
+      await loadUnassignedCount();
+    } catch {
+      setUnassignedMessage({ tone: "error", text: t.kanban.unassignedCardsDeleteFailed });
+    } finally {
+      setDeletingUnassigned(false);
     }
   };
 
@@ -864,13 +928,79 @@ export function KanbanSettingsModal({
                   </SectionCard>
 
                   <SectionCard eyebrow={t.common.delete} title={t.kanban.dangerZone} description={t.kanban.dangerZoneHint}>
-                    <button
-                      onClick={() => void handleClearAll()}
-                      disabled={saving || clearingAll}
-                      className="rounded-xl border border-rose-200 px-4 py-1.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10"
-                    >
-                      {clearingAll ? t.kanban.clearingAll : t.kanban.clearAllCards}
-                    </button>
+                    <div className="space-y-4">
+                      <button
+                        onClick={() => void handleClearAll()}
+                        disabled={saving || clearingAll}
+                        className="rounded-xl border border-rose-200 px-4 py-1.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                      >
+                        {clearingAll ? t.kanban.clearingAll : t.kanban.clearAllCards}
+                      </button>
+
+                      <div className="border-t border-slate-200 pt-4 dark:border-slate-700">
+                        <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                          {t.kanban.unassignedCards}
+                        </div>
+                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                          {t.kanban.unassignedCardsHint}
+                        </p>
+                        <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200" aria-live="polite">
+                          {unassignedCount === null
+                            ? unassignedLoadFailed
+                              ? t.kanban.unassignedCardsLoadFailed
+                              : t.common.loading
+                            : t.kanban.unassignedCardsCount.replace("{count}", String(unassignedCount))}
+                        </p>
+                        {unassignedConfirmOpen ? (
+                          <div className="mt-3 space-y-2">
+                            <label className="block text-sm text-slate-600 dark:text-slate-300">
+                              {t.kanban.unassignedCardsConfirmHint.replace("{token}", UNASSIGNED_DELETE_CONFIRM_TOKEN)}
+                              <input
+                                type="text"
+                                value={unassignedConfirmText}
+                                onChange={(event) => setUnassignedConfirmText(event.target.value)}
+                                placeholder={UNASSIGNED_DELETE_CONFIRM_TOKEN}
+                                aria-label="Unassigned cards deletion confirmation"
+                                className="mt-2 w-full max-w-xs rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-200 dark:border-slate-600 dark:bg-[#0b1119] dark:text-slate-100 dark:focus:border-rose-500 dark:focus:ring-rose-900/40"
+                              />
+                            </label>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => void handleDeleteUnassignedCards()}
+                                disabled={deletingUnassigned || unassignedConfirmText.trim() !== UNASSIGNED_DELETE_CONFIRM_TOKEN}
+                                className="rounded-xl bg-rose-600 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-rose-500 dark:hover:bg-rose-600"
+                              >
+                                {deletingUnassigned ? t.kanban.unassignedCardsDeleting : t.kanban.unassignedCardsDelete}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setUnassignedConfirmOpen(false);
+                                  setUnassignedConfirmText("");
+                                }}
+                                disabled={deletingUnassigned}
+                                className="rounded-xl border border-slate-200 px-4 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-[#131c2a]"
+                              >
+                                {t.common.cancel}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setUnassignedMessage(null);
+                              setUnassignedConfirmOpen(true);
+                            }}
+                            disabled={saving || deletingUnassigned || unassignedLoadFailed || (unassignedCount ?? 0) === 0}
+                            className="mt-3 rounded-xl border border-rose-200 px-4 py-1.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                          >
+                            {t.kanban.unassignedCardsDelete}
+                          </button>
+                        )}
+                        {unassignedMessage ? (
+                          <StatusMessage tone={unassignedMessage.tone}>{unassignedMessage.text}</StatusMessage>
+                        ) : null}
+                      </div>
+                    </div>
                   </SectionCard>
                 </div>
               ) : selectedColumn ? (

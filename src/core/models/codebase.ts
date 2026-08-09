@@ -1,8 +1,10 @@
 /**
  * Codebase model
  *
- * Represents a Git repository associated with a Workspace.
+ * Represents a local project folder associated with a Workspace.
  * A Workspace can have multiple Codebases (e.g., microservices).
+ * Being a git repository is optional: git features are only available
+ * when repoPath points at a git working repository.
  *
  * Supports two source types:
  *   - "local" (default): repoPath points to a local directory

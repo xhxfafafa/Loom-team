@@ -81,11 +81,114 @@ describe("RepoPicker", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Local Repository Path")).toBeTruthy();
+      expect(screen.getByText("Local Folder Path")).toBeTruthy();
       expect(
         screen.getByDisplayValue("~/code/routa-js"),
       ).toBeTruthy();
     });
+  });
+
+  it("marks plain local folders as non-git selections", async () => {
+    desktopAwareFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/clone" && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ repos: [] }), { status: 200 });
+      }
+
+      if (url === "/api/clone/local" && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            name: "plain-folder",
+            path: "/tmp/plain-folder",
+            git: false,
+            branch: "",
+            branches: [],
+            status: { clean: true, ahead: 0, behind: 0, modified: 0, untracked: 0 },
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+
+    const onChange = vi.fn();
+    render(<RepoPicker value={null} onChange={onChange} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /select, clone, or load a repository/i }));
+    fireEvent.click(screen.getByRole("button", { name: /local project/i }));
+    fireEvent.change(screen.getByPlaceholderText("/Users/you/project or ~/project"), {
+      target: { value: "/tmp/plain-folder" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /use local project/i }));
+
+    await waitFor(() =>
+      expect(onChange).toHaveBeenCalledWith({
+        name: "plain-folder",
+        path: "/tmp/plain-folder",
+        branch: "",
+        git: false,
+      }),
+    );
+  });
+
+  it("shows a localized error when the local folder does not exist", async () => {
+    desktopAwareFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/clone" && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ repos: [] }), { status: 200 });
+      }
+
+      if (url === "/api/clone/local" && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            error: "Local folder does not exist: /tmp/missing",
+            errorCode: "not_found",
+          }),
+          { status: 400 },
+        );
+      }
+
+      return new Response(JSON.stringify({ error: "unexpected request" }), { status: 500 });
+    });
+
+    render(<RepoPicker value={null} onChange={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /select, clone, or load a repository/i }));
+    fireEvent.click(screen.getByRole("button", { name: /local project/i }));
+    fireEvent.change(screen.getByPlaceholderText("/Users/you/project or ~/project"), {
+      target: { value: "/tmp/missing" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /use local project/i }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("The folder does not exist. Check the path and try again."),
+      ).toBeTruthy(),
+    );
+  });
+
+  it("shows the non-git notice instead of branch controls for plain folders", () => {
+    render(
+      <RepoPicker
+        value={{ name: "plain-folder", path: "/tmp/plain-folder", branch: "", git: false }}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("No version control")).toBeTruthy();
+    expect(screen.queryByTestId("branch-selector")).toBeNull();
+  });
+
+  it("keeps branch controls for git repositories", () => {
+    render(
+      <RepoPicker
+        value={{ name: "routa-js", path: "/tmp/routa-js", branch: "main", git: true }}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("No version control")).toBeNull();
+    expect(screen.getByTestId("branch-selector")).toBeTruthy();
   });
 
   it("shows full worktree path on hover and offers copy for muted path display", async () => {

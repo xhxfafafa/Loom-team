@@ -1,11 +1,15 @@
-//! Local repository API - /api/clone/local
+//! Local project API - /api/clone/local
 //!
-//! POST /api/clone/local - Validate and load an existing local git repository
+//! POST /api/clone/local - Validate and load an existing local folder.
+//!
+//! Any existing, readable directory can be loaded as a project. Git is an
+//! optional capability: branch/status metadata is only collected when the
+//! folder is a git working repository, and no git commands run otherwise.
 
 use axum::{routing::post, Json, Router};
 use serde::Deserialize;
 
-use crate::api::repo_context::{normalize_local_repo_path, validate_local_git_repo_path};
+use crate::api::repo_context::{normalize_local_repo_path, validate_local_project_path};
 use crate::error::ServerError;
 use crate::git;
 use crate::state::AppState;
@@ -27,16 +31,35 @@ async fn load_local_repo(
         .ok_or_else(|| ServerError::BadRequest("Missing 'path' field".into()))?;
 
     let repo_path = normalize_local_repo_path(&raw_path);
-    validate_local_git_repo_path(&repo_path)?;
+    validate_local_project_path(&repo_path)?;
 
     let repo_path_string = repo_path.to_string_lossy().to_string();
-    let (branch_info, status) = tokio::task::spawn_blocking({
+    let (is_git, branch_info, status) = tokio::task::spawn_blocking({
         let repo_path_string = repo_path_string.clone();
         move || {
-            (
-                git::get_branch_info(&repo_path_string),
-                git::get_repo_status(&repo_path_string),
-            )
+            if git::is_git_repository(&repo_path_string) {
+                (
+                    true,
+                    git::get_branch_info(&repo_path_string),
+                    git::get_repo_status(&repo_path_string),
+                )
+            } else {
+                // Plain local folder: never run git commands for it.
+                (
+                    false,
+                    git::RepoBranchInfo {
+                        current: String::new(),
+                        branches: Vec::new(),
+                    },
+                    git::RepoStatus {
+                        clean: true,
+                        ahead: 0,
+                        behind: 0,
+                        modified: 0,
+                        untracked: 0,
+                    },
+                )
+            }
         }
     })
     .await
@@ -52,6 +75,7 @@ async fn load_local_repo(
         "success": true,
         "name": name,
         "path": repo_path_string,
+        "git": is_git,
         "branch": branch_info.current,
         "branches": branch_info.branches,
         "status": status,

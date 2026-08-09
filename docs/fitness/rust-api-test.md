@@ -60,6 +60,8 @@ metrics:
 | kanban | `POST /api/kanban/import` | import | YAML 导入成功并返回 applied 明细 | VERIFIED | `crates/routa-server/tests/rust_api_task_artifacts.rs::api_kanban_import_export_roundtrip` |
 | kanban | `GET /api/kanban/export` | export + validation | YAML 导出成功；缺失 `workspaceId` 返回 400 | VERIFIED | `crates/routa-server/tests/rust_api_task_artifacts.rs::api_kanban_import_export_roundtrip` |
 | codebase | `POST /api/workspaces/{workspaceId}/codebases` | create + duplicate handling | bare repo 拒绝、创建返回 201、冲突返回语义一致性 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_codebase_and_file_search_flow` |
+| codebase | `POST /api/workspaces/{workspaceId}/codebases` | non-git folder import | 普通目录 codebase 返回 201 且 changes 视图优雅降级（error 提示 + files 为空）；bare repo 仍被拒绝 | VERIFIED | `crates/routa-server/tests/rust_api_local_folder_codebases.rs::plain_folder_can_be_added_as_workspace_codebase` |
+| clone | `POST /api/clone/local` | local folder load (git optional) | 普通目录返回 200 + `git=false` 且不触发 git 命令；git 仓库仍返回 branch/status；缺失路径、文件路径、不可读路径返回 400 | VERIFIED | `crates/routa-server/tests/rust_api_local_folder_codebases.rs` |
 | codebase | `GET /api/files/search` | search path | 缺失 repoPath 返回 400；结果可见性与扫描计数正确 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_codebase_and_file_search_flow` |
 | codebase | `PATCH /api/codebases/{id}` | update | 更新字段成功 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_codebase_and_file_search_flow` |
 | codebase | `POST /api/codebases/{id}/default` | set default | 默认目标可读返回正确 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_codebase_and_file_search_flow` |
@@ -104,6 +106,7 @@ metrics:
 
 ## 执行命令（固定）
 - `cargo test -p routa-server --test rust_api_end_to_end`
+- `cargo test -p routa-server --test rust_api_local_folder_codebases`
 
 ## 关键阻塞记录
 - 若环境缺失导致 e2e 无法执行，标为 `BLOCKED: env`

@@ -33,7 +33,10 @@ export async function PATCH(
     const validation = validateRepoInput(repoPath);
     if (!validation.valid || validation.isGitHub) {
       return NextResponse.json(
-        { error: validation.error ?? "repoPath must point to a local git repository" },
+        {
+          error: validation.error ?? "repoPath must point to an existing local directory",
+          errorCode: validation.errorCode,
+        },
         { status: 400 },
       );
     }

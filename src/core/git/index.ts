@@ -44,6 +44,7 @@ export {
   type BranchValidationResult,
   type ClonedRepoInfo,
   type ValidationResult,
+  type LocalFolderErrorCode,
 } from "./git-utils";
 
 export {

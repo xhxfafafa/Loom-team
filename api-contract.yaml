@@ -3470,7 +3470,12 @@ paths:
   /api/clone/local:
     post:
       operationId: loadLocalRepo
-      summary: Load an existing local git repository
+      summary: Load an existing local folder (git optional)
+      description: >-
+        Validates and loads any existing, readable local directory as a
+        project. Being a git repository is optional: `git` reports whether
+        the folder is a git working repository, and branch/status metadata
+        is only populated when it is.
       requestBody:
         required: true
         content:
@@ -3495,6 +3500,8 @@ paths:
                     type: string
                   path:
                     type: string
+                  git:
+                    type: boolean
                   branch:
                     type: string
                   branches:

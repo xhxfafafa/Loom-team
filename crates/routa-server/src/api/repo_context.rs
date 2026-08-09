@@ -64,6 +64,52 @@ pub fn validate_repo_path(candidate: &Path, label: &str) -> Result<(), ServerErr
     Ok(())
 }
 
+/// Validate any existing, readable local directory as a project root.
+///
+/// Being a git repository is intentionally NOT required here: local
+/// projects can be plain folders, and git features stay optional.
+pub fn validate_local_folder_path(candidate: &Path) -> Result<(), ServerError> {
+    if !candidate.exists() {
+        return Err(ServerError::BadRequest(format!(
+            "Local folder does not exist: {}",
+            candidate.display()
+        )));
+    }
+
+    if !candidate.is_dir() {
+        return Err(ServerError::BadRequest(format!(
+            "Path is not a directory: {}",
+            candidate.display()
+        )));
+    }
+
+    if let Err(error) = fs::read_dir(candidate) {
+        return Err(ServerError::BadRequest(format!(
+            "Local folder is not readable: {} ({error})",
+            candidate.display()
+        )));
+    }
+
+    Ok(())
+}
+
+/// Validate a local project folder and reject bare git repositories.
+///
+/// Plain (non-git) folders pass; bare git repositories are rejected because
+/// they have no working directory to browse or edit.
+pub fn validate_local_project_path(candidate: &Path) -> Result<(), ServerError> {
+    validate_local_folder_path(candidate)?;
+
+    let path_string = candidate.to_string_lossy().to_string();
+    if git::is_git_repository(&path_string) && git::is_bare_git_repository(&path_string) {
+        return Err(ServerError::BadRequest(
+            "Cannot add a bare git repository as a codebase".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 pub fn resolve_existing_repo_dir(value: &str) -> Option<PathBuf> {
     let candidate = normalize_local_repo_path(value);
     if candidate.exists() && candidate.is_dir() {
@@ -87,16 +133,17 @@ pub fn canonical_repo_path_for_response(value: &str) -> String {
 }
 
 pub fn validate_local_git_repo_path(candidate: &Path) -> Result<(), ServerError> {
-    validate_repo_path(candidate, "Path ")?;
+    validate_local_folder_path(candidate)?;
 
-    if !git::is_git_repository(&candidate.to_string_lossy()) {
+    let path_string = candidate.to_string_lossy().to_string();
+    if !git::is_git_repository(&path_string) {
         return Err(ServerError::BadRequest(format!(
             "Directory exists but is not a git repository: {}",
             candidate.display()
         )));
     }
 
-    if git::is_bare_git_repository(&candidate.to_string_lossy()) {
+    if git::is_bare_git_repository(&path_string) {
         return Err(ServerError::BadRequest(
             "Cannot add a bare git repository as a codebase".to_string(),
         ));
@@ -263,7 +310,10 @@ pub fn read_to_string(path: &Path) -> Result<String, ServerError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{current_routa_repo_root_from, is_routa_repo_root};
+    use super::{
+        current_routa_repo_root_from, is_routa_repo_root, validate_local_folder_path,
+        validate_local_project_path,
+    };
 
     #[test]
     fn detects_routa_repo_root_from_markers() {
@@ -291,5 +341,41 @@ mod tests {
 
         assert!(!is_routa_repo_root(temp.path()));
         assert_eq!(current_routa_repo_root_from(temp.path()), None);
+    }
+
+    #[test]
+    fn local_folder_validation_accepts_plain_directories() {
+        let temp = tempfile::tempdir().expect("tempdir should exist");
+
+        assert!(validate_local_folder_path(temp.path()).is_ok());
+        // Git is optional: a plain directory is a valid local project.
+        assert!(validate_local_project_path(temp.path()).is_ok());
+    }
+
+    #[test]
+    fn local_folder_validation_rejects_missing_paths() {
+        let temp = tempfile::tempdir().expect("tempdir should exist");
+        let missing = temp.path().join("does-not-exist");
+
+        let error = validate_local_folder_path(&missing)
+            .expect_err("missing path should be rejected");
+        assert!(
+            error.to_string().contains("Local folder does not exist:"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn local_folder_validation_rejects_files() {
+        let temp = tempfile::tempdir().expect("tempdir should exist");
+        let file_path = temp.path().join("not-a-dir.txt");
+        std::fs::write(&file_path, "file, not folder\n").expect("file should be written");
+
+        let error = validate_local_folder_path(&file_path)
+            .expect_err("file path should be rejected");
+        assert!(
+            error.to_string().contains("Path is not a directory:"),
+            "unexpected error: {error}"
+        );
     }
 }

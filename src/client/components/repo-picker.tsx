@@ -15,7 +15,8 @@ import { createPortal } from "react-dom";
 import { BranchSelector } from "./branch-selector";
 import { dangerGhostButtonClassName, dangerSurfaceClassName } from "./color-system";
 import { useTranslation } from "@/i18n";
-import { Check, ChevronDown, Copy, Download, PieChart, Search, X, GitBranch, Book, Folder, RefreshCcw } from "lucide-react";
+import { getPlatformBridge, isDesktop } from "@/core/platform";
+import { Check, ChevronDown, Copy, Download, PieChart, Search, X, GitBranch, Book, Folder, FolderOpen, RefreshCcw } from "lucide-react";
 
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -40,6 +41,12 @@ export interface RepoSelection {
   name: string;
   path: string;
   branch: string;
+  /**
+   * Whether the selected project is a git working repository.
+   * `false` marks a plain local folder (git features stay hidden/disabled);
+   * `undefined` means unknown and preserves legacy git-enabled behavior.
+   */
+  git?: boolean;
 }
 
 interface RepoPickerProps {
@@ -341,11 +348,33 @@ export function RepoPicker({
         name: repo.name,
         path: repo.path,
         branch: repo.branch,
+        git: true,
       });
       setShowDropdown(false);
       setSearchQuery("");
     },
     [onChange]
+  );
+
+  const localFolderErrorMessage = useCallback(
+    (data: { error?: unknown; errorCode?: unknown }): string => {
+      const code = typeof data?.errorCode === "string" ? data.errorCode : "";
+      switch (code) {
+        case "not_found":
+          return t.repoPicker.errorFolderNotFound;
+        case "not_a_directory":
+          return t.repoPicker.errorNotADirectory;
+        case "not_readable":
+          return t.repoPicker.errorFolderNotReadable;
+        case "bare_repository":
+          return t.repoPicker.errorBareRepository;
+        default:
+          return typeof data?.error === "string" && data.error
+            ? data.error
+            : t.repoPicker.errorLoadLocalFolderFailed;
+      }
+    },
+    [t]
   );
 
   const handleSelectLocalRepo = useCallback(
@@ -364,9 +393,7 @@ export function RepoPicker({
         const data = await res.json().catch(() => ({}));
 
         if (!res.ok) {
-          throw new Error(
-            typeof data?.error === "string" ? data.error : "Failed to load local repository"
-          );
+          throw new Error(localFolderErrorMessage(data));
         }
 
         if (!isMountedRef.current) return;
@@ -378,6 +405,7 @@ export function RepoPicker({
               : repoPath.trim().split("/").pop() || repoPath.trim(),
           path: typeof data?.path === "string" ? data.path : repoPath.trim(),
           branch: typeof data?.branch === "string" ? data.branch : "",
+          git: typeof data?.git === "boolean" ? data.git : undefined,
         });
         setLocalPath("");
         setSearchQuery("");
@@ -385,7 +413,7 @@ export function RepoPicker({
       } catch (err) {
         if (!isMountedRef.current) return;
         setLocalRepoError(
-          err instanceof Error ? err.message : "Failed to load local repository"
+          err instanceof Error ? err.message : t.repoPicker.errorLoadLocalFolderFailed
         );
       } finally {
         if (isMountedRef.current) {
@@ -393,8 +421,27 @@ export function RepoPicker({
         }
       }
     },
-    [onChange]
+    [localFolderErrorMessage, onChange, t]
   );
+
+  // ── Native folder picker (desktop only) ───────────────────────────
+
+  const handleBrowseFolder = useCallback(async () => {
+    try {
+      const selected = await getPlatformBridge().dialog.open({
+        directory: true,
+        multiple: false,
+        title: t.repoPicker.selectFolderDialogTitle,
+      });
+      if (typeof selected === "string" && selected.trim()) {
+        setLocalPath(selected);
+        setLocalRepoError(null);
+        void handleSelectLocalRepo(selected);
+      }
+    } catch {
+      // Dialog cancelled or unavailable; manual path entry remains possible.
+    }
+  }, [handleSelectLocalRepo, t]);
 
   // ── Clear selection ────────────────────────────────────────────────
 
@@ -752,18 +799,32 @@ export function RepoPicker({
                 <label className="text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1 block">
                   {t.repoPicker.localRepositoryPath}
                 </label>
-                <input
-                  type="text"
-                  value={localPath}
-                  onChange={(e) => {
-                    setLocalPath(e.target.value);
-                    setLocalRepoError(null);
-                  }}
-                  placeholder={t.repoPicker.localPathPlaceholder}
-                  className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  onKeyDown={handleLocalPathKeyDown}
-                  autoFocus
-                />
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={localPath}
+                    onChange={(e) => {
+                      setLocalPath(e.target.value);
+                      setLocalRepoError(null);
+                    }}
+                    placeholder={t.repoPicker.localPathPlaceholder}
+                    className="flex-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    onKeyDown={handleLocalPathKeyDown}
+                    autoFocus
+                  />
+                  {isDesktop() && (
+                    <button
+                      type="button"
+                      onClick={() => void handleBrowseFolder()}
+                      disabled={loadingLocalRepo}
+                      title={t.repoPicker.selectFolderDialogTitle}
+                      className="flex shrink-0 items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                    >
+                      <FolderOpen className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}/>
+                      {t.repoPicker.browseFolder}
+                    </button>
+                  )}
+                </div>
               </div>
 
               {localRepoError && (
@@ -845,7 +906,11 @@ function SelectedRepoPill({
   return (
     <div className={`min-w-0 ${showMutedPath ? "flex flex-col gap-0.5" : "flex items-center gap-1.5 overflow-hidden"}`}>
       <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-        <GitRepoIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        {value.git === false ? (
+          <Folder className="w-3.5 h-3.5 shrink-0 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}/>
+        ) : (
+          <GitRepoIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        )}
 
         <button
           ref={triggerRef}
@@ -867,13 +932,22 @@ function SelectedRepoPill({
           <ChevronDown className="h-3 w-3" />
         </button>
 
-        <div className="shrink-0">
-          <BranchSelector
-            repoPath={value.path}
-            currentBranch={value.branch}
-            onBranchChange={onBranchChange}
-          />
-        </div>
+        {value.git === false ? (
+          <span
+            className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+            title={t.repoPicker.nonGitFolderNotice}
+          >
+            {t.repoPicker.versionControlDisabled}
+          </span>
+        ) : (
+          <div className="shrink-0">
+            <BranchSelector
+              repoPath={value.path}
+              currentBranch={value.branch}
+              onBranchChange={onBranchChange}
+            />
+          </div>
+        )}
 
         {showInlinePath && (
           <span

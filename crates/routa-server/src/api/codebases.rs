@@ -7,7 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::api::repo_context::{
-    canonical_repo_path_for_response, normalize_local_repo_path, validate_local_git_repo_path,
+    canonical_repo_path_for_response, normalize_local_repo_path, validate_local_project_path,
     validate_repo_path,
 };
 use crate::error::ServerError;
@@ -158,7 +158,7 @@ async fn add_codebase(
     let source_type = body.source_type.unwrap_or(CodebaseSourceType::Local);
     let repo_path = normalize_local_repo_path(&body.repo_path);
     match source_type {
-        CodebaseSourceType::Local => validate_local_git_repo_path(&repo_path)?,
+        CodebaseSourceType::Local => validate_local_project_path(&repo_path)?,
         CodebaseSourceType::Github => validate_repo_path(&repo_path, "Path ")?,
     }
     let repo_path = repo_path.to_string_lossy().to_string();
@@ -243,7 +243,7 @@ async fn update_codebase(
     let repo_path = if let Some(repo_path) = body.repo_path.as_deref() {
         let normalized = normalize_local_repo_path(repo_path);
         match requested_source_type {
-            CodebaseSourceType::Local => validate_local_git_repo_path(&normalized)?,
+            CodebaseSourceType::Local => validate_local_project_path(&normalized)?,
             CodebaseSourceType::Github => validate_repo_path(&normalized, "Path ")?,
         }
         let normalized = normalized.to_string_lossy().to_string();

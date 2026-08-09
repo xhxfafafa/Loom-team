@@ -195,3 +195,16 @@ metrics:
   - 锁定 `session/prompt` 在内存 store 丢失 session 时，仍能用本地持久化 metadata 重建 session。
 - `src/app/api/sessions/[sessionId]/history/__tests__/route.test.ts`
   - 锁定 `/api/sessions/:id/history` 的 API fallback，确保 session metadata 与历史读取链路一致。
+
+## Local Folder Import (git optional)
+
+- `src/core/git/__tests__/validate-local-folder.test.ts`
+  - 锁定 `validateRepoInput` 本地文件夹语义：任意可读取目录均可导入；git 仓库报告 `isGit`/`isBareGit`；不存在/文件路径/不可读路径分别返回 `not_found`/`not_a_directory`/`not_readable` 且不触发 git 命令；GitHub URL 解析不受影响。
+- `src/app/api/clone/local/__tests__/route.test.ts`
+  - 锁定 `POST /api/clone/local`：普通目录返回 `git=false` 与空 branch/status 且不调用 `getBranchInfo`/`getRepoStatus`；git 仓库返回完整 branch/status；错误路径返回 400 携带 `errorCode`；bare 仓库、缺失 path 字段、GitHub URL 均被拒绝。
+- `src/app/api/workspaces/[workspaceId]/codebases/__tests__/route.test.ts`
+  - 锁定 codebase 创建：普通目录返回 201 且成为默认 codebase；git 仓库仍可导入；不存在/文件/不可读路径返回 400 携带 `errorCode` 且不落库；bare 仓库保持拒绝。
+- `src/client/components/__tests__/repo-picker.test.tsx`
+  - 锁定 RepoPicker 本地文件夹交互：普通目录选择传播 `git=false`；`errorCode` 映射为本地化错误文案；非 git 项目显示「未启用版本管理」并隐藏分支控件；git 项目保留分支控件。
+- `crates/routa-server/src/api/repo_context.rs`（inline unit tests）
+  - 锁定 `validate_local_folder_path` / `validate_local_project_path`：普通目录通过校验；缺失路径与文件路径被拒绝。

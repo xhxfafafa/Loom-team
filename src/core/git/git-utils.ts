@@ -1125,12 +1125,19 @@ export function sanitizeBranchName(branch: string): string {
 
 // ─── Workspace Validation ───────────────────────────────────────────────
 
+export type LocalFolderErrorCode = "not_found" | "not_a_directory" | "not_readable";
+
 export interface ValidationResult {
   valid: boolean;
   error?: string;
+  errorCode?: LocalFolderErrorCode;
   suggestion?: string;
   warning?: string;
   isGitHub?: boolean;
+  /** Whether the local folder is a git working repository. */
+  isGit?: boolean;
+  /** Whether the local folder is a bare git repository (no working directory). */
+  isBareGit?: boolean;
   parsed?: ParsedGitHubUrl;
 }
 
@@ -1162,6 +1169,9 @@ export function normalizeLocalRepoPath(input: string): string {
 
 /**
  * Validate a repository path or GitHub URL.
+ *
+ * Local paths accept any existing, readable directory; being a git
+ * repository is optional and reported via `isGit`/`isBareGit`.
  */
 export function validateRepoInput(input: string): ValidationResult {
   if (!input || input.trim().length === 0) {
@@ -1191,23 +1201,55 @@ export function validateRepoInput(input: string): ValidationResult {
     };
   }
 
-  // Local path
+  // Local path: any existing, readable directory is a valid project root.
+  // Git is an optional capability, not an import precondition.
   const normalizedPath = normalizeLocalRepoPath(trimmed);
   const bridge = getServerBridge();
-  if (bridge.fs.existsSync(normalizedPath)) {
-    if (isGitRepository(normalizedPath)) {
-      return { valid: true };
-    }
+  if (!bridge.fs.existsSync(normalizedPath)) {
     return {
       valid: false,
-      error: "Directory exists but is not a git repository",
-      suggestion: "Initialize a git repository first or choose a different directory",
+      errorCode: "not_found",
+      error: `Local folder does not exist: ${normalizedPath}`,
+      suggestion: "Enter an existing local folder path",
     };
   }
 
+  let stats: { isDirectory: boolean; isFile: boolean };
+  try {
+    stats = bridge.fs.statSync(normalizedPath);
+  } catch {
+    return {
+      valid: false,
+      errorCode: "not_found",
+      error: `Local folder does not exist: ${normalizedPath}`,
+      suggestion: "Enter an existing local folder path",
+    };
+  }
+
+  if (!stats.isDirectory) {
+    return {
+      valid: false,
+      errorCode: "not_a_directory",
+      error: `Path is not a directory: ${normalizedPath}`,
+      suggestion: "Choose a directory instead of a file",
+    };
+  }
+
+  try {
+    bridge.fs.readDirSync(normalizedPath);
+  } catch {
+    return {
+      valid: false,
+      errorCode: "not_readable",
+      error: `Local folder is not readable: ${normalizedPath}`,
+      suggestion: "Check read permissions for this folder",
+    };
+  }
+
+  const isGit = isGitRepository(normalizedPath);
   return {
-    valid: false,
-    error: "Path not found and not a recognized GitHub URL",
-    suggestion: "Enter a GitHub URL or an existing local path",
+    valid: true,
+    isGit,
+    isBareGit: isGit && isBareGitRepository(normalizedPath),
   };
 }

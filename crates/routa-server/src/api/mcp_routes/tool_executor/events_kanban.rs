@@ -1,6 +1,6 @@
 use crate::state::AppState;
 
-use super::{rpc_tool_result, tool_result_error, tool_result_json};
+use super::{resolve_team_codebase_ids, rpc_tool_result, tool_result_error, tool_result_json};
 
 fn required_str_arg<'a>(
     args: &'a serde_json::Value,
@@ -126,10 +126,17 @@ pub(super) async fn execute(
             Ok(result) => tool_result_json(&result),
             Err(error) => tool_result_error(&error),
         },
-        "create_card" => match rpc_tool_result(
-            state,
-            "kanban.createCard",
-            serde_json::json!({
+        "create_card" => {
+            let codebase_ids = resolve_team_codebase_ids(
+                state,
+                workspace_id,
+                args.get("sessionId").and_then(|value| value.as_str()),
+            )
+            .await;
+            match rpc_tool_result(
+                state,
+                "kanban.createCard",
+                serde_json::json!({
                 "workspaceId": workspace_id,
                 "boardId": args.get("boardId").cloned(),
                 "columnId": args.get("columnId").cloned(),
@@ -137,19 +144,21 @@ pub(super) async fn execute(
                 "description": args.get("description").cloned(),
                 "priority": args.get("priority").cloned(),
                 "labels": args.get("labels").cloned(),
-            }),
-        )
-        .await
-        {
-            Ok(result) => {
-                let card = result
-                    .get("card")
-                    .cloned()
-                    .unwrap_or_else(|| serde_json::json!({}));
-                tool_result_json(&card)
+                "codebaseIds": codebase_ids,
+                }),
+            )
+            .await
+            {
+                Ok(result) => {
+                    let card = result
+                        .get("card")
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    tool_result_json(&card)
+                }
+                Err(error) => tool_result_error(&error),
             }
-            Err(error) => tool_result_error(&error),
-        },
+        }
         "move_card" => match rpc_tool_result(
             state,
             "kanban.moveCard",
@@ -285,21 +294,30 @@ pub(super) async fn execute(
             Ok(result) => tool_result_json(&result),
             Err(error) => tool_result_error(&error),
         },
-        "decompose_tasks" => match rpc_tool_result(
-            state,
-            "kanban.decomposeTasks",
-            serde_json::json!({
+        "decompose_tasks" => {
+            let codebase_ids = resolve_team_codebase_ids(
+                state,
+                workspace_id,
+                args.get("sessionId").and_then(|value| value.as_str()),
+            )
+            .await;
+            match rpc_tool_result(
+                state,
+                "kanban.decomposeTasks",
+                serde_json::json!({
                 "workspaceId": workspace_id,
                 "boardId": args.get("boardId").cloned(),
                 "columnId": args.get("columnId").cloned(),
                 "tasks": args.get("tasks").cloned().unwrap_or_else(|| serde_json::json!([])),
-            }),
-        )
-        .await
-        {
-            Ok(result) => tool_result_json(&result),
-            Err(error) => tool_result_error(&error),
-        },
+                "codebaseIds": codebase_ids,
+                }),
+            )
+            .await
+            {
+                Ok(result) => tool_result_json(&result),
+                Err(error) => tool_result_error(&error),
+            }
+        }
         "request_previous_lane_handoff" => {
             let task_id = match required_str_arg(args, "taskId") {
                 Ok(value) => value,

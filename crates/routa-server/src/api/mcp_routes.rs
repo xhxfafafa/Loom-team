@@ -26,6 +26,8 @@ const MAX_MCP_REQUEST_BYTES: usize = 8 * 1024 * 1024;
 pub(super) struct McpRequestQuery {
     #[serde(rename = "wsId")]
     ws_id: Option<String>,
+    #[serde(rename = "sid")]
+    session_id: Option<String>,
     mcp_profile: Option<String>,
 }
 
@@ -156,6 +158,21 @@ pub(super) fn inject_workspace_id(args: &mut serde_json::Value, workspace_id: &s
     }
 }
 
+pub(super) fn inject_session_id(args: &mut serde_json::Value, session_id: Option<&str>) {
+    let Some(session_id) = session_id.map(str::trim).filter(|value| !value.is_empty()) else {
+        return;
+    };
+    if !args.is_object() {
+        *args = serde_json::json!({ "sessionId": session_id });
+        return;
+    }
+    if let Some(object) = args.as_object_mut() {
+        // Session identity comes from the server-generated MCP URL and must
+        // override any tool argument supplied by an agent.
+        object.insert("sessionId".to_string(), serde_json::json!(session_id));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -166,8 +183,8 @@ mod tests {
     };
 
     use super::{
-        build_tool_list_public, ensure_accept_header, execute_tool_public, inject_workspace_id,
-        normalize_tool_name_public,
+        build_tool_list_public, ensure_accept_header, execute_tool_public, inject_session_id,
+        inject_workspace_id, normalize_tool_name_public,
     };
 
     #[test]
@@ -195,6 +212,20 @@ mod tests {
             args,
             serde_json::json!({ "workspaceId": "existing", "name": "demo" })
         );
+    }
+
+    #[test]
+    fn inject_session_id_overrides_agent_supplied_identity() {
+        let mut args = serde_json::json!({ "sessionId": "forged", "name": "demo" });
+        inject_session_id(&mut args, Some("server-session"));
+        assert_eq!(args["sessionId"], "server-session");
+    }
+
+    #[test]
+    fn inject_session_id_leaves_unscoped_tools_unchanged() {
+        let mut args = serde_json::json!({ "name": "demo" });
+        inject_session_id(&mut args, None);
+        assert!(args.get("sessionId").is_none());
     }
 
     #[test]

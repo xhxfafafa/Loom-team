@@ -19,8 +19,8 @@ use crate::state::AppState;
 
 use super::tool_catalog;
 use super::{
-    execute_tool_for_profile_public, inject_workspace_id, normalize_tool_name_public,
-    McpRequestQuery,
+    execute_tool_for_profile_public, inject_session_id, inject_workspace_id,
+    normalize_tool_name_public, McpRequestQuery,
 };
 
 pub(super) type SharedMcpHttpService =
@@ -34,6 +34,7 @@ pub(super) struct RoutaMcpHttpServer {
 #[derive(Debug, Clone)]
 struct RequestScope {
     workspace_id: String,
+    session_id: Option<String>,
     mcp_profile: Option<String>,
 }
 
@@ -60,6 +61,7 @@ impl RequestScope {
 
         Self {
             workspace_id,
+            session_id: query.session_id,
             mcp_profile: query.mcp_profile,
         }
     }
@@ -145,6 +147,7 @@ impl ServerHandler for RoutaMcpHttpServer {
             .map(serde_json::Value::Object)
             .unwrap_or_else(|| serde_json::json!({}));
         inject_workspace_id(&mut arguments, &scope.workspace_id);
+        inject_session_id(&mut arguments, scope.session_id.as_deref());
 
         let result = execute_tool_for_profile_public(
             &self.state,

@@ -216,8 +216,11 @@ impl RpcRouter {
                 Ok(serde_json::to_value(r).unwrap())
             }
             "kanban.createCard" => {
+                let codebase_ids = parse_codebase_ids(&params);
                 let p = parse_params(params)?;
-                let r = methods::kanban::create_card(&self.state, p).await?;
+                let r =
+                    methods::kanban::create_card_with_codebase_ids(&self.state, p, codebase_ids)
+                        .await?;
                 Ok(serde_json::to_value(r).unwrap())
             }
             "kanban.moveCard" => {
@@ -256,8 +259,14 @@ impl RpcRouter {
                 Ok(serde_json::to_value(r).unwrap())
             }
             "kanban.decomposeTasks" => {
+                let codebase_ids = parse_codebase_ids(&params);
                 let p = parse_params(params)?;
-                let r = methods::kanban::decompose_tasks(&self.state, p).await?;
+                let r = methods::kanban::decompose_tasks_with_codebase_ids(
+                    &self.state,
+                    p,
+                    codebase_ids,
+                )
+                .await?;
                 Ok(serde_json::to_value(r).unwrap())
             }
             "kanban.requestPreviousLaneHandoff" => {
@@ -422,4 +431,14 @@ impl RpcRouter {
 fn parse_params<T: serde::de::DeserializeOwned>(value: serde_json::Value) -> Result<T, RpcError> {
     serde_json::from_value(value)
         .map_err(|e| RpcError::InvalidParams(format!("Invalid params: {e}")))
+}
+
+fn parse_codebase_ids(value: &serde_json::Value) -> Vec<String> {
+    value
+        .get("codebaseIds")
+        .and_then(|ids| ids.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|id| id.as_str().map(str::to_owned))
+        .collect()
 }

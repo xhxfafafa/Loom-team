@@ -56,6 +56,14 @@ pub async fn create_card(
     state: &AppState,
     params: CreateCardParams,
 ) -> Result<CreateCardResult, RpcError> {
+    create_card_with_codebase_ids(state, params, Vec::new()).await
+}
+
+pub async fn create_card_with_codebase_ids(
+    state: &AppState,
+    params: CreateCardParams,
+    codebase_ids: Vec<String>,
+) -> Result<CreateCardResult, RpcError> {
     let board = resolve_board(state, &params.workspace_id, params.board_id.as_deref()).await?;
     let target_column_id = params.column_id.unwrap_or_else(|| "backlog".to_string());
     ensure_column_exists(&board, &target_column_id)?;
@@ -93,6 +101,7 @@ pub async fn create_card(
     set_task_column(&mut task, target_column_id);
     task.priority = parse_priority(params.priority.as_deref())?;
     task.labels = params.labels.unwrap_or_default();
+    task.codebase_ids = codebase_ids;
     maybe_apply_lane_automation_defaults(&mut task, target_column.as_ref());
     task.updated_at = Utc::now();
 
@@ -407,6 +416,14 @@ pub async fn decompose_tasks(
     state: &AppState,
     params: DecomposeTasksParams,
 ) -> Result<DecomposeTasksResult, RpcError> {
+    decompose_tasks_with_codebase_ids(state, params, Vec::new()).await
+}
+
+pub async fn decompose_tasks_with_codebase_ids(
+    state: &AppState,
+    params: DecomposeTasksParams,
+    codebase_ids: Vec<String>,
+) -> Result<DecomposeTasksResult, RpcError> {
     if params.tasks.is_empty() {
         return Err(RpcError::BadRequest(
             "tasks array cannot be empty".to_string(),
@@ -446,6 +463,7 @@ pub async fn decompose_tasks(
         set_task_column(&mut task, target_column_id.clone());
         task.priority = parse_priority(item.priority.as_deref())?;
         task.labels = item.labels.unwrap_or_default();
+        task.codebase_ids = codebase_ids.clone();
         task.updated_at = Utc::now();
         state.task_store.save(&task).await?;
         created_cards.push(task_to_card(&task));

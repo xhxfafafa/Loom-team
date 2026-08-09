@@ -1,6 +1,9 @@
 use crate::state::AppState;
 
-use super::{rpc_tool_result, tool_result_error, tool_result_json, tool_result_text};
+use super::{
+    resolve_team_codebase_ids, rpc_tool_result, tool_result_error, tool_result_json,
+    tool_result_text,
+};
 
 pub(super) async fn execute(
     state: &AppState,
@@ -166,6 +169,12 @@ pub(super) async fn execute(
             {
                 task.creation_source = Some(source);
             }
+            task.codebase_ids = resolve_team_codebase_ids(
+                state,
+                workspace_id,
+                args.get("sessionId").and_then(|value| value.as_str()),
+            )
+            .await;
             let task_id = task.id.clone();
             match state.task_store.save(&task).await {
                 Ok(_) => tool_result_json(&serde_json::json!({

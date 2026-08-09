@@ -40,10 +40,10 @@ pub use boards::{
     UpdateBoardResult,
 };
 pub use cards::{
-    create_card, decompose_tasks, delete_card, move_card, update_card, CreateCardParams,
-    CreateCardResult, DecomposeTaskItem, DecomposeTasksParams, DecomposeTasksResult,
-    DeleteCardParams, DeleteCardResult, MoveCardParams, MoveCardResult, UpdateCardParams,
-    UpdateCardResult,
+    create_card, create_card_with_codebase_ids, decompose_tasks, decompose_tasks_with_codebase_ids,
+    delete_card, move_card, update_card, CreateCardParams, CreateCardResult, DecomposeTaskItem,
+    DecomposeTasksParams, DecomposeTasksResult, DeleteCardParams, DeleteCardResult, MoveCardParams,
+    MoveCardResult, UpdateCardParams, UpdateCardResult,
 };
 pub use github::{
     create_issue_from_card, sync_github_issues, CreateIssueFromCardParams,

@@ -15,8 +15,11 @@ use axum::{
     Router,
 };
 use serde::Deserialize;
+use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::state::AppState;
+
+const MAX_MCP_REQUEST_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Deserialize, Default, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -29,18 +32,20 @@ pub(super) struct McpRequestQuery {
 pub fn router(state: AppState) -> Router<AppState> {
     let service = rmcp_service::build_service(state);
 
-    Router::new().route(
-        "/",
-        get({
-            let service = service.clone();
-            move |request| handle_get(service, request)
-        })
-        .post({
-            let service = service.clone();
-            move |request| handle_post(service, request)
-        })
-        .delete(move |request| handle_delete(service, request)),
-    )
+    Router::new()
+        .route(
+            "/",
+            get({
+                let service = service.clone();
+                move |request| handle_get(service, request)
+            })
+            .post({
+                let service = service.clone();
+                move |request| handle_post(service, request)
+            })
+            .delete(move |request| handle_delete(service, request)),
+        )
+        .layer(RequestBodyLimitLayer::new(MAX_MCP_REQUEST_BYTES))
 }
 
 async fn handle_get(

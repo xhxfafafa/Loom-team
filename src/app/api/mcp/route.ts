@@ -25,6 +25,11 @@ import { createRoutaMcpServer } from "@/core/mcp/routa-mcp-server";
 import { getGlobalToolMode } from "@/core/mcp/tool-mode-config";
 import type { ToolMode } from "@/core/mcp/routa-mcp-tool-manager";
 import { resolveMcpServerProfile } from "@/core/mcp/mcp-server-profiles";
+import {
+  exceedsMcpRequestLimit,
+  limitMcpRequestBody,
+  readRetryableMcpRequestBody,
+} from "@/core/mcp/mcp-request-guard";
 
 // ─── Session management ────────────────────────────────────────────────
 
@@ -41,7 +46,7 @@ function requireWorkspaceId(value: unknown): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-function resolveWorkspaceId(request: NextRequest): string | null {
+function resolveWorkspaceId(request: Request): string | null {
   const url = new URL(request.url);
   return (
     requireWorkspaceId(request.headers.get("routa-workspace-id")) ??
@@ -124,7 +129,7 @@ async function createSession(
   return transport;
 }
 
-function resolveToolMode(request: NextRequest): ToolMode | undefined {
+function resolveToolMode(request: Request): ToolMode | undefined {
   const toolMode = new URL(request.url).searchParams.get("toolMode");
   if (toolMode === "essential" || toolMode === "full") {
     return toolMode;
@@ -132,7 +137,7 @@ function resolveToolMode(request: NextRequest): ToolMode | undefined {
   return undefined;
 }
 
-function resolveProfile(request: NextRequest) {
+function resolveProfile(request: Request) {
   return resolveMcpServerProfile(new URL(request.url).searchParams.get("mcpProfile") ?? undefined);
 }
 
@@ -142,7 +147,7 @@ function resolveProfile(request: NextRequest) {
  * Also reads ?wsId= query param for AI agent HTTP calls (where headers aren't available).
  */
 async function getOrCreateSession(
-  request: NextRequest,
+  request: Request,
 ): Promise<WebStandardStreamableHTTPServerTransport | Response> {
   const sessionId = request.headers.get("mcp-session-id");
   const existing = sessionId ? sessions.get(sessionId) : undefined;
@@ -204,7 +209,7 @@ function withCorsHeaders(response: Response): Response {
 // content types before forwarding the request to the transport.
 //
 
-function ensureAcceptHeader(request: NextRequest, ...required: string[]): NextRequest {
+function ensureAcceptHeader(request: Request, ...required: string[]): Request {
   const current = request.headers.get("accept") ?? "";
   const missing = required.filter((r) => !current.includes(r));
   if (missing.length === 0) return request;
@@ -214,39 +219,50 @@ function ensureAcceptHeader(request: NextRequest, ...required: string[]): NextRe
   headers.set("accept", patched);
 
   // Create a new Request with the patched headers (body is forwarded as a stream)
-  return new NextRequest(request.url, {
+  return new Request(request.url, {
     method: request.method,
     headers,
     body: request.body,
     duplex: "half",
-  });
+  } as RequestInit);
 }
 
 // ─── Route Handlers ───────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
   try {
-    // Log incoming MCP request for debugging
-    const sessionId = request.headers.get("mcp-session-id");
-    const accept = request.headers.get("accept");
-    const clonedReq = request.clone();
-    let method = "unknown";
-    let requestBody: { method?: string; id?: unknown; params?: Record<string, unknown> } | null = null;
-    try {
-      requestBody = await clonedReq.json();
-      method = requestBody?.method || "unknown";
-    } catch {
-      // body may not be JSON
+    if (exceedsMcpRequestLimit(request)) {
+      return withCorsHeaders(
+        Response.json(
+          {
+            jsonrpc: "2.0",
+            id: null,
+            error: {
+              code: -32600,
+              message: "MCP request body exceeds the 8 MiB limit",
+            },
+          },
+          { status: 413 },
+        ),
+      );
     }
-    console.log(
-      `[MCP Route] POST: method=${method}, session=${sessionId ?? "new"}, accept=${accept}`,
-    );
 
-    // Ensure the Accept header satisfies the MCP SDK validation
-    const patchedRequest = ensureAcceptHeader(
+    // Apply the streaming cap before making the optional retry snapshot. This
+    // also makes a forged Content-Length harmless.
+    const patchedRequest = limitMcpRequestBody(ensureAcceptHeader(
       request,
       "application/json",
       "text/event-stream",
+    ));
+
+    // A retry needs a replayable body, but do not clone unbounded/chunked
+    // payloads just to identify their method in a debug log.
+    const requestBody = await readRetryableMcpRequestBody(patchedRequest);
+    const sessionId = request.headers.get("mcp-session-id");
+    const accept = request.headers.get("accept");
+    const method = requestBody?.method || "unknown";
+    console.log(
+      `[MCP Route] POST: method=${method}, session=${sessionId ?? "new"}, accept=${accept}`,
     );
 
     const transport = await getOrCreateSession(patchedRequest);

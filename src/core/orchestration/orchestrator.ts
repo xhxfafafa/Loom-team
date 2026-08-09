@@ -546,7 +546,11 @@ export class RoutaOrchestrator {
         ? this.config.defaultCrafterProvider
         : this.config.defaultGateProvider);
 
-    const cwd = params.cwd ?? this.config.defaultCwd;
+    // A single server can host Team runs for several repositories. The
+    // orchestrator itself is a singleton, so its default cwd may belong to an
+    // earlier run. Unless the caller explicitly overrides it, inherit the
+    // parent session's cwd instead.
+    const cwd = params.cwd ?? this.resolveSessionCwd(callerSessionId, this.config.defaultCwd);
 
     // 4. Create agent record with delegation depth metadata
     const agentName = `${specialistConfig.id}-${task.title

@@ -310,6 +310,34 @@ describe("RoutaOrchestrator", () => {
     );
   });
 
+  it("inherits the parent session cwd instead of a stale orchestrator default", async () => {
+    const { orchestrator, task } = createOrchestratorFixture();
+    getSessionMock.mockImplementation((sessionId: string) =>
+      sessionId === "caller-session" ? { cwd: "/workspace/selected-repo" } : undefined,
+    );
+    const spawnChildAgent = vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    (orchestrator as unknown as { spawnChildAgent: typeof spawnChildAgent }).spawnChildAgent = spawnChildAgent;
+
+    const result = await orchestrator.delegateTaskWithSpawn({
+      taskId: task.id,
+      callerAgentId: "caller-agent",
+      callerSessionId: "caller-session",
+      workspaceId: task.workspaceId,
+      specialist: "crafter",
+    });
+
+    expect(result.success).toBe(true);
+    expect(spawnChildAgent).toHaveBeenCalledWith(
+      expect.any(String),
+      "child-agent-1",
+      "claude",
+      "/workspace/selected-repo",
+      "delegation prompt",
+      "caller-session",
+      "ws-1",
+    );
+  });
+
   it("skips parent delegation memory when the caller session is unknown", async () => {
     const { orchestrator, task } = createOrchestratorFixture();
     (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =

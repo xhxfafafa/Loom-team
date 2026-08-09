@@ -279,6 +279,8 @@ export class NoteTools {
     workspaceId: string;
     /** Session ID to scope created task notes */
     sessionId?: string;
+    /** Owning top-level Team Run ID stamped on created tasks */
+    teamRunId?: string;
   }): Promise<ToolResult> {
     const note = await this.noteStore.get(params.noteId, params.workspaceId);
     if (!note) {
@@ -328,6 +330,7 @@ export class NoteTools {
         verificationCommands: parsedTask.sections.verification
           ? parsedTask.sections.verification.split("\n").filter((l) => l.trim())
           : undefined,
+        teamRunId: params.teamRunId,
       });
       await this.taskStore.save(task);
 

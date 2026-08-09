@@ -71,6 +71,20 @@ export function createRoutaMcpServer(
     toolManager.setSessionId(opts.sessionId);
   }
 
+  // Resolve owning Team Run server-side from the ACP session. The session list
+  // is loaded lazily from the shared HTTP session store so card creation can
+  // stamp a durable teamRunId without trusting any client-supplied value.
+  toolManager.setTeamRunSessionLister(async () => {
+    try {
+      const { getHttpSessionStore } = await import("@/core/acp/http-session-store");
+      const sessionStore = getHttpSessionStore();
+      await sessionStore.hydrateFromDb();
+      return sessionStore.listSessions();
+    } catch {
+      return [];
+    }
+  });
+
   // Wire in orchestrator — auto-initialize if not yet created (e.g. after server restart).
   // initRoutaOrchestrator is idempotent: returns existing instance if already created.
   const orchestrator = initRoutaOrchestrator();

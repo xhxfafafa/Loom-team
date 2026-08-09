@@ -1341,4 +1341,98 @@ describe("KanbanTools", () => {
       "Third note",
     ]);
   });
+
+  it("stamps teamRunId on cards created by a Team Run and leaves it empty otherwise", async () => {
+    const boardStore = new InMemoryKanbanBoardStore();
+    const taskStore = new InMemoryTaskStore();
+    const tools = new KanbanTools(boardStore, taskStore);
+
+    const board = createKanbanBoard({
+      id: "board-1",
+      workspaceId: "default",
+      name: "Default Board",
+      isDefault: true,
+    });
+    await boardStore.save(board);
+
+    const teamResult = await tools.createCard({
+      workspaceId: "default",
+      title: "Team card",
+      columnId: "backlog",
+      teamRunId: "team-root-1",
+    });
+    expect(teamResult.success).toBe(true);
+
+    const normalResult = await tools.createCard({
+      workspaceId: "default",
+      title: "Normal card",
+      columnId: "backlog",
+    });
+    expect(normalResult.success).toBe(true);
+
+    const tasks = await taskStore.listByWorkspace("default");
+    const teamCard = tasks.find((task) => task.title === "Team card");
+    const normalCard = tasks.find((task) => task.title === "Normal card");
+    expect(teamCard?.teamRunId).toBe("team-root-1");
+    expect(normalCard?.teamRunId).toBeUndefined();
+  });
+
+  it("stamps teamRunId on every card created by decomposeTasks", async () => {
+    const boardStore = new InMemoryKanbanBoardStore();
+    const taskStore = new InMemoryTaskStore();
+    const tools = new KanbanTools(boardStore, taskStore);
+
+    const board = createKanbanBoard({
+      id: "board-1",
+      workspaceId: "default",
+      name: "Default Board",
+      isDefault: true,
+    });
+    await boardStore.save(board);
+
+    const result = await tools.decomposeTasks({
+      workspaceId: "default",
+      tasks: [{ title: "Subtask A" }, { title: "Subtask B" }],
+      columnId: "backlog",
+      teamRunId: "team-root-1",
+    });
+
+    expect(result.success).toBe(true);
+    const tasks = await taskStore.listByWorkspace("default");
+    expect(tasks).toHaveLength(2);
+    for (const task of tasks) {
+      expect(task.teamRunId).toBe("team-root-1");
+    }
+  });
+
+  it("preserves teamRunId across moveCard and updateCard", async () => {
+    const boardStore = new InMemoryKanbanBoardStore();
+    const taskStore = new InMemoryTaskStore();
+    const tools = new KanbanTools(boardStore, taskStore);
+
+    const board = createKanbanBoard({
+      id: "board-1",
+      workspaceId: "default",
+      name: "Default Board",
+      isDefault: true,
+    });
+    await boardStore.save(board);
+
+    const created = await tools.createCard({
+      workspaceId: "default",
+      title: "Owned card",
+      columnId: "backlog",
+      teamRunId: "team-root-1",
+    });
+    expect(created.success).toBe(true);
+    const cardId = (created.data as { id: string }).id;
+
+    const moved = await tools.moveCard({ cardId, targetColumnId: "backlog", position: 5 });
+    expect(moved.success).toBe(true);
+    expect((await taskStore.get(cardId))?.teamRunId).toBe("team-root-1");
+
+    const updated = await tools.updateCard({ cardId, title: "Owned card renamed" });
+    expect(updated.success).toBe(true);
+    expect((await taskStore.get(cardId))?.teamRunId).toBe("team-root-1");
+  });
 });

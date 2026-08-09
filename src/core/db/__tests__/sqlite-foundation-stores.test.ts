@@ -80,6 +80,7 @@ describe("sqlite foundation stores", () => {
         workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
         session_id TEXT,
         creation_source TEXT,
+        team_run_id TEXT,
         codebase_ids TEXT DEFAULT '[]',
         context_search_spec TEXT,
         jit_context_snapshot TEXT,
@@ -283,5 +284,40 @@ describe("sqlite foundation stores", () => {
     expect(await taskStore.get("task-blocked")).toBeUndefined();
     expect(await taskStore.deleteByWorkspace("workspace-1")).toBe(2);
     expect(await taskStore.listByWorkspace("workspace-1")).toEqual([]);
+  });
+
+  it("round-trips the team_run_id ownership column", async () => {
+    await workspaceStore.save(createWorkspace({ id: "workspace-1", title: "Workspace One" }));
+
+    // Team-owned card: teamRunId persists through save + upsert.
+    const teamTask = createTask({
+      id: "task-team",
+      title: "Team card",
+      objective: "Created by a Team Run",
+      workspaceId: "workspace-1",
+      teamRunId: "team-root-1",
+    });
+    await taskStore.save(teamTask);
+    await taskStore.save({ ...teamTask, title: "Team card v2" });
+
+    const savedTeamTask = await taskStore.get("task-team");
+    expect(savedTeamTask?.teamRunId).toBe("team-root-1");
+    expect(savedTeamTask?.title).toBe("Team card v2");
+
+    // Normal card: teamRunId stays empty.
+    const normalTask = createTask({
+      id: "task-normal",
+      title: "Manual card",
+      objective: "Created by a user",
+      workspaceId: "workspace-1",
+    });
+    await taskStore.save(normalTask);
+
+    const savedNormalTask = await taskStore.get("task-normal");
+    expect(savedNormalTask?.teamRunId).toBeUndefined();
+
+    const listed = await taskStore.listByWorkspace("workspace-1");
+    expect(listed.find((task) => task.id === "task-team")?.teamRunId).toBe("team-root-1");
+    expect(listed.find((task) => task.id === "task-normal")?.teamRunId).toBeUndefined();
   });
 });

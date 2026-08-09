@@ -125,6 +125,8 @@ export const tasks = pgTable("tasks", {
   /** Session ID that created this task (for session-scoped filtering) */
   sessionId: text("session_id"),
   creationSource: text("creation_source").$type<TaskCreationSource>(),
+  /** Top-level Team Run session that owns this card (empty for non-team cards) */
+  teamRunId: text("team_run_id"),
   /** Associated codebase IDs for this task */
   codebaseIds: jsonb("codebase_ids").$type<string[]>().default([]),
   contextSearchSpec: jsonb("context_search_spec").$type<TaskContextSearchSpec>(),

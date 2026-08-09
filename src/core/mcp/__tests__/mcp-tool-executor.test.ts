@@ -180,6 +180,18 @@ vi.mock("@/core/harness/task-adaptive-tool", () => ({
   summarizeTaskHistoryContextFromToolArgs,
 }));
 
+const httpSessionStoreState = vi.hoisted(() => ({
+  sessions: [] as Array<Record<string, unknown>>,
+}));
+
+vi.mock("@/core/acp/http-session-store", () => ({
+  getHttpSessionStore: () => ({
+    hydrateFromDb: async () => {},
+    listSessions: () => httpSessionStoreState.sessions,
+    getSession: () => undefined,
+  }),
+}));
+
 import { executeMcpTool, getMcpToolDefinitions } from "../mcp-tool-executor";
 
 describe("executeMcpTool", () => {
@@ -665,5 +677,68 @@ describe("executeMcpTool", () => {
     expect((result as { content: Array<{ text: string }> }).content[0]?.text).toContain(
       '"saved": true',
     );
+  });
+});
+
+describe("executeMcpTool team-run card ownership", () => {
+  it("stamps the top-level team run id resolved server-side from the calling session", async () => {
+    httpSessionStoreState.sessions = [
+      {
+        sessionId: "team-root",
+        name: "Team - Alpha",
+        specialistId: "team-agent-lead",
+        workspaceId: "workspace-1",
+        parentSessionId: undefined,
+      },
+      { sessionId: "sub-agent", workspaceId: "workspace-1", parentSessionId: "team-root" },
+      { sessionId: "solo-session", role: "claude", workspaceId: "workspace-1", parentSessionId: undefined },
+    ];
+    const createTask = vi.fn(async (params: Record<string, unknown>) => ({ success: true, data: params }));
+    const tools = { createTask } as never;
+
+    await executeMcpTool(tools, "create_task", {
+      workspaceId: "workspace-1",
+      title: "Team card",
+      objective: "Created by a team sub-agent",
+      sessionId: "sub-agent",
+    });
+
+    expect(createTask).toHaveBeenCalledTimes(1);
+    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ teamRunId: "team-root" }));
+  });
+
+  it("keeps teamRunId undefined for normal sessions and never trusts client-supplied teamRunId", async () => {
+    httpSessionStoreState.sessions = [
+      {
+        sessionId: "team-root",
+        name: "Team - Alpha",
+        specialistId: "team-agent-lead",
+        workspaceId: "workspace-1",
+        parentSessionId: undefined,
+      },
+      { sessionId: "solo-session", role: "claude", workspaceId: "workspace-1", parentSessionId: undefined },
+    ];
+    const createTask = vi.fn(async (params: Record<string, unknown>) => ({ success: true, data: params }));
+    const tools = { createTask } as never;
+
+    await executeMcpTool(tools, "create_task", {
+      workspaceId: "workspace-1",
+      title: "Solo card",
+      objective: "Created by a normal session",
+      sessionId: "solo-session",
+      teamRunId: "team-root", // forged client value — must never be trusted
+    });
+
+    expect(createTask).toHaveBeenCalledTimes(1);
+    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ teamRunId: undefined }));
+
+    await executeMcpTool(tools, "create_task", {
+      workspaceId: "workspace-1",
+      title: "Sessionless card",
+      objective: "Created without any session",
+    });
+
+    expect(createTask).toHaveBeenCalledTimes(2);
+    expect(createTask).toHaveBeenLastCalledWith(expect.objectContaining({ teamRunId: undefined }));
   });
 });

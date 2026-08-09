@@ -63,6 +63,28 @@ async function resolveSessionProvider(sessionId: string | undefined): Promise<st
   }
 }
 
+/**
+ * Resolve the owning top-level Team Run ID for the session that is creating a
+ * card. Returns undefined for normal (non-team) sessions or when the session
+ * list is unavailable, so cards never receive a guessed ownership.
+ */
+async function resolveOwningTeamRunIdForSession(sessionId: string | undefined): Promise<string | undefined> {
+  if (!sessionId) return undefined;
+  try {
+    const [{ getHttpSessionStore }, { resolveOwningTeamRunIdFromSessions }] = await Promise.all([
+      import("@/core/acp/http-session-store"),
+      import("@/core/orchestration/team-run-ownership"),
+    ]);
+    const store = getHttpSessionStore();
+    return resolveOwningTeamRunIdFromSessions(sessionId, async () => {
+      await store.hydrateFromDb();
+      return store.listSessions();
+    });
+  } catch {
+    return undefined;
+  }
+}
+
 const TASK_CONTEXT_SEARCH_SPEC_SCHEMA = {
   type: "object",
   properties: {
@@ -326,6 +348,7 @@ export async function executeMcpTool(
           dependencies: args.dependencies as string[] | undefined,
           parallelGroup: args.parallelGroup as string | undefined,
           creationSource: args.creationSource as "manual" | "agent" | "api" | "session" | undefined,
+          teamRunId: await resolveOwningTeamRunIdForSession(args.sessionId as string | undefined),
         })
       );
     case "list_tasks":
@@ -611,6 +634,7 @@ export async function executeMcpTool(
         await noteTools.convertTaskBlocks({
           noteId: args.noteId as string,
           workspaceId: (args.workspaceId as string) ?? workspace,
+          teamRunId: await resolveOwningTeamRunIdForSession(args.sessionId as string | undefined),
         })
       );
 
@@ -704,6 +728,7 @@ export async function executeMcpTool(
           description: args.description as string | undefined,
           contextSearchSpec: args.contextSearchSpec as Record<string, unknown> | undefined,
           sessionId: args.sessionId as string | undefined,
+          teamRunId: await resolveOwningTeamRunIdForSession(args.sessionId as string | undefined),
           columnId: (args.columnId as string | undefined) ?? (args.column as string | undefined) ?? "backlog",
           priority: args.priority as "low" | "medium" | "high" | "urgent" | undefined,
           labels: args.labels as string[] | undefined,
@@ -774,6 +799,7 @@ export async function executeMcpTool(
           })),
           columnId: (args.columnId as string | undefined) ?? (args.column as string | undefined),
           sessionId: args.sessionId as string | undefined,
+          teamRunId: await resolveOwningTeamRunIdForSession(args.sessionId as string | undefined),
         })
       );
       }

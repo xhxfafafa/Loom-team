@@ -232,6 +232,7 @@ export class AgentTools {
     dependencies?: string[];
     parallelGroup?: string;
     creationSource?: TaskCreationSource;
+    teamRunId?: string;
   }): Promise<ToolResult> {
     const task = createTaskModel({
       id: uuidv4(),
@@ -245,6 +246,7 @@ export class AgentTools {
       dependencies: params.dependencies,
       parallelGroup: params.parallelGroup,
       creationSource: params.creationSource,
+      teamRunId: params.teamRunId,
     });
 
     await this.taskStore.save(task);

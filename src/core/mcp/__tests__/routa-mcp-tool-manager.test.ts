@@ -586,4 +586,153 @@ describe("RoutaMcpToolManager", () => {
       "Orchestrator not available. Multi-agent delegation requires orchestrator setup.",
     );
   });
+
+  describe("team-run card ownership", () => {
+    const teamSessions = [
+      {
+        sessionId: "team-root",
+        workspaceId: "ws-1",
+        name: "Team - Alpha",
+        specialistId: "team-agent-lead",
+        parentSessionId: undefined,
+      },
+      {
+        sessionId: "sub-agent",
+        workspaceId: "ws-1",
+        name: "worker-1",
+        role: "claude",
+        parentSessionId: "team-root",
+      },
+      {
+        sessionId: "nested-sub-agent",
+        workspaceId: "ws-1",
+        name: "worker-1-1",
+        role: "codex",
+        parentSessionId: "sub-agent",
+      },
+      {
+        sessionId: "solo-session",
+        workspaceId: "ws-1",
+        name: "Regular session",
+        role: "claude",
+        parentSessionId: undefined,
+      },
+    ];
+
+    function createOwnershipManager(sessionId: string) {
+      const tools = createToolsMock();
+      const manager = new RoutaMcpToolManager(tools as never, "ws-1");
+      manager.setToolMode("full");
+      manager.setSessionId(sessionId);
+      manager.setTeamRunSessionLister(() => teamSessions);
+      manager.setKanbanTools({
+        createCard: vi.fn(async (params) => ({ success: true, data: params })),
+        decomposeTasks: vi.fn(async (params) => ({ success: true, data: params })),
+      } as never);
+      manager.setNoteTools({
+        convertTaskBlocks: vi.fn(async (params) => ({ success: true, data: params })),
+      } as never);
+
+      const { registrations, server } = createServerRecorder();
+      manager.registerTools(server as never);
+      return { tools, manager, registrations };
+    }
+
+    it("stamps the top-level teamRunId when the Team Lead creates a task", async () => {
+      const { tools, registrations } = createOwnershipManager("team-root");
+      const createTaskTool = registrations.find((entry) => entry.name === "create_task");
+
+      await createTaskTool!.handler({ title: "Lead task", objective: "Coordinate" });
+
+      expect(tools.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Lead task", workspaceId: "ws-1", teamRunId: "team-root" }),
+      );
+    });
+
+    it("stamps the same top-level teamRunId for sub-agents at any depth", async () => {
+      const { tools, registrations } = createOwnershipManager("sub-agent");
+      const createTaskTool = registrations.find((entry) => entry.name === "create_task");
+      await createTaskTool!.handler({ title: "Worker task", objective: "Work" });
+      expect(tools.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({ teamRunId: "team-root" }),
+      );
+
+      const nested = createOwnershipManager("nested-sub-agent");
+      const nestedCreateTask = nested.registrations.find((entry) => entry.name === "create_task");
+      await nestedCreateTask!.handler({ title: "Nested task", objective: "Work" });
+      expect(nested.tools.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({ teamRunId: "team-root" }),
+      );
+    });
+
+    it("stamps teamRunId on kanban cards, batch decompose and task-block conversion", async () => {
+      const { manager, registrations } = createOwnershipManager("sub-agent");
+      const kanbanTools = (manager as unknown as {
+        kanbanTools: { createCard: ReturnType<typeof vi.fn>; decomposeTasks: ReturnType<typeof vi.fn> };
+      }).kanbanTools;
+      const noteTools = (manager as unknown as {
+        noteTools: { convertTaskBlocks: ReturnType<typeof vi.fn> };
+      }).noteTools;
+
+      const createCardTool = registrations.find((entry) => entry.name === "create_card");
+      await createCardTool!.handler({ title: "Card" });
+      expect(kanbanTools.createCard).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Card",
+          sessionId: "sub-agent",
+          teamRunId: "team-root",
+          workspaceId: "ws-1",
+        }),
+      );
+
+      const decomposeTool = registrations.find((entry) => entry.name === "decompose_tasks");
+      await decomposeTool!.handler({ tasks: [{ title: "Subtask" }] });
+      expect(kanbanTools.decomposeTasks).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: "sub-agent", teamRunId: "team-root" }),
+      );
+
+      const convertTool = registrations.find((entry) => entry.name === "convert_task_blocks");
+      await convertTool!.handler({ noteId: "spec" });
+      expect(noteTools.convertTaskBlocks).toHaveBeenCalledWith(
+        expect.objectContaining({ noteId: "spec", workspaceId: "ws-1", teamRunId: "team-root" }),
+      );
+    });
+
+    it("never stamps teamRunId for normal sessions or without a session", async () => {
+      const { tools, registrations } = createOwnershipManager("solo-session");
+      const createTaskTool = registrations.find((entry) => entry.name === "create_task");
+
+      await createTaskTool!.handler({ title: "Manual task", objective: "Normal work" });
+
+      const call = tools.createTask.mock.calls.at(-1)?.[0] as { teamRunId?: string };
+      expect(call.teamRunId).toBeUndefined();
+
+      // No sessionId at all → also no ownership guess.
+      const bareTools = createToolsMock();
+      const bareManager = new RoutaMcpToolManager(bareTools as never, "ws-1");
+      bareManager.setTeamRunSessionLister(() => teamSessions);
+      const bareRecorder = createServerRecorder();
+      bareManager.registerTools(bareRecorder.server as never);
+      const bareCreateTask = bareRecorder.registrations.find((entry) => entry.name === "create_task");
+      await bareCreateTask!.handler({ title: "Bare task", objective: "No session" });
+      const bareCall = bareTools.createTask.mock.calls.at(-1)?.[0] as { teamRunId?: string };
+      expect(bareCall.teamRunId).toBeUndefined();
+    });
+
+    it("never trusts a client-supplied teamRunId", async () => {
+      const { tools, registrations } = createOwnershipManager("solo-session");
+      const createTaskTool = registrations.find((entry) => entry.name === "create_task");
+
+      // The registered schema does not even expose teamRunId; passing it in the
+      // raw handler args must not leak into the store call for a normal session.
+      await createTaskTool!.handler({
+        title: "Forged task",
+        objective: "Try to forge ownership",
+        teamRunId: "team-root",
+      });
+
+      const call = tools.createTask.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(call.teamRunId).toBeUndefined();
+    });
+  });
 });

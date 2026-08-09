@@ -881,6 +881,12 @@ export interface Task {
   /** Session ID that created this task (for session-scoped filtering) */
   sessionId?: string;
   creationSource?: TaskCreationSource;
+  /**
+   * Top-level Team Run session that owns this card. Set server-side when the
+   * card is created by a Team Lead or one of its sub-agent sessions; empty for
+   * normal manual/kanban cards. Preserved across copy/move/retry/handoff.
+   */
+  teamRunId?: string;
   /** Associated codebase IDs for this task */
   codebaseIds: string[];
   /** Structured retrieval hints used to hydrate JIT Context and history search. */
@@ -908,6 +914,7 @@ export function createTask(params: {
   triggerSessionId?: string;
   sessionId?: string;
   creationSource?: TaskCreationSource;
+  teamRunId?: string;
   scope?: string;
   acceptanceCriteria?: string[];
   verificationCommands?: string[];
@@ -983,6 +990,7 @@ export function createTask(params: {
     workspaceId: params.workspaceId,
     sessionId: params.sessionId,
     creationSource: params.creationSource,
+    teamRunId: params.teamRunId,
     codebaseIds: params.codebaseIds ?? [],
     contextSearchSpec: normalizeTaskContextSearchSpec(params.contextSearchSpec),
     jitContextSnapshot: normalizeTaskJitContextSnapshot(params.jitContextSnapshot),

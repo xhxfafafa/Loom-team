@@ -82,6 +82,7 @@ interface TaskFixture {
   sessionIds?: string[];
   laneSessions?: Array<{ sessionId?: string; worktreeId?: string }>;
   worktreeId?: string;
+  teamRunId?: string;
 }
 
 interface WorktreeFixture {
@@ -707,6 +708,139 @@ describe("deleteTeamRun", () => {
     expect(plan.noteIds).toEqual(["note-root"]);
     expect(plan.backgroundTaskIds).toEqual(["bg-1"]);
     expect(events).toEqual([]);
+  });
+
+  // ─── Scenario: explicit teamRunId ownership ───────────────────────────
+
+  it("deletes explicitly owned cards even when their session links are detached", async () => {
+    const events: string[] = [];
+    const ports = createPorts(
+      {
+        sessions: defaultTeamSessions(),
+        tasks: [
+          // Explicit owner with no session links at all → deleted.
+          taskFixture({ id: "task-explicit-detached", teamRunId: "root-1" }),
+          // Explicit owner whose only link is a stale (nonexistent) session →
+          // still deleted; broken trees must not hide ownership.
+          taskFixture({
+            id: "task-explicit-stale",
+            teamRunId: "root-1",
+            triggerSessionId: "ghost-session",
+          }),
+        ],
+      },
+      events,
+    );
+
+    const result = await deleteTeamRun(ports, "root-1");
+    const deleted = getTrackedState(ports);
+
+    expect(new Set(deleted.tasks)).toEqual(
+      new Set(["task-explicit-detached", "task-explicit-stale"]),
+    );
+    expect(result.deleted.kanbanCards).toBe(2);
+  });
+
+  it("reports explicit and legacy card matches separately in the preview plan", async () => {
+    const ports = createPorts({
+      sessions: defaultTeamSessions(),
+      tasks: [
+        // Explicit match only.
+        taskFixture({ id: "task-explicit", teamRunId: "root-1" }),
+        // Legacy session-tree match only.
+        taskFixture({ id: "task-legacy", triggerSessionId: "child-1" }),
+        // Both explicit and legacy → deduplicated and counted as explicit.
+        taskFixture({
+          id: "task-both",
+          teamRunId: "root-1",
+          sessionIds: ["grandchild-1"],
+        }),
+        // Owned by another team but legacy-linked into this tree → untouched.
+        taskFixture({
+          id: "task-other-team",
+          teamRunId: "other-root",
+          triggerSessionId: "root-1",
+        }),
+        // Unassigned and unlinked → untouched.
+        taskFixture({ id: "task-unassigned" }),
+      ],
+    });
+
+    const plan = await buildTeamRunDeletionPlan(ports, "root-1", "ws-1");
+
+    expect(new Set(plan.kanbanTaskIds)).toEqual(
+      new Set(["task-explicit", "task-legacy", "task-both"]),
+    );
+    expect(new Set(plan.explicitKanbanTaskIds)).toEqual(
+      new Set(["task-explicit", "task-both"]),
+    );
+    expect(plan.legacyKanbanTaskIds).toEqual(["task-legacy"]);
+    expect(plan.sharedKanbanTaskIds).toEqual([]);
+    expect(plan.kanbanTaskIds.length).toBe(
+      plan.explicitKanbanTaskIds.length + plan.legacyKanbanTaskIds.length,
+    );
+  });
+
+  it("never deletes cards explicitly owned by another team even when legacy-linked", async () => {
+    const events: string[] = [];
+    const ports = createPorts(
+      {
+        sessions: defaultTeamSessions(),
+        tasks: [
+          taskFixture({
+            id: "task-other-team",
+            teamRunId: "other-root",
+            sessionIds: ["root-1", "child-1"],
+          }),
+        ],
+      },
+      events,
+    );
+
+    const result = await deleteTeamRun(ports, "root-1");
+
+    expect(getTrackedState(ports).tasks).toEqual([]);
+    expect(result.deleted.kanbanCards).toBe(0);
+    expect(result.preserved.sharedKanbanCards).toBe(0);
+  });
+
+  it("does not remove unassigned cards that lack any team linkage", async () => {
+    const events: string[] = [];
+    const ports = createPorts(
+      {
+        sessions: defaultTeamSessions(),
+        tasks: [
+          taskFixture({ id: "task-unassigned" }),
+          taskFixture({ id: "task-outside", sessionId: "outsider-1" }),
+          taskFixture({ id: "task-owned", teamRunId: "root-1" }),
+        ],
+      },
+      events,
+    );
+
+    const result = await deleteTeamRun(ports, "root-1");
+    const deleted = getTrackedState(ports);
+
+    expect(deleted.tasks).toEqual(["task-owned"]);
+    expect(result.deleted.kanbanCards).toBe(1);
+  });
+
+  it("preserves explicitly owned cards that a live outside session still references", async () => {
+    const ports = createPorts({
+      sessions: defaultTeamSessions(),
+      tasks: [
+        taskFixture({
+          id: "task-explicit-shared",
+          teamRunId: "root-1",
+          sessionIds: ["outsider-1"],
+        }),
+      ],
+    });
+
+    const plan = await buildTeamRunDeletionPlan(ports, "root-1", "ws-1");
+
+    expect(plan.kanbanTaskIds).toEqual([]);
+    expect(plan.sharedKanbanTaskIds).toEqual(["task-explicit-shared"]);
   });
 
   // ─── Persistent drivers ──────────────────────────────────────────────

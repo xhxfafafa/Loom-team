@@ -681,6 +681,15 @@ export interface ExtendedTranslationDictionarySections extends TailTranslationDi
     del: string;
     dangerZone: string;
     dangerZoneHint: string;
+    unassignedCards: string;
+    unassignedCardsHint: string;
+    unassignedCardsCount: string;
+    unassignedCardsLoadFailed: string;
+    unassignedCardsDelete: string;
+    unassignedCardsConfirmHint: string;
+    unassignedCardsDeleting: string;
+    unassignedCardsDeleted: string;
+    unassignedCardsDeleteFailed: string;
     dirty: string;
     discardChanges: string;
     down: string;
@@ -1257,7 +1266,8 @@ export interface ExtendedTranslationDictionarySections extends TailTranslationDi
     deleteDialogPreviewFailed: string;
     deleteDialogStatsSessions: string;
     deleteDialogStatsActiveAgents: string;
-    deleteDialogStatsKanbanCards: string;
+    deleteDialogStatsKanbanCardsExplicit: string;
+    deleteDialogStatsKanbanCardsLegacy: string;
     deleteDialogStatsArtifacts: string;
     deleteDialogStatsWorktrees: string;
     deleteDialogStatsNotes: string;

@@ -62,6 +62,7 @@ export class PgTaskStore implements TaskStore {
         workspaceId: task.workspaceId,
         sessionId: task.sessionId,
         creationSource: task.creationSource,
+        teamRunId: task.teamRunId,
         codebaseIds: task.codebaseIds ?? [],
         contextSearchSpec: task.contextSearchSpec,
         jitContextSnapshot: task.jitContextSnapshot,
@@ -116,6 +117,7 @@ export class PgTaskStore implements TaskStore {
           parallelGroup: task.parallelGroup,
           sessionId: task.sessionId,
           creationSource: task.creationSource,
+          teamRunId: task.teamRunId,
           codebaseIds: task.codebaseIds ?? [],
           contextSearchSpec: task.contextSearchSpec,
           jitContextSnapshot: task.jitContextSnapshot,
@@ -265,6 +267,7 @@ export class PgTaskStore implements TaskStore {
       creationSource: normalizeTaskCreationSource(row.creationSource, {
         sessionId: row.sessionId,
       }),
+      teamRunId: row.teamRunId ?? undefined,
       codebaseIds: (row.codebaseIds as string[]) ?? [],
       contextSearchSpec: row.contextSearchSpec as import("../models/task").TaskContextSearchSpec | undefined,
       jitContextSnapshot: row.jitContextSnapshot as import("../models/task").TaskJitContextSnapshot | undefined,

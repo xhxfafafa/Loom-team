@@ -17,6 +17,7 @@ import type {
   TaskInfo,
   WorktreeInfo,
 } from "../types";
+import { resolveTeamCardCodebaseId } from "./team-card-codebase";
 import { EMPTY_DRAFT, type TaskDraft } from "../kanban-create-modal";
 import { type ColumnAutomationConfig, type KanbanSettingsModalProps } from "./kanban-settings-modal";
 import { scheduleKanbanRefreshBurst } from "./kanban-agent-input";
@@ -560,21 +561,17 @@ export function KanbanTab({
 
       const taskCodebaseIds = task.codebaseIds ?? [];
       const hasValidCodebase = taskCodebaseIds.some((id) => codebaseById.has(id));
+
+      const resolvedCodebaseId = resolveTeamCardCodebaseId(task, sessionMap, codebases);
+
+      if (resolvedCodebaseId && (
+        taskCodebaseIds.length !== 1 || taskCodebaseIds[0] !== resolvedCodebaseId
+      )) {
+        pendingPatches.push({ taskId: task.id, codebaseId: resolvedCodebaseId });
+        continue;
+      }
+
       if (hasValidCodebase) continue;
-
-      let resolved: CodebaseData | null = null;
-      const session = task.triggerSessionId ? sessionMap.get(task.triggerSessionId) : null;
-      if (session?.cwd) {
-        resolved = codebases.find((codebase) => codebase.repoPath === session.cwd) ?? null;
-      }
-
-      if (!resolved && defaultCodebase) {
-        resolved = defaultCodebase;
-      }
-
-      if (resolved) {
-        pendingPatches.push({ taskId: task.id, codebaseId: resolved.id });
-      }
     }
 
     if (pendingPatches.length === 0) return;
@@ -583,7 +580,7 @@ export function KanbanTab({
       autoPatchedTasksRef.current.add(patch.taskId);
       void patchTask(patch.taskId, { codebaseIds: [patch.codebaseId] });
     }
-  }, [codebases, defaultCodebase, localTasks, patchTask, sessionMap]);
+  }, [codebases, localTasks, patchTask, sessionMap]);
 
   const repoHealth = useMemo(() => {
     if (codebases.length === 0) {
@@ -924,19 +921,11 @@ export function KanbanTab({
       taskId: task.id,
     }, "push");
 
-    if (task.codebaseIds?.length === 0 && defaultCodebase) {
-      try {
-        await patchTask(task.id, { codebaseIds: [defaultCodebase.id] });
-      } catch (error) {
-        console.error("Failed to auto-assign default repo to task", error);
-      }
-    }
-
     // Select the session in ACP if it exists
     if (latestSession && acp && canSelectTaskSessionInAcp(task, latestSession, sessionMap)) {
       acp.selectSession(latestSession);
     }
-  }, [acp, defaultBoardId, defaultCodebase, patchTask, selectedBoardId, sessionMap]);
+  }, [acp, defaultBoardId, selectedBoardId, sessionMap]);
 
   const openSession = useCallback((sessionId: string | null, task?: TaskInfo | null) => {
     setActiveTaskId(null);

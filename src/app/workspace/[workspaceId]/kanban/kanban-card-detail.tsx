@@ -236,7 +236,6 @@ export function KanbanCardDetail({
   specialists,
   specialistLanguage,
   codebases,
-  allCodebaseIds,
   worktreeCache,
   sessionInfo,
   sessions,
@@ -282,14 +281,14 @@ export function KanbanCardDetail({
   const getTaskRepositoryPath = (): string | null => {
     const worktreePath = task.worktreeId ? worktreeCache[task.worktreeId]?.worktreePath : null;
     if (worktreePath) return worktreePath;
-    const taskCodebaseIds = task.codebaseIds && task.codebaseIds.length > 0 ? task.codebaseIds : allCodebaseIds;
+    const taskCodebaseIds = task.codebaseIds ?? [];
     if (taskCodebaseIds.length === 0) return null;
     const primaryCodebase = codebases.find((codebase) => codebase.id === taskCodebaseIds[0]);
     return primaryCodebase?.repoPath ?? null;
   };
 
   const getTaskHistoryRepositoryPath = (): string | null => {
-    const taskCodebaseIds = task.codebaseIds && task.codebaseIds.length > 0 ? task.codebaseIds : allCodebaseIds;
+    const taskCodebaseIds = task.codebaseIds ?? [];
     if (taskCodebaseIds.length === 0) {
       return getTaskRepositoryPath();
     }
@@ -766,7 +765,6 @@ export function KanbanCardDetail({
               <RepositoriesWorktreeRow
                 task={task}
                 codebases={codebases}
-                allCodebaseIds={allCodebaseIds}
                 worktreeCache={worktreeCache}
                 sessionInfo={sessionInfo}
                 sessionCwdMismatch={sessionCwdMismatch}
@@ -1343,7 +1341,6 @@ function FallbackAgentChainEditor({
 function RepositoriesWorktreeRow({
   task,
   codebases,
-  allCodebaseIds,
   worktreeCache,
   sessionInfo,
   sessionCwdMismatch,
@@ -1357,7 +1354,6 @@ function RepositoriesWorktreeRow({
 }: {
   task: TaskInfo;
   codebases: CodebaseData[];
-  allCodebaseIds: string[];
   worktreeCache: Record<string, WorktreeInfo>;
   sessionInfo?: SessionInfo | null;
   sessionCwdMismatch?: boolean;
@@ -1370,7 +1366,7 @@ function RepositoriesWorktreeRow({
   compact?: boolean;
 }) {
   const { t } = useTranslation();
-  const currentCodebaseIds = task.codebaseIds && task.codebaseIds.length > 0 ? task.codebaseIds : allCodebaseIds;
+  const currentCodebaseIds = task.codebaseIds ?? [];
   const primaryCodebase = codebases.find((codebase) => codebase.id === currentCodebaseIds[0]);
   const worktree = task.worktreeId ? worktreeCache[task.worktreeId] : null;
   const expectedPath = worktree?.worktreePath ?? primaryCodebase?.repoPath ?? null;

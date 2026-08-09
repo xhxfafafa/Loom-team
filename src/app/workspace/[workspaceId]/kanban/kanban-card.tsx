@@ -214,7 +214,6 @@ function KanbanCardSurface({
   specialists,
   specialistLanguage,
   codebases,
-  allCodebaseIds,
   worktreeCache,
   autoProviderId,
   queuePosition,
@@ -253,9 +252,9 @@ function KanbanCardSurface({
       : (t.kanban as Record<string, string>)[statusLabel] ?? statusLabel;
   const visibleLabels = (task.labels ?? []).slice(0, 2);
   const remainingLabelCount = Math.max((task.labels?.length ?? 0) - visibleLabels.length, 0);
-  const visibleCodebaseIds = (task.codebaseIds && task.codebaseIds.length > 0 ? task.codebaseIds : allCodebaseIds).slice(0, 1);
+  const visibleCodebaseIds = (task.codebaseIds ?? []).slice(0, 1);
   const remainingCodebaseCount = Math.max(
-    (task.codebaseIds && task.codebaseIds.length > 0 ? task.codebaseIds.length : allCodebaseIds.length) - visibleCodebaseIds.length,
+    (task.codebaseIds?.length ?? 0) - visibleCodebaseIds.length,
     0,
   );
   const syncLabelKey = getSyncLabel(sessionStatus, queuePosition, Boolean(task.lastSyncError), task.githubSyncedAt);
@@ -463,7 +462,7 @@ function KanbanCardSurface({
       )}
 
       {(visibleLabels.length > 0
-        || ((task.codebaseIds && task.codebaseIds.length > 0) || allCodebaseIds.length > 0)
+        || (task.codebaseIds?.length ?? 0) > 0
         || task.worktreeId) && (
         <div className="flex flex-wrap gap-1">
           {visibleLabels.map((label) => (

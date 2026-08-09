@@ -50,6 +50,37 @@ function buildTask(overrides?: Partial<TaskInfo>): TaskInfo {
 }
 
 describe("KanbanCard artifact gate status", () => {
+  it("does not display the workspace default repository for an unassigned task", () => {
+    render(
+      <KanbanCard
+        task={buildTask({ codebaseIds: [] })}
+        boardColumns={boardColumns}
+        specialistLanguage="en"
+        availableProviders={[]}
+        specialists={[]}
+        codebases={[{
+          id: "codebase-personal",
+          workspaceId: "default",
+          repoPath: "/repo/personal",
+          label: "owner/personal",
+          isDefault: true,
+          createdAt: "2025-01-01T00:00:00.000Z",
+          updatedAt: "2025-01-01T00:00:00.000Z",
+        }]}
+        allCodebaseIds={["codebase-personal"]}
+        worktreeCache={{}}
+        onOpenDetail={vi.fn()}
+        onDelete={vi.fn()}
+        onPatchTask={vi.fn()}
+        onRetryTrigger={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId("repo-badge")).toBeNull();
+    expect(screen.queryByText("owner/personal")).toBeNull();
+  });
+
   it("shows missing artifact gate state when the next lane is still blocked", () => {
     render(
       <KanbanCard

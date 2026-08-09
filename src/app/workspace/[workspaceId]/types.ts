@@ -150,6 +150,8 @@ export interface TaskInfo {
   assignedSpecialistId?: string;
   assignedSpecialistName?: string;
   triggerSessionId?: string;
+  /** Owning top-level Team Run session, when the task was created by Team mode. */
+  teamRunId?: string;
   /** All session IDs that have been associated with this task (history) */
   sessionIds?: string[];
   laneSessions?: Array<{

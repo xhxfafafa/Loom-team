@@ -100,11 +100,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "workspaceId is required in args or body" }, { status: 400 });
     }
 
-    const { system } = createRoutaMcpServer({ workspaceId, toolMode, mcpProfile });
+    // Tool execution can be invoked outside the Streamable HTTP transport.
+    // Preserve its ACP session context so Team-owned cards are stamped from
+    // the server-side session tree instead of becoming unowned historical
+    // cards. `teamRunId` itself is never accepted from the request.
+    const requestSessionId = typeof args.sessionId === "string"
+      ? args.sessionId
+      : typeof body.sessionId === "string"
+        ? body.sessionId
+        : request.headers.get("routa-session-id") ?? undefined;
+    const scopedArgs = requestSessionId && args.sessionId !== requestSessionId
+      ? { ...args, sessionId: requestSessionId }
+      : args;
+
+    const { system } = createRoutaMcpServer({
+      workspaceId,
+      toolMode,
+      mcpProfile,
+      sessionId: requestSessionId,
+    });
     const kanbanTools = new KanbanTools(system.kanbanBoardStore, system.taskStore);
     kanbanTools.setEventBus(system.eventBus);
     kanbanTools.setAutomationSystem(system);
-    const result = await executeMcpTool(system.tools, name, args, system.noteTools, system.workspaceTools, kanbanTools, mcpProfile);
+    const result = await executeMcpTool(system.tools, name, scopedArgs, system.noteTools, system.workspaceTools, kanbanTools, mcpProfile);
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(

@@ -135,7 +135,7 @@ describe("collectTeamTreeSessionIds", () => {
 });
 
 describe("findUnassignedHistoricalCardIds", () => {
-  it("selects only teamRunId-less cards with no team-tree linkage", () => {
+  it("selects unowned cards and cards whose explicit Team root is gone", () => {
     const covered = collectTeamTreeSessionIds(teamSessions(), "ws-1");
     const tasks = [
       // Explicitly owned → not unassigned.
@@ -150,12 +150,15 @@ describe("findUnassignedHistoricalCardIds", () => {
       task("task-orphan"),
       // Stale link to a nonexistent session → still unassigned.
       task("task-stale", { sessionIds: ["ghost-session"] }),
+      // Its Team root is gone → orphaned and eligible for explicit cleanup.
+      task("task-deleted-team", { teamRunId: "deleted-root" }),
     ];
 
-    expect(findUnassignedHistoricalCardIds(tasks, covered)).toEqual([
+    expect(findUnassignedHistoricalCardIds(tasks, covered, new Set(["root-1", "root-2"]))).toEqual([
       "task-normal-linked",
       "task-orphan",
       "task-stale",
+      "task-deleted-team",
     ]);
   });
 });
@@ -170,6 +173,7 @@ describe("previewUnassignedHistoricalCards", () => {
       [
         task("task-orphan"),
         task("task-owned", { teamRunId: "root-1" }),
+        task("task-deleted-team", { teamRunId: "deleted-root" }),
         task("task-legacy-linked", { triggerSessionId: "grandchild-1" }),
       ],
       tracker,
@@ -177,7 +181,7 @@ describe("previewUnassignedHistoricalCards", () => {
 
     const preview = await previewUnassignedHistoricalCards(ports, "ws-1");
 
-    expect(preview).toEqual({ workspaceId: "ws-1", taskIds: ["task-orphan"] });
+    expect(preview).toEqual({ workspaceId: "ws-1", taskIds: ["task-orphan", "task-deleted-team"] });
     expect(tracker.deleted).toEqual([]);
     expect(tracker.notified).toEqual([]);
   });

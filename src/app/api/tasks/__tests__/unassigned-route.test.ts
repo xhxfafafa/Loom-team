@@ -55,6 +55,8 @@ beforeEach(() => {
     { id: "task-orphan", workspaceId: "ws-1" },
     // Explicitly owned by the team.
     { id: "task-owned", workspaceId: "ws-1", teamRunId: "root-1" },
+    // Explicit owner points to a Team root that was already deleted.
+    { id: "task-deleted-team", workspaceId: "ws-1", teamRunId: "deleted-root" },
     // Legacy-linked into the team tree.
     { id: "task-linked", workspaceId: "ws-1", triggerSessionId: "child-1" },
     // Another workspace entirely.
@@ -95,8 +97,8 @@ describe("GET /api/tasks/unassigned", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(body.workspaceId).toBe("ws-1");
-    expect(body.count).toBe(1);
-    expect(body.taskIds).toEqual(["task-orphan"]);
+    expect(body.count).toBe(2);
+    expect(body.taskIds).toEqual(["task-orphan", "task-deleted-team"]);
     expect(state.deletedTasks).toEqual([]);
   });
 });
@@ -133,10 +135,10 @@ describe("DELETE /api/tasks/unassigned", () => {
 
     expect(response.status).toBe(200);
     expect(body.workspaceId).toBe("ws-1");
-    expect(body.deletedCount).toBe(1);
-    expect(body.deletedTaskIds).toEqual(["task-orphan"]);
-    expect(state.deletedTasks).toEqual(["task-orphan"]);
-    expect(state.notified).toEqual(["task-orphan"]);
+    expect(body.deletedCount).toBe(2);
+    expect(body.deletedTaskIds).toEqual(["task-orphan", "task-deleted-team"]);
+    expect(state.deletedTasks).toEqual(["task-orphan", "task-deleted-team"]);
+    expect(state.notified).toEqual(["task-orphan", "task-deleted-team"]);
     // Owned, team-linked and cross-workspace cards are never touched.
     expect(state.deletedTasks).not.toContain("task-owned");
     expect(state.deletedTasks).not.toContain("task-linked");

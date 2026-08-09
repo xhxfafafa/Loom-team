@@ -1116,7 +1116,14 @@ export class OpencodeSdkDirectAdapter {
                   import("@/core/mcp/mcp-tool-executor"),
                   import("@/core/tools/kanban-tools"),
                 ]);
-                const { system } = createRoutaMcpServer({ workspaceId, toolMode: "essential" });
+                // This direct SDK path bypasses the HTTP MCP transport, so it
+                // must explicitly pass the active ACP session to preserve Team
+                // ownership on cards created by its tools.
+                const { system } = createRoutaMcpServer({
+                  workspaceId,
+                  toolMode: "essential",
+                  sessionId,
+                });
                 const kanbanTools = new KanbanTools(system.kanbanBoardStore, system.taskStore);
                 kanbanTools.setEventBus(system.eventBus);
                 kanbanTools.setAutomationSystem(system);

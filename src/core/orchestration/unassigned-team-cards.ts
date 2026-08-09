@@ -1,10 +1,12 @@
 /**
  * Unassigned historical kanban card management.
  *
- * "Unassigned historical cards" are workspace cards that carry no explicit
- * `teamRunId` ownership and are not linked (through any session-link field)
- * to a Team Run session tree that still exists. They are typically leftovers
- * from before explicit Team Run card ownership existed.
+ * "Unassigned historical cards" are workspace cards that either carry no
+ * explicit `teamRunId` ownership and are not linked (through any session-link
+ * field) to a Team Run session tree that still exists, or carry a `teamRunId`
+ * whose Team Run root has already been deleted. They are typically leftovers
+ * from before explicit Team Run card ownership existed or from a deletion that
+ * happened before ownership cleanup was available.
  *
  * Rules (all enforced server-side):
  * - Old cards are never auto-backfilled with a `teamRunId` — ambiguous
@@ -15,7 +17,7 @@
  *   touched.
  * - A card whose session links intersect any existing Team Run tree is kept
  *   even without explicit ownership, because the link keeps its ownership
- *   ambiguous.
+ *   ambiguous. Explicit ownership is also kept when its Team Run root exists.
  */
 
 import { and, eq, inArray } from "drizzle-orm";
@@ -87,11 +89,17 @@ export function collectTeamTreeSessionIds(
 export function findUnassignedHistoricalCardIds(
   tasks: Task[],
   teamTreeSessionIds: Set<string>,
+  existingTeamRootIds: Set<string>,
 ): string[] {
   const ids: string[] = [];
   for (const task of tasks) {
-    if (task.teamRunId) continue;
+    // An explicit Team owner is authoritative while its root exists. If the
+    // root is gone, the card is an orphan left by an earlier partial deletion
+    // and is eligible for this confirmation-gated historical cleanup.
+    if (task.teamRunId && existingTeamRootIds.has(task.teamRunId)) continue;
     const refs = collectTaskSessionRefs(task);
+    // Do not delete a stale explicit owner if its card is still linked to a
+    // live Team tree. The link makes the ownership ambiguous.
     if (refs.some((id) => teamTreeSessionIds.has(id))) continue;
     ids.push(task.id);
   }
@@ -106,8 +114,14 @@ async function resolveUnassignedTaskIds(
     ports.listSessions(),
     ports.taskStore.listByWorkspace(workspaceId),
   ]);
-  const teamTreeIds = collectTeamTreeSessionIds(sessions, workspaceId);
-  return findUnassignedHistoricalCardIds(tasks, teamTreeIds);
+  const workspaceSessions = sessions.filter((session) => session.workspaceId === workspaceId);
+  const teamTreeIds = collectTeamTreeSessionIds(workspaceSessions, workspaceId);
+  const existingTeamRootIds = new Set(
+    workspaceSessions
+      .filter((session) => isTeamRunRoot(session, workspaceSessions))
+      .map((session) => session.sessionId),
+  );
+  return findUnassignedHistoricalCardIds(tasks, teamTreeIds, existingTeamRootIds);
 }
 
 /** Count/list the workspace's unassigned historical cards (read-only). */

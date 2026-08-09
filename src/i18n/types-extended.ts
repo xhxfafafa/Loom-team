@@ -1257,7 +1257,8 @@ export interface ExtendedTranslationDictionarySections extends TailTranslationDi
     deleteDialogPreviewFailed: string;
     deleteDialogStatsSessions: string;
     deleteDialogStatsActiveAgents: string;
-    deleteDialogStatsKanbanCards: string;
+    deleteDialogStatsKanbanCardsExplicit: string;
+    deleteDialogStatsKanbanCardsLegacy: string;
     deleteDialogStatsArtifacts: string;
     deleteDialogStatsWorktrees: string;
     deleteDialogStatsNotes: string;

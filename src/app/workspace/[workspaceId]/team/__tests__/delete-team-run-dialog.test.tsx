@@ -32,7 +32,8 @@ vi.mock("@/i18n", () => ({
         deleteDialogPreviewFailed: "Could not load the deletion preview.",
         deleteDialogStatsSessions: "Sessions",
         deleteDialogStatsActiveAgents: "Active agents",
-        deleteDialogStatsKanbanCards: "Kanban cards",
+        deleteDialogStatsKanbanCardsExplicit: "Kanban cards (Team-owned)",
+        deleteDialogStatsKanbanCardsLegacy: "Kanban cards (session-tree linked)",
         deleteDialogStatsArtifacts: "Artifacts",
         deleteDialogStatsWorktrees: "Worktrees",
         deleteDialogStatsNotes: "Notes",
@@ -58,6 +59,8 @@ const preview = {
     sessions: 3,
     activeAgents: 1,
     kanbanCards: 2,
+    explicitKanbanCards: 1,
+    legacyKanbanCards: 1,
     artifacts: 1,
     worktrees: 1,
     notes: 0,
@@ -126,6 +129,8 @@ describe("DeleteTeamRunDialog", () => {
 
     // Impact stats + active-agent warning from the preview.
     expect(screen.getByText("3")).toBeTruthy();
+    expect(screen.getByText("Kanban cards (Team-owned)")).toBeTruthy();
+    expect(screen.getByText("Kanban cards (session-tree linked)")).toBeTruthy();
     expect(screen.getByText("1 agents are still running and will be stopped.")).toBeTruthy();
     expect(screen.getByText("Shared items are preserved.")).toBeTruthy();
 

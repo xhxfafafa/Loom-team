@@ -199,6 +199,8 @@ describe("GET /api/team-runs/:rootSessionId/preview", () => {
       sessions: 2,
       activeAgents: 0,
       kanbanCards: 1,
+      explicitKanbanCards: 0,
+      legacyKanbanCards: 1,
       artifacts: 0,
       worktrees: 0,
       notes: 0,

@@ -109,6 +109,10 @@ export interface TeamRunDeletionPlan {
   sharedAgentIds: string[];
   /** Kanban cards owned exclusively by this team; will be deleted. */
   kanbanTaskIds: string[];
+  /** Subset of kanbanTaskIds matched by the explicit `teamRunId` ownership. */
+  explicitKanbanTaskIds: string[];
+  /** Subset of kanbanTaskIds matched only by the legacy session-tree links. */
+  legacyKanbanTaskIds: string[];
   /** Cards linked to the team but shared with live outside sessions; kept. */
   sharedKanbanTaskIds: string[];
   /** Artifacts belonging to deleted cards. */
@@ -149,7 +153,7 @@ const STOP_SETTLE_POLL_MS = 50;
 // ─── Ownership helpers ───────────────────────────────────────────────────
 
 /** All session IDs referenced by a kanban task through any session-link field. */
-function collectTaskSessionRefs(task: Task): string[] {
+export function collectTaskSessionRefs(task: Task): string[] {
   const refs = new Set<string>();
   if (task.sessionId) refs.add(task.sessionId);
   if (task.triggerSessionId) refs.add(task.triggerSessionId);
@@ -255,19 +259,44 @@ async function buildPlanFromSessions(
   const agentIds = [...privateAgentIds].filter((agentId) => workspaceAgentIds.has(agentId));
   const sharedAgentIds = [...treeSessionAgentIds].filter((agentId) => outsideSessionAgentIds.has(agentId));
 
-  // Kanban cards: delete when linked to the tree and NOT referenced by any
-  // live session outside the tree.
+  // Kanban cards are collected two ways and the results deduplicated:
+  //
+  // 1. Explicit ownership (preferred): cards stamped with this Team Run's ID
+  //    (`task.teamRunId === root.sessionId`). These are deleted even when their
+  //    session links are stale or detached, so ownership no longer depends on
+  //    unreliable parentSessionId inference. Cards owned by a *different* Team
+  //    Run are never touched here.
+  // 2. Legacy fallback: cards whose session-link fields intersect the tree, for
+  //    historical cards created before `teamRunId` existed. Cards explicitly
+  //    owned by another team are excluded from this inference.
+  //
+  // In both cases a card that a live session *outside* the tree references is
+  // preserved as shared.
   const tasks = await ports.system.taskStore.listByWorkspace(root.workspaceId);
   const kanbanTaskIds: string[] = [];
+  const explicitKanbanTaskIds: string[] = [];
+  const legacyKanbanTaskIds: string[] = [];
   const sharedKanbanTaskIds: string[] = [];
   for (const task of tasks) {
+    const explicitOwner = task.teamRunId === root.sessionId;
+    const ownedByOtherTeam = !!task.teamRunId && task.teamRunId !== root.sessionId;
+
     const refs = collectTaskSessionRefs(task);
-    if (!refs.some((id) => treeSet.has(id))) continue;
+    const legacyLinked = !ownedByOtherTeam && refs.some((id) => treeSet.has(id));
+
+    if (!explicitOwner && !legacyLinked) continue;
+
     const hasExternalLiveRef = refs.some((id) => !treeSet.has(id) && existingSessionIds.has(id));
     if (hasExternalLiveRef) {
       sharedKanbanTaskIds.push(task.id);
+      continue;
+    }
+
+    kanbanTaskIds.push(task.id);
+    if (explicitOwner) {
+      explicitKanbanTaskIds.push(task.id);
     } else {
-      kanbanTaskIds.push(task.id);
+      legacyKanbanTaskIds.push(task.id);
     }
   }
 
@@ -352,6 +381,8 @@ async function buildPlanFromSessions(
     agentIds,
     sharedAgentIds,
     kanbanTaskIds,
+    explicitKanbanTaskIds,
+    legacyKanbanTaskIds,
     sharedKanbanTaskIds,
     artifactIds,
     worktrees,

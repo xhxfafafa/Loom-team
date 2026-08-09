@@ -16,6 +16,8 @@ export interface TeamRunDeletionPreview {
     sessions: number;
     activeAgents: number;
     kanbanCards: number;
+    explicitKanbanCards: number;
+    legacyKanbanCards: number;
     artifacts: number;
     worktrees: number;
     notes: number;
@@ -163,7 +165,8 @@ export function DeleteTeamRunDialog({ workspaceId, teamRun, onClose, onDeleted }
   const stats: Array<[string, number]> = preview ? [
     [t.team.deleteDialogStatsSessions, preview.counts.sessions],
     [t.team.deleteDialogStatsActiveAgents, preview.counts.activeAgents],
-    [t.team.deleteDialogStatsKanbanCards, preview.counts.kanbanCards],
+    [t.team.deleteDialogStatsKanbanCardsExplicit, preview.counts.explicitKanbanCards],
+    [t.team.deleteDialogStatsKanbanCardsLegacy, preview.counts.legacyKanbanCards],
     [t.team.deleteDialogStatsArtifacts, preview.counts.artifacts],
     [t.team.deleteDialogStatsWorktrees, preview.counts.worktrees],
     [t.team.deleteDialogStatsNotes, preview.counts.notes],

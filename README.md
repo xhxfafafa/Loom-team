@@ -185,6 +185,22 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+`npm run dev` starts the Webpack dev server (the lower-risk default for memory
+behavior). `npm run dev:turbopack` keeps the Turbopack dev server available for
+dedicated comparison and testing. Production and desktop builds are unaffected.
+
+The Next dev cache (`.next/`) is disposable generated state, but it must only
+be removed while no dev server is running:
+
+1. Stop the running dev server.
+2. Run `npm run dev:clean` — it refuses with a clear error while a Routa dev
+   server is detected, then removes only the repository `.next` directory.
+3. Restart the selected bundler (`npm run dev` or `npm run dev:turbopack`).
+
+Run `npm run dev:diagnose` to report the `.next` cache size; it warns when the
+Turbopack dev cache (`.next/dev/cache/turbopack`) grows past 2 GiB. Capture its
+output in bug reports instead of inspecting arbitrary local files.
+
 ## Develop From Source
 
 ### Web runtime

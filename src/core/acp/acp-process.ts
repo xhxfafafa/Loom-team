@@ -444,6 +444,25 @@ export class AcpProcess {
         this.pendingInteractiveRequests.clear();
     }
 
+    /**
+     * Request termination and wait until the OS child has actually exited.
+     * `kill()` intentionally remains non-blocking for callers that only need
+     * cancellation; lifecycle cleanup must use this method before reporting
+     * memory as reclaimed.
+     */
+    async killAndWait(timeoutMs = 6_000): Promise<boolean> {
+        const child = this.process;
+        this.kill();
+        if (!child || child.exitCode !== null) return true;
+
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            if (child.exitCode !== null) return true;
+            await new Promise<void>((resolve) => setTimeout(resolve, 50));
+        }
+        return child.exitCode !== null;
+    }
+
     respondToUserInput(toolCallId: string, response: Record<string, unknown>): boolean {
         const pending = this.pendingInteractiveRequests.get(toolCallId);
         if (!pending) {

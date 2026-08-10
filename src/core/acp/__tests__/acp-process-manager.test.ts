@@ -57,6 +57,10 @@ vi.mock("@/core/acp/acp-process", () => ({
     kill = vi.fn(() => {
       this.alive = false;
     });
+    killAndWait = vi.fn(async () => {
+      this.kill();
+      return true;
+    });
 
     constructor(config: unknown, onNotification: unknown) {
       this.config = config;
@@ -74,6 +78,10 @@ vi.mock("@/core/acp/claude-code-process", () => ({
     setPermissionMode = vi.fn();
     kill = vi.fn(() => {
       this.alive = false;
+    });
+    killAndWait = vi.fn(async () => {
+      this.kill();
+      return true;
     });
 
     constructor(config: unknown) {
@@ -418,6 +426,23 @@ describe("AcpProcessManager", () => {
 
     await manager.killSession("session-qoder");
     expect(cleanupMcpForProviderMock).toHaveBeenCalledWith(cleanup);
+  });
+
+  it("retains a failed MCP cleanup for a later termination retry", async () => {
+    const manager = new AcpProcessManager();
+    const cleanup = { providerId: "qoder", serverName: "routa", scope: "local", cwd: "/repo" };
+    ensureMcpForProviderMock.mockResolvedValueOnce({ mcpConfigs: [], cleanup });
+    cleanupMcpForProviderMock.mockRejectedValueOnce(new Error("proxy still alive"));
+
+    await manager.createSession("session-mcp-retry", "/repo", vi.fn(), "qoder", undefined, undefined, undefined, "ws-1");
+    const first = await manager.killSession("session-mcp-retry");
+
+    expect(first.mcpCleaned).toBe(false);
+    expect(first.errors.join(" ")).toMatch(/proxy still alive/);
+
+    const second = await manager.killSession("session-mcp-retry");
+    expect(second.mcpCleaned).toBe(true);
+    expect(cleanupMcpForProviderMock).toHaveBeenCalledTimes(2);
   });
 
   it("prepends MCP provider args before caller extra args", async () => {

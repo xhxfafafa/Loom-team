@@ -147,3 +147,18 @@ export {
   type McpSupportedProvider,
   type McpSetupResult,
 } from "./mcp-setup";
+
+// Session runtime finalization exports
+export {
+  finalizeSessionRuntime,
+  finalizeAndRemoveSessions,
+  cleanupSessionRuntimesForMemory,
+  isAutoReleaseCompletedClaudeEnabled,
+  hasActiveSessionDependency,
+  type SessionFinalizationReason,
+  type SessionFinalizationSkipReason,
+  type SessionRuntimeReleaseResult,
+  type SessionRuntimeFinalizerDeps,
+  type RuntimeCleanupReport,
+} from "./session-runtime-finalizer";
+export type { AcpSessionKillResult, AcpRuntimeKind } from "./acp-process-manager";

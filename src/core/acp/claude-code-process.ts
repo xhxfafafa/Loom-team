@@ -433,6 +433,20 @@ export class ClaudeCodeProcess {
         this._alive = false;
     }
 
+    /** Request termination and wait for the actual CLI child-process exit. */
+    async killAndWait(timeoutMs = 6_000): Promise<boolean> {
+        const child = this.process;
+        this.kill();
+        if (!child || child.exitCode !== null) return true;
+
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            if (child.exitCode !== null) return true;
+            await new Promise<void>((resolve) => setTimeout(resolve, 50));
+        }
+        return child.exitCode !== null;
+    }
+
     // ─── Private: Buffer and Parse ──────────────────────────────────────
 
     /**

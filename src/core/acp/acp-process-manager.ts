@@ -95,6 +95,33 @@ export interface ManagedDockerAdapter {
 }
 
 /**
+ * The runtime implementation backing a session, as tracked by the manager.
+ */
+export type AcpRuntimeKind =
+    | "acp-process"
+    | "claude-process"
+    | "opencode-adapter"
+    | "docker-adapter"
+    | "claude-code-sdk-adapter"
+    | "workspace-agent";
+
+/**
+ * Structured result of {@link AcpProcessManager.killSession} so callers can
+ * distinguish logical cleanup from actual process/MCP reclamation.
+ */
+export interface AcpSessionKillResult {
+    sessionId: string;
+    /** True only after the owned process/adapter reports termination. */
+    killed: boolean;
+    /** Which runtime implementation was killed, when any. */
+    runtimeKind?: AcpRuntimeKind;
+    /** True only after the registered MCP cleanup completed successfully. */
+    mcpCleaned: boolean;
+    /** Errors collected while killing the process or cleaning up MCP. */
+    errors: string[];
+}
+
+/**
  * Singleton manager for ACP agent processes.
  * Maps our session IDs to ACP process instances.
  * Supports spawning different agent types via presets, including Claude Code.
@@ -187,14 +214,18 @@ export class AcpProcessManager {
         };
     }
 
-    private async cleanupSessionMcp(sessionId: string): Promise<void> {
+    private async cleanupSessionMcp(sessionId: string): Promise<boolean> {
         const cleanup = this.mcpSessionCleanups.get(sessionId);
         if (!cleanup) {
-            return;
+            return true;
         }
 
-        this.mcpSessionCleanups.delete(sessionId);
         await cleanupMcpForProvider(cleanup);
+        // Keep the cleanup registration until success. If cleanup fails, a
+        // later disconnect/delete can retry rather than losing the proxy's
+        // ownership record and falsely claiming success.
+        this.mcpSessionCleanups.delete(sessionId);
+        return true;
     }
 
     hasActiveSession(sessionId: string): boolean {
@@ -1149,56 +1180,112 @@ export class AcpProcessManager {
     }
 
     /**
-     * Kill a session's agent process or adapter.
+     * Kill a session's agent process or adapter and run its registered MCP
+     * cleanup. Returns a structured result so callers can report which runtime
+     * resources were actually reclaimed.
      */
-    async killSession(sessionId: string): Promise<void> {
+    async killSession(sessionId: string): Promise<AcpSessionKillResult> {
+        const errors: string[] = [];
+        let killed = false;
+        let runtimeKind: AcpRuntimeKind | undefined;
+
+        const recordKillError = (step: string, error: unknown) => {
+            errors.push(`${step}: ${error instanceof Error ? error.message : String(error)}`);
+        };
+
         const managed = this.processes.get(sessionId);
         if (managed) {
-            managed.process.kill();
-            this.processes.delete(sessionId);
-            await this.cleanupSessionMcp(sessionId);
-            return;
+            try {
+                const terminated = await managed.process.killAndWait();
+                if (!terminated) {
+                    throw new Error("ACP process did not exit within the termination grace period");
+                }
+                killed = true;
+                runtimeKind = "acp-process";
+                this.processes.delete(sessionId);
+            } catch (error) {
+                recordKillError("ACP process kill failed", error);
+            }
+        } else {
+            const claudeManaged = this.claudeProcesses.get(sessionId);
+            if (claudeManaged) {
+                try {
+                    const terminated = await claudeManaged.process.killAndWait();
+                    if (!terminated) {
+                        throw new Error("Claude process did not exit within the termination grace period");
+                    }
+                    killed = true;
+                    runtimeKind = "claude-process";
+                    this.claudeProcesses.delete(sessionId);
+                } catch (error) {
+                    recordKillError("Claude process kill failed", error);
+                }
+            } else {
+                const adapterManaged = this.opencodeAdapters.get(sessionId);
+                if (adapterManaged) {
+                    try {
+                        adapterManaged.adapter.kill();
+                        killed = true;
+                        runtimeKind = "opencode-adapter";
+                    } catch (error) {
+                        recordKillError("OpenCode adapter kill failed", error);
+                    }
+                    this.opencodeAdapters.delete(sessionId);
+                } else {
+                    const dockerManaged = this.dockerAdapters.get(sessionId);
+                    if (dockerManaged) {
+                        try {
+                            dockerManaged.adapter.kill();
+                            await getDockerProcessManager().stopContainer(sessionId);
+                            killed = true;
+                            runtimeKind = "docker-adapter";
+                            this.dockerAdapters.delete(sessionId);
+                        } catch (error) {
+                            recordKillError("Docker adapter/container kill failed", error);
+                        }
+                    } else {
+                        const claudeCodeSdkManaged = this.claudeCodeSdkAdapters.get(sessionId);
+                        if (claudeCodeSdkManaged) {
+                            try {
+                                claudeCodeSdkManaged.adapter.kill();
+                                killed = true;
+                                runtimeKind = "claude-code-sdk-adapter";
+                            } catch (error) {
+                                recordKillError("Claude Code SDK adapter kill failed", error);
+                            }
+                            this.claudeCodeSdkAdapters.delete(sessionId);
+                        } else {
+                            const workspaceManaged = this.workspaceAgents.get(sessionId);
+                            if (workspaceManaged) {
+                                try {
+                                    workspaceManaged.adapter.kill();
+                                    killed = true;
+                                    runtimeKind = "workspace-agent";
+                                } catch (error) {
+                                    recordKillError("Workspace agent kill failed", error);
+                                }
+                                this.workspaceAgents.delete(sessionId);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        const claudeManaged = this.claudeProcesses.get(sessionId);
-        if (claudeManaged) {
-            claudeManaged.process.kill();
-            this.claudeProcesses.delete(sessionId);
-            await this.cleanupSessionMcp(sessionId);
-            return;
+        let mcpCleaned = false;
+        try {
+            mcpCleaned = await this.cleanupSessionMcp(sessionId);
+        } catch (error) {
+            recordKillError("MCP cleanup failed", error);
         }
 
-        const adapterManaged = this.opencodeAdapters.get(sessionId);
-        if (adapterManaged) {
-            adapterManaged.adapter.kill();
-            this.opencodeAdapters.delete(sessionId);
-            await this.cleanupSessionMcp(sessionId);
-            return;
-        }
-
-        const dockerManaged = this.dockerAdapters.get(sessionId);
-        if (dockerManaged) {
-            dockerManaged.adapter.kill();
-            this.dockerAdapters.delete(sessionId);
-            getDockerProcessManager().stopContainer(sessionId).catch(() => {});
-            await this.cleanupSessionMcp(sessionId);
-            return;
-        }
-
-        const claudeCodeSdkManaged = this.claudeCodeSdkAdapters.get(sessionId);
-        if (claudeCodeSdkManaged) {
-            claudeCodeSdkManaged.adapter.kill();
-            this.claudeCodeSdkAdapters.delete(sessionId);
-            await this.cleanupSessionMcp(sessionId);
-            return;
-        }
-
-        const workspaceManaged = this.workspaceAgents.get(sessionId);
-        if (workspaceManaged) {
-            workspaceManaged.adapter.kill();
-            this.workspaceAgents.delete(sessionId);
-        }
-        await this.cleanupSessionMcp(sessionId);
+        return {
+            sessionId,
+            killed,
+            runtimeKind,
+            mcpCleaned,
+            errors,
+        };
     }
 
     /**

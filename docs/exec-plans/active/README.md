@@ -17,3 +17,5 @@ When the work lands or is abandoned, move or rewrite the plan instead of leaving
 | [loom-v1-delivery.md](./loom-v1-delivery.md) | Loom v1 delivery workbench: goal input, plan generation, task board, agent team, evidence review, delivery view |
 | [git-workflow-ui-progress.md](./git-workflow-ui-progress.md) | Git workflow UI implementation progress (phases 3–6) |
 | [workspace-centric-normalization.md](./workspace-centric-normalization.md) | Workspace-centric redesign documentation migration and transition cleanup |
+| [development-memory-boundaries.md](./development-memory-boundaries.md) | P0 development memory boundaries: bundler, cache, and ACP runtime reclamation |
+| [team-execution-chain-presets.md](./team-execution-chain-presets.md) | Proposed Team Run execution-chain presets from investigation through full delivery |

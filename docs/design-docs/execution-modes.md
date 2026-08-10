@@ -28,7 +28,7 @@ All three are agent-first entry surfaces. The difference is not "simple vs advan
 |---|---|---|---|---|---|
 | Sessions | one session thread | direct launcher | ROUTA can delegate inside the session when needed | flexible, task-specific, not pre-wired to a lane policy | general-purpose implementation, exploration, recovery |
 | Kanban | one task card in a lane | board + lane transition | lane automation creates sessions from card movement | server-enforced artifacts, contract rules, delivery gates | delivery pipelines, repeatable execution, visible flow control |
-| Team | one team-led run | shared team launcher | Team lead dispatches real child sessions in waves | mandatory delegation + verification culture at the lead layer | complex work spanning multiple specialties and code areas |
+| Team | one team-led run | shared team launcher | Team lead dispatches real child sessions in waves | mandatory delegation + verification culture at the lead layer; verification strength follows the execution chain preset | complex work spanning multiple specialties and code areas |
 
 ## Sessions Mode
 
@@ -118,6 +118,15 @@ The accurate statement is:
 - The team lead uses real child sessions for delegation, not lightweight hidden delegation paths. The prompt explicitly requires `delegate_task_to_agent` so work is visible in Team UI.
 - The lead is instructed to keep small active waves, isolate overlapping scopes, and re-verify before completion.
 - The Team page models top-level runs and descendant counts, which reflects that Team mode is fundamentally session-tree oriented rather than single-thread oriented.
+- The Team launcher offers an execution chain preset (`teamChainId`): `lightweight`, `standard_delivery`, or `full_delivery`. A chain is orchestration policy, not a specialist: the root session stays `team-agent-lead` and carries the optional `teamChainId` field (JSON `teamChainId`, DB column `team_chain_id`). Omitted/legacy runs stay NULL and behave as Full Delivery. The launcher shows a local, advisory recommendation; the persisted chain is displayed read-only in the Team Run header. There is no mid-run chain switching — a stronger chain means starting a new Team Run.
+
+### Execution chains and verification strength
+
+Verification is no longer one-size-fits-all in Team mode; it scales with the selected chain:
+
+- `lightweight`: one implementer self-verifies with targeted evidence. No independent QA or review agent.
+- `standard_delivery`: one primary implementer plus exactly one independent verification stage (QA or code review).
+- `full_delivery`: full multi-stage delivery with independent QA and code review — this is the historical Team behavior and the interpretation of legacy/omitted runs.
 
 ### Product meaning
 

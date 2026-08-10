@@ -474,6 +474,7 @@ async fn fork_session(
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: Some(&session_id),
+                team_chain_id: None,
             },
         )
         .await

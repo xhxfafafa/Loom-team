@@ -24,11 +24,13 @@ use routa_core::storage::{LocalSessionProvider, SessionRecord};
 use routa_core::store::acp_session_store::{AcpSessionRow, CreateAcpSessionParams};
 
 mod session_support;
+mod team_chain_support;
+#[cfg(test)]
+use session_support::has_explicit_cwd;
 use session_support::{
     is_confirmed_normal_completion, maybe_release_completed_session, resolve_session_cwd,
 };
-#[cfg(test)]
-use session_support::has_explicit_cwd;
+use team_chain_support::{build_team_chain_launch_options, resolve_team_chain_request};
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/", get(acp_sse).post(acp_rpc))
@@ -411,6 +413,15 @@ async fn acp_rpc(
                 .get("parentSessionId")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
+            let team_chain_id = match resolve_team_chain_request(
+                &params,
+                &id,
+                specialist_id.as_deref(),
+                parent_session_id.as_deref(),
+            ) {
+                Ok(value) => value,
+                Err(response) => return Ok(response),
+            };
             let tool_mode = params
                 .get("toolMode")
                 .and_then(|v| v.as_str())
@@ -478,18 +489,12 @@ async fn acp_rpc(
                 parent_session_id
             );
 
-            let launch_options = SessionLaunchOptions {
-                specialist_id: specialist_id.clone(),
-                specialist_system_prompt: params
-                    .get("systemPrompt")
-                    .and_then(|v| v.as_str())
-                    .map(str::trim)
-                    .filter(|prompt| !prompt.is_empty())
-                    .map(str::to_string)
-                    .or_else(|| specialist.as_ref().and_then(build_specialist_system_prompt)),
-                allowed_native_tools: derive_allowed_native_tools(specialist_id.as_deref()),
-                ..SessionLaunchOptions::default()
-            };
+            let launch_options = build_team_chain_launch_options(
+                &params,
+                specialist.as_ref(),
+                specialist_id.clone(),
+                team_chain_id.clone(),
+            );
             let persisted_custom_provider_launch = custom_provider_launch.clone();
             let effective_provider = provider.clone().or_else(|| {
                 custom_provider_launch
@@ -564,6 +569,7 @@ async fn acp_rpc(
                                 .as_ref()
                                 .map(|launch| launch.args.as_slice()),
                             parent_session_id: parent_session_id.as_deref(),
+                            team_chain_id: team_chain_id.as_deref(),
                         })
                         .await
                     {
@@ -755,6 +761,9 @@ async fn acp_rpc(
                 let parent_session_id = persisted_session
                     .as_ref()
                     .and_then(|session| session.parent_session_id.clone());
+                let team_chain_id = persisted_session
+                    .as_ref()
+                    .and_then(|session| session.team_chain_id.clone());
                 let tool_mode = params
                     .get("toolMode")
                     .and_then(|v| v.as_str())
@@ -784,18 +793,12 @@ async fn acp_rpc(
                         .as_ref()
                         .map(|launch| launch.command.clone())
                 });
-                let launch_options = SessionLaunchOptions {
-                    specialist_id: specialist_id.clone(),
-                    specialist_system_prompt: params
-                        .get("systemPrompt")
-                        .and_then(|v| v.as_str())
-                        .map(str::trim)
-                        .filter(|prompt| !prompt.is_empty())
-                        .map(str::to_string)
-                        .or_else(|| specialist.as_ref().and_then(build_specialist_system_prompt)),
-                    allowed_native_tools: derive_allowed_native_tools(specialist_id.as_deref()),
-                    ..SessionLaunchOptions::default()
-                };
+                let launch_options = build_team_chain_launch_options(
+                    &params,
+                    specialist.as_ref(),
+                    specialist_id.clone(),
+                    team_chain_id.clone(),
+                );
 
                 // Create the session
                 let create_result = if let Some(custom) = custom_provider_launch.clone() {
@@ -861,6 +864,7 @@ async fn acp_rpc(
                                     .as_ref()
                                     .map(|launch| launch.args.as_slice()),
                                 parent_session_id: parent_session_id.as_deref(),
+                                team_chain_id: team_chain_id.as_deref(),
                             })
                             .await
                         {
@@ -1684,18 +1688,6 @@ async fn acp_rpc(
     }
 }
 
-fn build_specialist_system_prompt(specialist: &SpecialistConfig) -> Option<String> {
-    specialist.system_prompt_with_reminder()
-}
-
-fn derive_allowed_native_tools(specialist_id: Option<&str>) -> Option<Vec<String>> {
-    if specialist_id == Some("team-agent-lead") {
-        return Some(Vec::new());
-    }
-
-    None
-}
-
 /// GET /api/acp?sessionId=xxx — SSE stream for session/update notifications.
 ///
 /// Subscribes to the agent process's broadcast channel so the frontend
@@ -1938,6 +1930,10 @@ async fn persist_session_to_jsonl(
 }
 
 #[cfg(test)]
+#[path = "acp_routes/team_chain_tests.rs"]
+mod team_chain_tests;
+
+#[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
@@ -2083,6 +2079,7 @@ mod tests {
             created_at: 1,
             updated_at: 1,
             parent_session_id: None,
+            team_chain_id: None,
         };
 
         let launch = custom_provider_launch_from_row(&session).expect("launch should exist");
@@ -2113,6 +2110,7 @@ mod tests {
             created_at: 1,
             updated_at: 1,
             parent_session_id: None,
+            team_chain_id: None,
         };
 
         assert!(!should_attempt_native_resume(&codex_session, "codex"));
@@ -2225,6 +2223,7 @@ mod tests {
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: None,
+                team_chain_id: None,
             })
             .await
             .expect("session should persist");
@@ -2274,6 +2273,7 @@ mod tests {
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: None,
+                team_chain_id: None,
             })
             .await
             .expect("session should persist");

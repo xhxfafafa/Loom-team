@@ -1,6 +1,28 @@
 import type { TailTranslationDictionarySections } from "../types-tail";
 
 export const zhTail: TailTranslationDictionarySections = {
+  teamChain: {
+    label: "执行链",
+    recommended: "推荐",
+    lightweight: "轻量执行",
+    standardDelivery: "标准交付",
+    fullDelivery: "完整交付",
+    lightweightPurpose: "单一有边界的改动，快速交付。",
+    standardDeliveryPurpose: "一个主要改动，附带独立验证。",
+    fullDeliveryPurpose: "完整的多阶段交付，含调研与评审。",
+    lightweightPattern: "引导 → 单个实现者 → 交付",
+    standardDeliveryPattern: "引导 → 单个实现者 → 一个独立验证者",
+    fullDeliveryPattern: "引导 → 调研、实现、QA 与评审多波次",
+    lightweightVerification: "由实现者自行验证",
+    standardDeliveryVerification: "一次独立的 QA 或代码评审",
+    fullDeliveryVerification: "独立的 QA 与代码评审",
+    reasonHighRisk: "检测到高风险改动",
+    reasonBoundedScope: "小而有边界的范围",
+    reasonStandardTask: "标准开发任务",
+    reasonAnalysisOnly: "仅分析类请求",
+    analysisOnlyNote: "MVP 尚无强制只读的 Team 链，本次运行仍可能修改代码。",
+  },
+
   messageBubble: {
     thinking: "思考中",
     input: "输入",

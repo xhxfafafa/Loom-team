@@ -203,6 +203,7 @@ mod team_codebase_tests {
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: None,
+                team_chain_id: None,
             })
             .await
             .expect("save root session");
@@ -223,6 +224,7 @@ mod team_codebase_tests {
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: Some("team-root"),
+                team_chain_id: None,
             })
             .await
             .expect("save child session");
@@ -263,6 +265,7 @@ mod team_codebase_tests {
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: None,
+                team_chain_id: None,
             })
             .await
             .expect("save ordinary session");

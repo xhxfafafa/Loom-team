@@ -67,6 +67,7 @@ function toSessionSummary(session: RoutaSessionRecord, hasActiveProcess: boolean
     model: session.model,
     parentSessionId: session.parentSessionId,
     specialistId: session.specialistId,
+    teamChainId: session.teamChainId,
     createdAt: session.createdAt,
     continuityStatus: deriveSessionStatus(session, hasActiveProcess),
     resumeCapabilities: preset?.resume ?? null,

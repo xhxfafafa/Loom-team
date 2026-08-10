@@ -244,6 +244,8 @@ export class BrowserAcpClient {
     idempotencyKey?: string;
     specialistId?: string;
     specialistLocale?: string;
+    /** Team execution chain preset for a top-level team-agent-lead session. */
+    teamChainId?: string;
     /** Optional session-scoped system prompt injected before the first user turn. */
     systemPrompt?: string;
     /** Custom API base URL (overrides ANTHROPIC_BASE_URL env var) */
@@ -283,6 +285,7 @@ export class BrowserAcpClient {
       idempotencyKey: params.idempotencyKey,
       specialistId: params.specialistId,
       specialistLocale: params.specialistLocale,
+      teamChainId: params.teamChainId,
       systemPrompt: params.systemPrompt,
       baseUrl: params.baseUrl,
       apiKey: params.apiKey,

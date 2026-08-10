@@ -5,7 +5,9 @@ import { getDockerDetector } from "@/core/acp/docker/detector";
 import { DEFAULT_DOCKER_AGENT_IMAGE } from "@/core/acp/docker/utils";
 import { AgentRole } from "@/core/models/agent";
 import { consumeAcpPromptResponse } from "@/core/acp/prompt-response";
-import { buildCoordinatorPrompt } from "@/core/orchestration/specialist-prompts";
+import { buildCoordinatorPrompt, getSpecialistById } from "@/core/orchestration/specialist-prompts";
+import { TEAM_LEAD_SPECIALIST_ID } from "@/core/orchestration/team-run-identity";
+import { buildTeamChainPolicyPrompt, type TeamChainId } from "@/core/orchestration/team-chain";
 import {
   createTraceRecord,
   withWorkspaceId,
@@ -312,6 +314,29 @@ function buildCoordinatorFirstPrompt(input: {
   })}${teamLeadFirstTurnContract}`;
 }
 
+/**
+ * Rebuild the combined Team Lead prompt (role prompt + chain policy) from
+ * persisted session metadata after an in-memory loss (e.g. backend restart).
+ * Mirrors the creation-time composition order in acp-session-create.
+ */
+function rebuildTeamLeadRecoveryPrompt(teamChainId: TeamChainId | null): string | undefined {
+  const specialist = getSpecialistById(TEAM_LEAD_SPECIALIST_ID, "en");
+  const specialistSections: string[] = [];
+  if (specialist?.systemPrompt?.trim()) {
+    specialistSections.push(specialist.systemPrompt.trim());
+  }
+  if (specialist?.roleReminder) {
+    specialistSections.push(`**Reminder:** ${specialist.roleReminder}`);
+  }
+
+  const sections = [
+    specialistSections.length > 0 ? specialistSections.join("\n\n---\n") : undefined,
+    buildTeamChainPolicyPrompt(teamChainId) ?? undefined,
+  ].filter((section): section is string => typeof section === "string" && section.trim().length > 0);
+
+  return sections.length > 0 ? sections.join("\n\n---\n\n") : undefined;
+}
+
 async function ensurePromptSessionExists(args: {
   id: string | number | null;
   params: Record<string, unknown>;
@@ -379,7 +404,13 @@ async function ensurePromptSessionExists(args: {
   const mcpProfile = storedSession?.mcpProfile;
   const allowedNativeTools = storedSession?.allowedNativeTools;
   const specialistId = recoveredSession?.specialistId;
-  const specialistSystemPrompt = storedSession?.specialistSystemPrompt;
+  let specialistSystemPrompt = storedSession?.specialistSystemPrompt;
+  if (!specialistSystemPrompt && specialistId === TEAM_LEAD_SPECIALIST_ID) {
+    // The in-memory combined prompt is lost across restarts; rebuild it from
+    // persisted metadata (specialistId + teamChainId) so the selected Team
+    // Chain policy keeps participating in recovery.
+    specialistSystemPrompt = rebuildTeamLeadRecoveryPrompt(recoveredSession?.teamChainId ?? null);
+  }
   const providerSessionId = recoveredSession?.routaAgentId ?? sessionId;
   const modelArgs = buildProviderModelArgs(provider, recoveredSession?.model ?? storedSession?.model);
 
@@ -548,6 +579,7 @@ async function ensurePromptSessionExists(args: {
       provider,
       role,
       specialistId: specialistId ?? undefined,
+      teamChainId: recoveredSession?.teamChainId ?? undefined,
       ...executionBinding,
     });
 

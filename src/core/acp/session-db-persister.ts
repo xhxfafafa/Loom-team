@@ -14,6 +14,7 @@ import { SqliteAcpSessionStore } from "@/core/db/sqlite-stores";
 import { findLocalSessionRecord, LocalSessionProvider } from "@/core/storage/local-session-provider";
 import type { AcpSession } from "@/core/store/acp-session-store";
 import type { SessionRecord, SessionJsonlEntry } from "@/core/storage/types";
+import type { TeamChainId } from "@/core/orchestration/team-chain";
 import {
   compactSessionHistoryForPersistence,
   compactSessionNotificationForPersistence,
@@ -48,6 +49,8 @@ export interface SessionPersistData {
   /** Parent session ID for child (CRAFTER/GATE) sessions */
   parentSessionId?: string;
   specialistId?: string;
+  /** Team execution chain for top-level team-agent-lead sessions; omitted = legacy Full Delivery. */
+  teamChainId?: TeamChainId;
   executionMode?: "embedded" | "runner";
   ownerInstanceId?: string;
   leaseExpiresAt?: string;
@@ -72,6 +75,7 @@ export async function persistSessionToDb(data: SessionPersistData): Promise<void
     messageHistory: [] as never[],
     parentSessionId: data.parentSessionId,
     specialistId: data.specialistId,
+    teamChainId: data.teamChainId,
     executionMode: data.executionMode,
     ownerInstanceId: data.ownerInstanceId,
     leaseExpiresAt: data.leaseExpiresAt,
@@ -113,6 +117,7 @@ export async function persistSessionToDb(data: SessionPersistData): Promise<void
         model: data.model,
         parentSessionId: data.parentSessionId,
         specialistId: data.specialistId,
+        teamChainId: data.teamChainId,
         executionMode: data.executionMode,
         ownerInstanceId: data.ownerInstanceId,
         leaseExpiresAt: data.leaseExpiresAt,
@@ -185,6 +190,7 @@ export async function hydrateSessionsFromDb(): Promise<Array<{
   model?: string;
   parentSessionId?: string;
   specialistId?: string;
+  teamChainId?: TeamChainId;
   executionMode?: "embedded" | "runner";
   ownerInstanceId?: string;
   leaseExpiresAt?: string;
@@ -221,6 +227,7 @@ export async function loadSessionFromDb(sessionId: string): Promise<{
   model?: string;
   parentSessionId?: string;
   specialistId?: string;
+  teamChainId?: TeamChainId;
   executionMode?: "embedded" | "runner";
   ownerInstanceId?: string;
   leaseExpiresAt?: string;
@@ -257,6 +264,7 @@ export async function loadSessionFromLocalStorage(sessionId: string): Promise<{
   model?: string;
   parentSessionId?: string;
   specialistId?: string;
+  teamChainId?: TeamChainId;
   executionMode?: "embedded" | "runner";
   ownerInstanceId?: string;
   leaseExpiresAt?: string;

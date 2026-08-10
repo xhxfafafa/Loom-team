@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronLeft, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "@/i18n";
+import { parseTeamChainId, resolveEffectiveTeamChainId } from "@/core/orchestration/team-chain";
 import type { SessionInfo } from "../../types";
 
 interface TeamRunPageHeaderProps {
@@ -50,6 +51,21 @@ export function TeamRunPageHeader({
     .replace(/^\s*team\s+[-:：]?\s*/i, "")
     .trim() || t.team.teamRuns;
 
+  // Read-only display of the persisted execution chain. Omitted/legacy values
+  // are interpreted as Full Delivery.
+  const selectedTeamChainLabel = selectedTeamRun
+    ? (() => {
+        switch (resolveEffectiveTeamChainId(parseTeamChainId(selectedTeamRun.teamChainId))) {
+          case "lightweight":
+            return t.teamChain.lightweight;
+          case "standard_delivery":
+            return t.teamChain.standardDelivery;
+          default:
+            return t.teamChain.fullDelivery;
+        }
+      })()
+    : null;
+
   useEffect(() => {
     if (!teamRunSwitcherRef.current) return;
     const handleClickOutside = (event: MouseEvent) => {
@@ -92,6 +108,15 @@ export function TeamRunPageHeader({
                 <span className="block text-[9px] uppercase tracking-[0.16em] text-desktop-text-muted">{t.team.teamRuns}</span>
                 <span className="block truncate text-[12px] font-semibold text-desktop-text-primary">{normalizedTeamRunTitle}</span>
               </span>
+              {selectedTeamChainLabel ? (
+                <span
+                  data-testid="team-run-chain-label"
+                  title={t.teamChain.label}
+                  className="shrink-0 rounded-full border border-desktop-border bg-desktop-bg-secondary px-2 py-0.5 text-[10px] font-medium text-desktop-text-secondary"
+                >
+                  {selectedTeamChainLabel}
+                </span>
+              ) : null}
               {canSwitchTeamRun ? (
                 <ChevronDown
                   className={`h-3.5 w-3.5 text-desktop-text-secondary transition-transform ${showTeamRunMenu ? "rotate-180" : ""}`}

@@ -10,9 +10,11 @@
  * - Context (workspace/repo) is always visible but non-intrusive
  */
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { TiptapInput, type InputContext } from "./tiptap-input";
+import { TeamChainSelector } from "./team-chain-selector";
+import { recommendTeamChain, type TeamChainId } from "@/core/orchestration/team-chain";
 import { useAcp } from "../hooks/use-acp";
 import { useSkills } from "../hooks/use-skills";
 import { useWorkspaces, useCodebases } from "../hooks/use-workspaces";
@@ -49,6 +51,8 @@ export interface LaunchModeConfig {
   requireRepoSelection?: boolean;
   /** Attach the selected repository to the workspace before launching. */
   attachSelectedRepoToWorkspace?: boolean;
+  /** Show the Team execution-chain selector and pass teamChainId on creation. */
+  teamChainSelector?: boolean;
   dispatchMode?: HomeInputDispatchMode;
   buildSessionUrl?: (workspaceId: string | null, sessionId: string) => string | null;
   sessionConfig?: HomeInputSessionConfig;
@@ -184,6 +188,16 @@ export function HomeInput({
   const repoSelectionRef = useRef<RepoSelection | null>(null);
   const [pendingSkill, setPendingSkill] = useState<string | null>(null);
 
+  // Team execution chain: track the request text so the advisory recommendation
+  // can follow the user's input until they explicitly pick a chain.
+  const [teamRequestText, setTeamRequestText] = useState("");
+  const [teamChainOverride, setTeamChainOverride] = useState<TeamChainId | null>(null);
+  const teamChainRecommendation = useMemo(
+    () => recommendTeamChain(teamRequestText),
+    [teamRequestText],
+  );
+  const effectiveTeamChainId: TeamChainId = teamChainOverride ?? teamChainRecommendation.chainId;
+
   // Specialists
   const [specialists, setSpecialists] = useState<SpecialistSummary[]>([]);
   const [selectedSpecialistId, setSelectedSpecialistId] = useState<string | null>(null);
@@ -211,6 +225,8 @@ export function HomeInput({
     allowCustomSpecialist,
     selectedSpecialistId,
   });
+  const showTeamChainSelector = activeLaunchMode?.teamChainSelector ?? false;
+  const launchTeamChainId = showTeamChainSelector ? effectiveTeamChainId : undefined;
 
   // Sync with external workspaceId prop
   useEffect(() => {
@@ -246,6 +262,12 @@ export function HomeInput({
     if (!activeLaunchMode) return;
     onLaunchModeChange?.(activeLaunchMode.id);
   }, [activeLaunchMode, onLaunchModeChange]);
+
+  // A fresh launch mode starts with no explicit chain choice, so the selector
+  // follows the advisory recommendation again.
+  useEffect(() => {
+    setTeamChainOverride(null);
+  }, [activeLaunchModeId]);
 
   // Auto-select first workspace if none selected
   useEffect(() => {
@@ -443,6 +465,10 @@ export function HomeInput({
           undefined,
           activeSessionConfig?.mcpProfile as Parameters<typeof acp.createSession>[14],
           resolvedSystemPrompt,
+          undefined,
+          undefined,
+          undefined,
+          launchTeamChainId,
         );
 
         if (result?.sessionId) {
@@ -475,14 +501,14 @@ export function HomeInput({
             router.push(url);
           }
         }
-      } catch (error) {
+      } catch {
         setLaunchError(t.home.launchFailed);
       } finally {
         isSubmittingRef.current = false;
         setIsSubmitting(false);
       }
     },
-    [acp, activeSessionConfig, allowCustomSpecialist, codebases, effectiveAttachSelectedRepoToWorkspace, effectiveBuildSessionUrl, effectiveDispatchMode, effectiveLockedSpecialistId, effectiveRequireRepoSelection, router, onSessionCreated, selectedRole, selectedSpecialistId, selectedWorkspaceId, specialists, t.home.launchFailed, t.home.repoAttachFailed],
+    [acp, activeSessionConfig, allowCustomSpecialist, codebases, effectiveAttachSelectedRepoToWorkspace, effectiveBuildSessionUrl, effectiveDispatchMode, effectiveLockedSpecialistId, effectiveRequireRepoSelection, launchTeamChainId, router, onSessionCreated, selectedRole, selectedSpecialistId, selectedWorkspaceId, specialists, t.home.launchFailed, t.home.repoAttachFailed],
   );
 
   const activeWorkspace = workspacesHook.workspaces.find((w) => w.id === selectedWorkspaceId);
@@ -544,6 +570,7 @@ export function HomeInput({
           {/* TiptapInput */}
           <TiptapInput
             onSend={handleSend}
+            onTextChange={showTeamChainSelector ? setTeamRequestText : undefined}
             placeholder={effectivePlaceholder}
             disabled={!acp.connected || isSubmitting || (effectiveRequireRepoSelection && !repoSelection?.path)}
             loading={isSubmitting}
@@ -685,6 +712,15 @@ export function HomeInput({
                   </>
                 )}
               </>
+            )}
+
+            {/* Team execution chain selector */}
+            {showTeamChainSelector && (
+              <TeamChainSelector
+                recommendation={teamChainRecommendation}
+                selectedChainId={effectiveTeamChainId}
+                onSelect={setTeamChainOverride}
+              />
             )}
 
             {/* Workspace Pill */}

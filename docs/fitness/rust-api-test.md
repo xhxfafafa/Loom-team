@@ -90,6 +90,8 @@ metrics:
 | sessions | `GET /api/sessions/{id}/history` | history + consolidation | 空历史与合并参数行为 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_session_contract_with_negative_paths` |
 | sessions | `POST /api/sessions/{id}/disconnect` | lifecycle | 缺失会话返回 404 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_session_contract_with_negative_paths` |
 | sessions | `GET /api/sessions/{id}/context` | context | 会话拓扑查询与缺失处理 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_session_contract_with_negative_paths` |
+| sessions | `POST /api/acp` (session/new) | teamChainId validation | 非法值/非 team-agent-lead/子会话携带 teamChainId 均返回 -32602 | VERIFIED | `crates/routa-server/src/api/acp_routes.rs::session_new_rejects_unknown_team_chain_id`、`session_new_rejects_team_chain_id_on_non_team_lead`、`session_new_rejects_team_chain_id_on_child_session`（Web 侧对应 `src/core/orchestration/__tests__/team-chain.test.ts`） |
+| sessions | `GET /api/sessions` / `GET /api/sessions/{id}` | teamChainId field | 显式链值原样返回；缺省/legacy 为 null（按 full_delivery 解释） | VERIFIED | `crates/routa-server/src/application/sessions.rs::session_serializes_team_chain_id`、`session_serializes_absent_team_chain_id_as_null`（Web 侧对应 `src/app/api/sessions/__tests__/route.test.ts`、`src/app/api/sessions/[sessionId]/__tests__/route.test.ts`） |
 | health | `GET /api/health` | availability | 返回 schema + 可读状态码 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_health_contract` |
 
 ## 回归清单（强制）

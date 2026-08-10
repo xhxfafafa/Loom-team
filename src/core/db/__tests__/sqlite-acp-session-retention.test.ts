@@ -39,6 +39,7 @@ describe("sqlite ACP session retention", () => {
         message_history TEXT DEFAULT '[]',
         parent_session_id TEXT,
         specialist_id TEXT,
+        team_chain_id TEXT,
         execution_mode TEXT,
         owner_instance_id TEXT,
         lease_expires_at INTEGER,
@@ -114,6 +115,40 @@ describe("sqlite ACP session retention", () => {
       expect(notification.update).not.toHaveProperty("accumulatedJson");
       expect(notification.update).not.toHaveProperty("parsedInput");
     }
+  });
+
+  it("round-trips teamChainId on the root team session", async () => {
+    await store.save({
+      id: "team-root",
+      cwd: "/tmp/project",
+      workspaceId: "workspace-1",
+      specialistId: "team-agent-lead",
+      teamChainId: "standard_delivery",
+      messageHistory: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const loaded = await store.get("team-root");
+    expect(loaded?.specialistId).toBe("team-agent-lead");
+    expect(loaded?.teamChainId).toBe("standard_delivery");
+
+    // Omitted teamChainId stays NULL (legacy Full Delivery).
+    await store.save({
+      id: "team-legacy",
+      cwd: "/tmp/project",
+      workspaceId: "workspace-1",
+      specialistId: "team-agent-lead",
+      messageHistory: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const legacy = await store.get("team-legacy");
+    expect(legacy?.teamChainId).toBeUndefined();
+    const legacyRow = sqlite
+      .prepare("SELECT team_chain_id AS teamChainId FROM acp_sessions WHERE id = ?")
+      .get("team-legacy") as { teamChainId: string | null };
+    expect(legacyRow.teamChainId).toBeNull();
   });
 });
 

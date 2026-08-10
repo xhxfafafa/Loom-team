@@ -1,6 +1,28 @@
 import type { TailTranslationDictionarySections } from "../types-tail";
 
 export const enTail: TailTranslationDictionarySections = {
+  teamChain: {
+    label: "Execution Chain",
+    recommended: "Recommended",
+    lightweight: "Lightweight",
+    standardDelivery: "Standard Delivery",
+    fullDelivery: "Full Delivery",
+    lightweightPurpose: "One bounded change, delivered fast.",
+    standardDeliveryPurpose: "One primary change with independent verification.",
+    fullDeliveryPurpose: "Full multi-stage delivery with research and review.",
+    lightweightPattern: "Lead → one implementer → delivery",
+    standardDeliveryPattern: "Lead → one implementer → one independent verifier",
+    fullDeliveryPattern: "Lead → research, implementation, QA and review waves",
+    lightweightVerification: "Self-verification by the implementer",
+    standardDeliveryVerification: "One independent QA or code review",
+    fullDeliveryVerification: "Independent QA and code review",
+    reasonHighRisk: "High-risk change detected",
+    reasonBoundedScope: "Small, bounded scope",
+    reasonStandardTask: "Standard development task",
+    reasonAnalysisOnly: "Analysis-only request",
+    analysisOnlyNote: "The MVP has no enforced read-only Team chain. This run may still modify code.",
+  },
+
   messageBubble: {
     thinking: "Thinking",
     input: "Input",

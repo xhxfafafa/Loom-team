@@ -400,6 +400,181 @@ describe("/api/acp POST", () => {
     });
   });
 
+  it("rejects session/new with an unknown teamChainId", async () => {
+    const response = await POST(
+      new NextRequest("http://localhost/api/acp", {
+        method: "POST",
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 30,
+          method: "session/new",
+          params: {
+            provider: "codex-acp",
+            workspaceId: "default",
+            cwd: "/tmp/project",
+            specialistId: "team-agent-lead",
+            teamChainId: "investigation",
+          },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      jsonrpc: "2.0",
+      id: 30,
+      error: {
+        code: -32602,
+        message: "teamChainId must be one of: lightweight, standard_delivery, full_delivery",
+      },
+    });
+    expect(httpSessionStore.upsertSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects teamChainId on sessions that are not team-agent-lead", async () => {
+    const response = await POST(
+      new NextRequest("http://localhost/api/acp", {
+        method: "POST",
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 31,
+          method: "session/new",
+          params: {
+            provider: "codex-acp",
+            workspaceId: "default",
+            cwd: "/tmp/project",
+            specialistId: "frontend-crafter",
+            teamChainId: "lightweight",
+          },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      jsonrpc: "2.0",
+      id: 31,
+      error: {
+        code: -32602,
+        message: "teamChainId is only allowed on team-agent-lead sessions",
+      },
+    });
+    expect(httpSessionStore.upsertSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects teamChainId on child sessions", async () => {
+    const response = await POST(
+      new NextRequest("http://localhost/api/acp", {
+        method: "POST",
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 32,
+          method: "session/new",
+          params: {
+            provider: "codex-acp",
+            workspaceId: "default",
+            cwd: "/tmp/project",
+            specialistId: "team-agent-lead",
+            parentSessionId: "parent-1",
+            teamChainId: "lightweight",
+          },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      jsonrpc: "2.0",
+      id: 32,
+      error: {
+        code: -32602,
+        message: "teamChainId is only allowed on top-level team sessions",
+      },
+    });
+    expect(httpSessionStore.upsertSession).not.toHaveBeenCalled();
+  });
+
+  it("accepts a valid teamChainId and stores it on the root session", async () => {
+    acpProcessManager.createSession.mockRejectedValue(new Error("stop creation in test"));
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/acp", {
+        method: "POST",
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 33,
+          method: "session/new",
+          params: {
+            provider: "codex-acp",
+            workspaceId: "default",
+            cwd: "/tmp/project",
+            specialistId: "team-agent-lead",
+            teamChainId: "standard_delivery",
+          },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      jsonrpc: "2.0",
+      id: 33,
+      result: {
+        provider: "codex-acp",
+        sessionId: expect.any(String),
+      },
+    });
+    expect(httpSessionStore.upsertSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        specialistId: "team-agent-lead",
+        teamChainId: "standard_delivery",
+        parentSessionId: undefined,
+      }),
+    );
+    const specialistSystemPrompt = httpSessionStore.upsertSession.mock.calls[0][0]
+      .specialistSystemPrompt as string;
+    expect(specialistSystemPrompt).toContain("Team Chain Policy: Standard Delivery");
+  });
+
+  it("combines the lightweight policy with chain-conditional lead rules and no absolute full-delivery verification", async () => {
+    acpProcessManager.createSession.mockRejectedValue(new Error("stop creation in test"));
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/acp", {
+        method: "POST",
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 34,
+          method: "session/new",
+          params: {
+            provider: "codex-acp",
+            workspaceId: "default",
+            cwd: "/tmp/project",
+            specialistId: "team-agent-lead",
+            teamChainId: "lightweight",
+          },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const specialistSystemPrompt = httpSessionStore.upsertSession.mock.calls[0][0]
+      .specialistSystemPrompt as string;
+
+    // The lightweight policy is present and wins over the default rules.
+    expect(specialistSystemPrompt).toContain("Team Chain Policy: Lightweight");
+    expect(specialistSystemPrompt).toContain(
+      "do NOT spawn an independent QA or code-review agent",
+    );
+    // The base lead prompt defers to the active chain instead of asserting an
+    // absolute full-delivery verification mandate.
+    expect(specialistSystemPrompt).toContain("Team Chain Policy");
+    expect(specialistSystemPrompt).not.toContain("No exceptions for");
+    expect(specialistSystemPrompt).not.toContain(
+      "Every implementation gets checked by qa or code-reviewer. No exceptions",
+    );
+  });
+
   it("forwards explicit ACP mcpServers when creating sessions", async () => {
     acpProcessManager.createSession.mockResolvedValue("session-codex-acp");
 

@@ -22,6 +22,7 @@ import type { NormalizedSessionUpdate } from "./provider-adapter/types";
 import { getRoutaSystem } from "../routa-system";
 import { EventBus, AgentEventType } from "../events/event-bus";
 import type { McpServerProfile } from "../mcp/mcp-server-profiles";
+import type { TeamChainId } from "../orchestration/team-chain";
 
 export type AcpSessionStatus = "connecting" | "ready" | "error";
 
@@ -49,6 +50,8 @@ export interface RoutaSessionRecord {
   parentSessionId?: string;
   /** The custom specialist ID used for this session (if any) */
   specialistId?: string;
+  /** Team execution chain for top-level team-agent-lead sessions; omitted = legacy Full Delivery. */
+  teamChainId?: TeamChainId;
   executionMode?: "embedded" | "runner";
   ownerInstanceId?: string;
   leaseExpiresAt?: string;

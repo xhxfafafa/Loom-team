@@ -6,6 +6,7 @@ import { and, asc, desc, eq, gt } from "drizzle-orm";
 import type { Database } from "./index";
 import { acpSessions, sessionMessages } from "./schema";
 import type { AcpSessionStore, AcpSession, AcpSessionNotification } from "../store/acp-session-store";
+import { parseTeamChainId } from "../orchestration/team-chain";
 import {
   compactSessionHistoryForPersistence,
   compactSessionNotificationForPersistence,
@@ -34,6 +35,7 @@ export class PgAcpSessionStore implements AcpSessionStore {
         messageHistory,
         parentSessionId: session.parentSessionId,
         specialistId: session.specialistId,
+        teamChainId: session.teamChainId,
         executionMode: session.executionMode,
         ownerInstanceId: session.ownerInstanceId,
         leaseExpiresAt: session.leaseExpiresAt ? new Date(session.leaseExpiresAt) : undefined,
@@ -55,6 +57,7 @@ export class PgAcpSessionStore implements AcpSessionStore {
           messageHistory,
           parentSessionId: session.parentSessionId,
           specialistId: session.specialistId,
+          teamChainId: session.teamChainId,
           executionMode: session.executionMode,
           ownerInstanceId: session.ownerInstanceId,
           leaseExpiresAt: session.leaseExpiresAt ? new Date(session.leaseExpiresAt) : undefined,
@@ -188,6 +191,7 @@ export class PgAcpSessionStore implements AcpSessionStore {
       messageHistory: row.messageHistory ?? [],
       parentSessionId: row.parentSessionId ?? undefined,
       specialistId: row.specialistId ?? undefined,
+      teamChainId: parseTeamChainId(row.teamChainId) ?? undefined,
       executionMode: row.executionMode === "embedded" || row.executionMode === "runner"
         ? row.executionMode
         : undefined,

@@ -136,6 +136,7 @@ pub async fn run(
                     custom_command: None,
                     custom_args: None,
                     parent_session_id: None,
+                    team_chain_id: None,
                 })
                 .await
             {

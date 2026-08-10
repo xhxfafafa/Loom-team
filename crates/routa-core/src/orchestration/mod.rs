@@ -9,6 +9,14 @@
 //!   4. Subscribes for completion events
 //!   5. When the child reports back, wakes the parent agent
 
+pub mod team_chain;
+
+pub use team_chain::{
+    build_team_chain_policy_prompt, is_team_chain_id, parse_team_chain_id,
+    resolve_effective_team_chain_id, validate_team_chain_assignment, TeamChainValidationError,
+    DEFAULT_TEAM_CHAIN_ID, TEAM_CHAIN_IDS, TEAM_LEAD_SPECIALIST_ID,
+};
+
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 

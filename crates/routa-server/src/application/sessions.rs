@@ -161,6 +161,7 @@ struct SessionEntry {
     mode_id: Option<String>,
     model: Option<String>,
     specialist_id: Option<String>,
+    team_chain_id: Option<String>,
     created_at: Value,
     updated_at: Option<Value>,
     parent_session_id: Option<String>,
@@ -183,6 +184,7 @@ impl SessionEntry {
             mode_id: session.mode_id,
             model: session.model,
             specialist_id: session.specialist_id,
+            team_chain_id: session.team_chain_id,
             created_at: Value::String(session.created_at),
             updated_at: None,
             parent_session_id: session.parent_session_id,
@@ -204,6 +206,7 @@ impl SessionEntry {
             mode_id: session.mode_id,
             model: None,
             specialist_id: None,
+            team_chain_id: session.team_chain_id,
             created_at: Value::Number(session.created_at.into()),
             updated_at: Some(Value::Number(session.updated_at.into())),
             parent_session_id: session.parent_session_id,
@@ -233,6 +236,9 @@ impl SessionEntry {
         }
         if self.routa_agent_id.is_none() {
             self.routa_agent_id = db.routa_agent_id.clone();
+        }
+        if self.team_chain_id.is_none() {
+            self.team_chain_id = db.team_chain_id.clone();
         }
         self.first_prompt_sent = self.first_prompt_sent || db.first_prompt_sent;
         self.updated_at = Some(Value::Number(db.updated_at.into()));
@@ -300,6 +306,7 @@ impl SessionEntry {
             "modeId": self.mode_id,
             "model": self.model,
             "specialistId": self.specialist_id,
+            "teamChainId": self.team_chain_id,
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
             "firstPromptSent": self.first_prompt_sent,
@@ -323,6 +330,7 @@ impl SessionEntry {
             "modeId": self.mode_id,
             "model": self.model,
             "specialistId": self.specialist_id,
+            "teamChainId": self.team_chain_id,
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
             "parentSessionId": self.parent_session_id,
@@ -345,6 +353,7 @@ impl SessionEntry {
             "modeId": self.mode_id,
             "model": self.model,
             "specialistId": self.specialist_id,
+            "teamChainId": self.team_chain_id,
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
             "parentSessionId": self.parent_session_id,
@@ -761,6 +770,7 @@ mod tests {
             first_prompt_sent: false,
             parent_session_id: parent_session_id.map(str::to_string),
             specialist_id: None,
+            team_chain_id: None,
             specialist_system_prompt: None,
         }
     }
@@ -790,6 +800,7 @@ mod tests {
             created_at,
             updated_at: created_at,
             parent_session_id: parent_session_id.map(str::to_string),
+            team_chain_id: None,
         }
     }
 
@@ -922,6 +933,7 @@ mod tests {
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: None,
+                team_chain_id: None,
             })
             .await
             .expect("create session");
@@ -1112,5 +1124,44 @@ mod tests {
             Value::String("2026-03-19T10:00:00Z".to_string())
         );
         assert_eq!(value["firstPromptSent"], Value::Bool(false));
+    }
+
+    #[test]
+    fn session_serializes_team_chain_id() {
+        let mut record = in_memory_session("team-chain-1", "ws-1", "2026-03-19T10:00:00Z", None);
+        record.team_chain_id = Some("standard_delivery".to_string());
+
+        let sessions = merge_session_entries(
+            vec![record],
+            Vec::new(),
+            &ListSessionsQuery::default(),
+        );
+
+        let entry = &sessions[0];
+        assert_eq!(
+            entry.to_list_value()["teamChainId"].as_str(),
+            Some("standard_delivery")
+        );
+        assert_eq!(
+            entry.to_detail_value()["teamChainId"].as_str(),
+            Some("standard_delivery")
+        );
+        assert_eq!(
+            entry.to_context_value()["teamChainId"].as_str(),
+            Some("standard_delivery")
+        );
+    }
+
+    #[test]
+    fn session_serializes_absent_team_chain_id_as_null() {
+        let sessions = merge_session_entries(
+            vec![in_memory_session("legacy-1", "ws-1", "2026-03-19T10:00:00Z", None)],
+            Vec::new(),
+            &ListSessionsQuery::default(),
+        );
+
+        let entry = &sessions[0];
+        assert_eq!(entry.to_detail_value()["teamChainId"], Value::Null);
+        assert_eq!(entry.to_list_value()["teamChainId"], Value::Null);
     }
 }

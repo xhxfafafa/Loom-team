@@ -212,6 +212,8 @@ export interface UseAcpActions {
       taskAdaptiveHarness?: AcpTaskAdaptiveHarnessOptions,
       /** Board-scoped runtime policy lookup for Kanban sessions. */
       boardId?: string,
+      /** Team execution chain preset for a top-level team-agent-lead session. */
+      teamChainId?: string,
     ) => Promise<AcpNewSessionResult | null>;
   resumeSession: (
     sessionId: string,
@@ -512,6 +514,7 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
       autoApprovePermissions?: boolean,
       taskAdaptiveHarness?: AcpTaskAdaptiveHarnessOptions,
       boardId?: string,
+      teamChainId?: string,
     ): Promise<AcpNewSessionResult | null> => {
       const client = clientRef.current;
       if (!client) return null;
@@ -541,6 +544,7 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
           idempotencyKey,
           specialistId,
           specialistLocale,
+          teamChainId,
           systemPrompt,
           baseUrl,
           apiKey,

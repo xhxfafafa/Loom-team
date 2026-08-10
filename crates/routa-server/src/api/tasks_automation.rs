@@ -293,6 +293,7 @@ async fn trigger_assigned_task_acp_agent(
             custom_command: None,
             custom_args: None,
             parent_session_id: None,
+            team_chain_id: None,
         })
         .await
         .map_err(|error| format!("Failed to persist ACP session: {error}"))?;

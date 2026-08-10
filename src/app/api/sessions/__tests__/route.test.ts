@@ -187,6 +187,36 @@ describe("/api/sessions GET", () => {
     });
   });
 
+  it("exposes teamChainId on team-run summaries and omits it for legacy runs", async () => {
+    listSessions.mockReturnValue([
+      {
+        sessionId: "chain-run",
+        workspaceId: "workspace-1",
+        cwd: "/tmp/project",
+        specialistId: TEAM_LEAD_SPECIALIST_ID,
+        teamChainId: "standard_delivery",
+        createdAt: "2026-04-03T10:05:00.000Z",
+      },
+      {
+        sessionId: "legacy-run",
+        workspaceId: "workspace-1",
+        cwd: "/tmp/project",
+        specialistId: TEAM_LEAD_SPECIALIST_ID,
+        createdAt: "2026-04-03T10:04:00.000Z",
+      },
+    ]);
+
+    const response = await GET(
+      new NextRequest("http://localhost/api/sessions?workspaceId=workspace-1&surface=team"),
+    );
+    const data = await response.json();
+
+    const chainRun = data.sessions.find((s: { sessionId: string }) => s.sessionId === "chain-run");
+    const legacyRun = data.sessions.find((s: { sessionId: string }) => s.sessionId === "legacy-run");
+    expect(chainRun.teamChainId).toBe("standard_delivery");
+    expect(legacyRun.teamChainId).toBeUndefined();
+  });
+
   it("ignores cyclic descendants and excludes named non-ROUTA sessions from the team surface", async () => {
     listSessions.mockReturnValue([
       {

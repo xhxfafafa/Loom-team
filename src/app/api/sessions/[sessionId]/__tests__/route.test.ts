@@ -112,6 +112,63 @@ describe("/api/sessions/[sessionId] GET", () => {
     });
   });
 
+  it("exposes teamChainId from the in-memory session", async () => {
+    getSession.mockReturnValue({
+      sessionId: "team-chain-in-memory",
+      cwd: "/tmp/project",
+      workspaceId: "workspace-1",
+      provider: "opencode",
+      role: "ROUTA",
+      specialistId: "team-agent-lead",
+      teamChainId: "lightweight",
+      createdAt: "2026-04-03T10:00:00.000Z",
+    });
+
+    const response = await GET(
+      new NextRequest("http://localhost/api/sessions/team-chain-in-memory"),
+      { params: Promise.resolve({ sessionId: "team-chain-in-memory" }) },
+    );
+    const data = await response.json();
+    expect(data.session.teamChainId).toBe("lightweight");
+  });
+
+  it("exposes teamChainId from persisted DB metadata and omits it for legacy rows", async () => {
+    getSession.mockReturnValue(undefined);
+    loadSessionFromDb.mockResolvedValue({
+      id: "team-chain-db",
+      cwd: "/tmp/project",
+      workspaceId: "workspace-1",
+      provider: "opencode",
+      role: "ROUTA",
+      specialistId: "team-agent-lead",
+      teamChainId: "standard_delivery",
+      createdAt: new Date("2026-04-03T13:00:00.000Z"),
+    });
+
+    const withChain = await GET(
+      new NextRequest("http://localhost/api/sessions/team-chain-db"),
+      { params: Promise.resolve({ sessionId: "team-chain-db" }) },
+    );
+    const withChainData = await withChain.json();
+    expect(withChainData.session.teamChainId).toBe("standard_delivery");
+
+    loadSessionFromDb.mockResolvedValue({
+      id: "team-chain-legacy",
+      cwd: "/tmp/project",
+      workspaceId: "workspace-1",
+      provider: "opencode",
+      role: "ROUTA",
+      specialistId: "team-agent-lead",
+      createdAt: new Date("2026-04-03T13:00:00.000Z"),
+    });
+    const legacy = await GET(
+      new NextRequest("http://localhost/api/sessions/team-chain-legacy"),
+      { params: Promise.resolve({ sessionId: "team-chain-legacy" }) },
+    );
+    const legacyData = await legacy.json();
+    expect(legacyData.session.teamChainId).toBeUndefined();
+  });
+
   it("falls back to persisted DB metadata when the in-memory session is missing", async () => {
     getSession.mockReturnValue(undefined);
     loadSessionFromDb.mockResolvedValue({

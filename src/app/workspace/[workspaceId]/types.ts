@@ -25,6 +25,8 @@ export interface SessionInfo {
   model?: string;
   parentSessionId?: string;
   specialistId?: string;
+  /** Team execution chain preset; omitted/legacy values behave as full_delivery. */
+  teamChainId?: string;
   createdAt: string;
 }
 

@@ -18,6 +18,7 @@ import type { AgentStore } from "../store/agent-store";
 import type { ConversationStore } from "../store/conversation-store";
 import type { NoteStore } from "../store/note-store";
 import type { AcpSessionStore, AcpSession, AcpSessionNotification } from "../store/acp-session-store";
+import { parseTeamChainId } from "../orchestration/team-chain";
 import {
   compactSessionHistoryForPersistence,
   compactSessionNotificationForPersistence,
@@ -758,6 +759,7 @@ export class SqliteAcpSessionStore implements AcpSessionStore {
         messageHistory,
         parentSessionId: session.parentSessionId,
         specialistId: session.specialistId,
+        teamChainId: session.teamChainId,
         executionMode: session.executionMode,
         ownerInstanceId: session.ownerInstanceId,
         leaseExpiresAt: session.leaseExpiresAt ? new Date(session.leaseExpiresAt) : undefined,
@@ -779,6 +781,7 @@ export class SqliteAcpSessionStore implements AcpSessionStore {
           messageHistory,
           parentSessionId: session.parentSessionId,
           specialistId: session.specialistId,
+          teamChainId: session.teamChainId,
           executionMode: session.executionMode,
           ownerInstanceId: session.ownerInstanceId,
           leaseExpiresAt: session.leaseExpiresAt ? new Date(session.leaseExpiresAt) : undefined,
@@ -923,6 +926,7 @@ export class SqliteAcpSessionStore implements AcpSessionStore {
       messageHistory: row.messageHistory ?? [],
       parentSessionId: row.parentSessionId ?? undefined,
       specialistId: row.specialistId ?? undefined,
+      teamChainId: parseTeamChainId((row as unknown as { teamChainId?: string | null }).teamChainId) ?? undefined,
       executionMode: row.executionMode === "embedded" || row.executionMode === "runner"
         ? row.executionMode
         : undefined,

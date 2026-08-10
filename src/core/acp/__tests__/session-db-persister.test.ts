@@ -220,6 +220,26 @@ describe("session-db-persister", () => {
     });
   });
 
+  it("round-trips teamChainId through the local JSONL session log", async () => {
+    const projectPath = path.join(tmpDir, "team-chain-session");
+
+    await persistSessionToDb({
+      id: "team-chain-1",
+      name: "Team Run",
+      cwd: projectPath,
+      workspaceId: "ws-1",
+      routaAgentId: "agent-1",
+      provider: "opencode",
+      role: "ROUTA",
+      specialistId: "team-agent-lead",
+      teamChainId: "standard_delivery",
+    });
+
+    const session = await loadSessionFromLocalStorage("team-chain-1");
+    expect(session?.specialistId).toBe("team-agent-lead");
+    expect(session?.teamChainId).toBe("standard_delivery");
+  });
+
   it("loads persisted sessions from local JSONL storage", async () => {
     const projectPath = path.join(tmpDir, "local-session");
     const provider = new LocalSessionProvider(projectPath);

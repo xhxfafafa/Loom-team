@@ -7,6 +7,7 @@
 
 import type { TraceRecord } from "../trace/types";
 import type { TraceQuery } from "../trace/reader";
+import type { TeamChainId } from "../orchestration/team-chain";
 
 // ─── Session Types ──────────────────────────────────────────────────
 
@@ -35,6 +36,7 @@ export interface SessionMetadata {
   model?: string;
   parentSessionId?: string;
   specialistId?: string;
+  teamChainId?: TeamChainId;
   executionMode?: "embedded" | "runner";
   ownerInstanceId?: string;
   leaseExpiresAt?: string;
@@ -66,6 +68,7 @@ export interface SessionRecord {
   firstPromptSent?: boolean;
   parentSessionId?: string;
   specialistId?: string;
+  teamChainId?: TeamChainId;
   executionMode?: "embedded" | "runner";
   ownerInstanceId?: string;
   leaseExpiresAt?: string;

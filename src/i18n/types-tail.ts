@@ -1,4 +1,26 @@
 export interface TailTranslationDictionarySections {
+  teamChain: {
+    label: string;
+    recommended: string;
+    lightweight: string;
+    standardDelivery: string;
+    fullDelivery: string;
+    lightweightPurpose: string;
+    standardDeliveryPurpose: string;
+    fullDeliveryPurpose: string;
+    lightweightPattern: string;
+    standardDeliveryPattern: string;
+    fullDeliveryPattern: string;
+    lightweightVerification: string;
+    standardDeliveryVerification: string;
+    fullDeliveryVerification: string;
+    reasonHighRisk: string;
+    reasonBoundedScope: string;
+    reasonStandardTask: string;
+    reasonAnalysisOnly: string;
+    analysisOnlyNote: string;
+  };
+
   messageBubble: {
     thinking: string;
     input: string;

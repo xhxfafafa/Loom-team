@@ -396,6 +396,8 @@ impl Database {
             Self::ignore_duplicate_column(conn.execute("ALTER TABLE acp_sessions ADD COLUMN provider_session_id TEXT", []))?;
             Self::ignore_duplicate_column(conn.execute("ALTER TABLE acp_sessions ADD COLUMN custom_command TEXT", []))?;
             Self::ignore_duplicate_column(conn.execute("ALTER TABLE acp_sessions ADD COLUMN custom_args TEXT NOT NULL DEFAULT '[]'", []))?;
+            // Team execution chain for top-level team-agent-lead sessions; NULL = legacy Full Delivery
+            Self::ignore_duplicate_column(conn.execute("ALTER TABLE acp_sessions ADD COLUMN team_chain_id TEXT", []))?;
             Self::ignore_duplicate_column(conn.execute("ALTER TABLE codebases ADD COLUMN source_type TEXT", []))?;
             Self::ignore_duplicate_column(conn.execute("ALTER TABLE codebases ADD COLUMN source_url TEXT", []))?;
             conn.execute_batch(

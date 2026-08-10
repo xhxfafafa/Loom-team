@@ -45,6 +45,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("../tiptap-input", () => ({
   TiptapInput: (props: {
     onSend: (text: string, context: Record<string, unknown>) => Promise<void>;
+    onTextChange?: (text: string) => void;
     pendingSkill?: string | null;
     disabled?: boolean;
     repoSelection?: { path?: string; name?: string; branch?: string } | null;
@@ -58,6 +59,12 @@ vi.mock("../tiptap-input", () => ({
       <div data-testid="disabled-state">{String(Boolean(props.disabled))}</div>
       <div data-testid="skills-count">{props.skills?.length ?? 0}</div>
       <div data-testid="repo-skills-count">{props.repoSkills?.length ?? 0}</div>
+      <button
+        type="button"
+        onClick={() => props.onTextChange?.("Run the database migration and update permissions")}
+      >
+        Type high-risk text
+      </button>
       <button
         type="button"
         onClick={() => void props.onSend("Ship it", {
@@ -155,6 +162,27 @@ vi.mock("@/i18n", () => ({
       },
       settings: {
         specialists: "Specialists",
+      },
+      teamChain: {
+        label: "Execution Chain",
+        recommended: "Recommended",
+        lightweight: "Lightweight",
+        standardDelivery: "Standard Delivery",
+        fullDelivery: "Full Delivery",
+        lightweightPurpose: "One bounded change, delivered fast.",
+        standardDeliveryPurpose: "One primary change with independent verification.",
+        fullDeliveryPurpose: "Full multi-stage delivery with research and review.",
+        lightweightPattern: "Lead -> one implementer -> delivery",
+        standardDeliveryPattern: "Lead -> one implementer -> one independent verifier",
+        fullDeliveryPattern: "Lead -> research, implementation, QA and review waves",
+        lightweightVerification: "Self-verification by the implementer",
+        standardDeliveryVerification: "One independent QA or code review",
+        fullDeliveryVerification: "Independent QA and code review",
+        reasonHighRisk: "High-risk change detected",
+        reasonBoundedScope: "Small, bounded scope",
+        reasonStandardTask: "Standard development task",
+        reasonAnalysisOnly: "Analysis-only request",
+        analysisOnlyNote: "The MVP has no enforced read-only Team chain. This run may still modify code.",
       },
     },
   }),
@@ -318,6 +346,10 @@ describe("HomeInput", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
       );
     });
   });
@@ -466,5 +498,79 @@ describe("HomeInput", () => {
     expect(args[14]).toBe("kanban-planning");
     expect(args[15]).toBe("System: Ship it");
     expect(storePendingPromptMock).not.toHaveBeenCalled();
+  });
+
+  it("hides the Team chain selector outside the Team launch mode", async () => {
+    render(<HomeInput workspaceId="ws-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-selection").textContent).toBe("/repo/main");
+    });
+
+    expect(screen.queryByTestId("team-chain-selector")).toBeNull();
+  });
+
+  it("passes the recommended Team chain when creating a Team session", async () => {
+    render(
+      <HomeInput
+        workspaceId="ws-1"
+        initialLaunchModeId="team"
+        launchModes={[{
+          id: "team",
+          label: "Team",
+          description: "Team run",
+          teamChainSelector: true,
+        }]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-selection").textContent).toBe("/repo/main");
+    });
+    expect(screen.getByTestId("team-chain-selector-value").textContent).toBe("Standard Delivery");
+
+    fireEvent.click(screen.getByRole("button", { name: "Type high-risk text" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("team-chain-selector-value").textContent).toBe("Full Delivery");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(createSessionMock).toHaveBeenCalledTimes(1);
+    });
+    expect(createSessionMock.mock.calls[0][19]).toBe("full_delivery");
+  });
+
+  it("lets the user override the recommended Team chain before launch", async () => {
+    render(
+      <HomeInput
+        workspaceId="ws-1"
+        initialLaunchModeId="team"
+        launchModes={[{
+          id: "team",
+          label: "Team",
+          description: "Team run",
+          teamChainSelector: true,
+        }]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("repo-selection").textContent).toBe("/repo/main");
+    });
+
+    fireEvent.click(screen.getByTestId("team-chain-selector"));
+    fireEvent.click(screen.getByTestId("team-chain-option-lightweight"));
+    await waitFor(() => {
+      expect(screen.getByTestId("team-chain-selector-value").textContent).toBe("Lightweight");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(createSessionMock).toHaveBeenCalledTimes(1);
+    });
+    expect(createSessionMock.mock.calls[0][19]).toBe("lightweight");
   });
 });

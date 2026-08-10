@@ -7,6 +7,8 @@
  * - Persistent storage across restarts
  */
 
+import type { TeamChainId } from "../orchestration/team-chain";
+
 export interface AcpSessionNotification {
   sessionId: string;
   update?: Record<string, unknown>;
@@ -35,6 +37,11 @@ export interface AcpSession {
   parentSessionId?: string;
   /** Specialist ID used to configure this session, if any. */
   specialistId?: string;
+  /**
+   * Team execution chain selected for a top-level team-agent-lead session.
+   * Omitted/NULL means legacy Full Delivery.
+   */
+  teamChainId?: TeamChainId;
   executionMode?: "embedded" | "runner";
   ownerInstanceId?: string;
   leaseExpiresAt?: string;

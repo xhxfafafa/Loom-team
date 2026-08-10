@@ -2384,6 +2384,11 @@ paths:
     get:
       operationId: listSessions
       summary: List ACP sessions
+      description: |
+        Session summaries may include an optional `teamChainId` for Team Runs
+        (`lightweight`, `standard_delivery`, or `full_delivery`). Omitted or
+        null values are legacy/NULL storage and are interpreted as
+        `full_delivery`; explicit selections are preserved as stored.
       responses:
         "200":
           description: Session list
@@ -3080,6 +3085,13 @@ paths:
       description: |
         Methods: initialize, _providers/list, session/new, session/prompt,
         session/cancel, session/load, session/set_mode
+
+        session/new accepts an optional `teamChainId` param
+        (`lightweight`, `standard_delivery`, or `full_delivery`). When
+        provided it must be one of the three known IDs and is only allowed on
+        top-level `team-agent-lead` sessions (no parent); violations return
+        JSON-RPC invalid params (-32602) on both backends. Omitted values
+        persist as NULL and are interpreted as `full_delivery`.
       requestBody:
         required: true
         content:

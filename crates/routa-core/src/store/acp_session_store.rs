@@ -40,6 +40,10 @@ pub struct AcpSessionRow {
     pub created_at: i64,
     pub updated_at: i64,
     pub parent_session_id: Option<String>,
+    /// Team execution chain for top-level team-agent-lead sessions.
+    /// `None` (NULL) means legacy Full Delivery.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_chain_id: Option<String>,
 }
 
 pub struct AcpSessionStore {
@@ -56,6 +60,8 @@ pub struct CreateAcpSessionParams<'a> {
     pub custom_command: Option<&'a str>,
     pub custom_args: Option<&'a [String]>,
     pub parent_session_id: Option<&'a str>,
+    /// Team execution chain; only set for top-level team-agent-lead sessions.
+    pub team_chain_id: Option<&'a str>,
 }
 
 impl AcpSessionStore {
@@ -71,7 +77,7 @@ impl AcpSessionStore {
                 let mut stmt = conn.prepare(
                     "SELECT id, name, cwd, branch, workspace_id, routa_agent_id, provider_session_id, provider, role, mode_id,
                             custom_command, custom_args, first_prompt_sent, message_history,
-                            created_at, updated_at, parent_session_id
+                            created_at, updated_at, parent_session_id, team_chain_id
                      FROM acp_sessions WHERE id = ?1",
                 )?;
 
@@ -102,6 +108,7 @@ impl AcpSessionStore {
                             created_at: row.get(14)?,
                             updated_at: row.get(15)?,
                             parent_session_id: row.get(16)?,
+                            team_chain_id: row.get(17)?,
                         })
                     })
                     .optional()?;
@@ -151,14 +158,14 @@ impl AcpSessionStore {
                     Some(ws) => (
                         "SELECT id, name, cwd, branch, workspace_id, routa_agent_id, provider_session_id, provider, role, mode_id,
                                 custom_command, custom_args, first_prompt_sent, message_history,
-                                created_at, updated_at, parent_session_id
+                                created_at, updated_at, parent_session_id, team_chain_id
                          FROM acp_sessions WHERE workspace_id = ?1 ORDER BY updated_at DESC LIMIT ?2",
                         vec![Box::new(ws.clone()) as Box<dyn rusqlite::ToSql>, Box::new(limit as i64)],
                     ),
                     None => (
                         "SELECT id, name, cwd, branch, workspace_id, routa_agent_id, provider_session_id, provider, role, mode_id,
                                 custom_command, custom_args, first_prompt_sent, message_history,
-                                created_at, updated_at, parent_session_id
+                                created_at, updated_at, parent_session_id, team_chain_id
                          FROM acp_sessions ORDER BY updated_at DESC LIMIT ?1",
                         vec![Box::new(limit as i64) as Box<dyn rusqlite::ToSql>],
                     ),
@@ -192,6 +199,7 @@ impl AcpSessionStore {
                         created_at: row.get(14)?,
                         updated_at: row.get(15)?,
                         parent_session_id: row.get(16)?,
+                        team_chain_id: row.get(17)?,
                     })
                 })?;
 
@@ -255,6 +263,7 @@ impl AcpSessionStore {
             custom_command,
             custom_args,
             parent_session_id,
+            team_chain_id,
         } = params;
         let id = id.to_string();
         let cwd = cwd.to_string();
@@ -266,6 +275,7 @@ impl AcpSessionStore {
         let custom_args_json =
             serde_json::to_string(&custom_args.unwrap_or(&[])).unwrap_or_else(|_| "[]".to_string());
         let parent_session_id = parent_session_id.map(str::to_string);
+        let team_chain_id = team_chain_id.map(str::to_string);
 
         self.db
             .with_conn_async(move |conn| {
@@ -273,8 +283,8 @@ impl AcpSessionStore {
                 conn.execute(
                     "INSERT OR IGNORE INTO acp_sessions
                         (id, cwd, branch, workspace_id, provider, role, custom_command, custom_args, parent_session_id,
-                         first_prompt_sent, message_history, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, '[]', ?10, ?10)",
+                         team_chain_id, first_prompt_sent, message_history, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, '[]', ?11, ?11)",
                     rusqlite::params![
                         id,
                         cwd,
@@ -285,6 +295,7 @@ impl AcpSessionStore {
                         custom_command,
                         custom_args_json,
                         parent_session_id,
+                        team_chain_id,
                         now
                     ],
                 )?;
@@ -439,6 +450,7 @@ mod tests {
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: None,
+                team_chain_id: None,
             })
             .await
             .expect("create failed");
@@ -470,6 +482,7 @@ mod tests {
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: None,
+                team_chain_id: None,
             })
             .await
             .expect("create failed");
@@ -501,6 +514,7 @@ mod tests {
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: None,
+                team_chain_id: None,
             })
             .await
             .expect("create failed");
@@ -528,6 +542,7 @@ mod tests {
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: None,
+                team_chain_id: None,
             })
             .await
             .expect("create failed");
@@ -566,6 +581,7 @@ mod tests {
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: None,
+                team_chain_id: None,
             })
             .await
             .expect("create failed");
@@ -607,6 +623,7 @@ mod tests {
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: Some(parent_id),
+                team_chain_id: None,
             })
             .await
             .expect("create failed");
@@ -634,6 +651,7 @@ mod tests {
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: None,
+                team_chain_id: None,
             })
             .await
             .expect("create failed");
@@ -666,6 +684,7 @@ mod tests {
                 custom_command: None,
                 custom_args: None,
                 parent_session_id: None,
+                team_chain_id: None,
             })
             .await
             .expect("create failed");
@@ -702,6 +721,7 @@ mod tests {
                 custom_command: Some("uvx"),
                 custom_args: Some(custom_args.as_slice()),
                 parent_session_id: None,
+                team_chain_id: None,
             })
             .await
             .expect("create failed");
@@ -714,5 +734,65 @@ mod tests {
 
         assert_eq!(session.custom_command.as_deref(), Some("uvx"));
         assert_eq!(session.custom_args, custom_args);
+    }
+
+    #[tokio::test]
+    async fn test_team_chain_id_round_trip() {
+        let (store, session_id) = setup().await;
+
+        store
+            .create(CreateAcpSessionParams {
+                id: &session_id,
+                cwd: "/tmp",
+                branch: None,
+                workspace_id: "default",
+                provider: Some("claude"),
+                role: Some("ROUTA"),
+                custom_command: None,
+                custom_args: None,
+                parent_session_id: None,
+                team_chain_id: Some("standard_delivery"),
+            })
+            .await
+            .expect("create failed");
+
+        let session = store
+            .get(&session_id)
+            .await
+            .expect("get failed")
+            .expect("exists");
+        assert_eq!(session.team_chain_id.as_deref(), Some("standard_delivery"));
+
+        // Omitted team_chain_id stays NULL (legacy Full Delivery).
+        let legacy_id = "legacy-team-session";
+        store
+            .create(CreateAcpSessionParams {
+                id: legacy_id,
+                cwd: "/tmp",
+                branch: None,
+                workspace_id: "default",
+                provider: Some("claude"),
+                role: Some("ROUTA"),
+                custom_command: None,
+                custom_args: None,
+                parent_session_id: None,
+                team_chain_id: None,
+            })
+            .await
+            .expect("create failed");
+
+        let legacy = store
+            .get(legacy_id)
+            .await
+            .expect("get failed")
+            .expect("exists");
+        assert!(legacy.team_chain_id.is_none());
+
+        let listed = store
+            .list(None, None)
+            .await
+            .expect("list failed");
+        let legacy_in_list = listed.iter().find(|s| s.id == legacy_id).expect("in list");
+        assert!(legacy_in_list.team_chain_id.is_none());
     }
 }

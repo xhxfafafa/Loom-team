@@ -243,6 +243,8 @@ export const acpSessions = sqliteTable("acp_sessions", {
   parentSessionId: text("parent_session_id"),
   /** Specialist ID used to configure this session, if any. */
   specialistId: text("specialist_id"),
+  /** Team execution chain for top-level team-agent-lead sessions; NULL = legacy Full Delivery. */
+  teamChainId: text("team_chain_id"),
   executionMode: text("execution_mode"),
   ownerInstanceId: text("owner_instance_id"),
   leaseExpiresAt: integer("lease_expires_at", { mode: "timestamp_ms" }),

@@ -493,6 +493,8 @@ interface SessionItem {
 
 interface TiptapInputProps {
   onSend: (text: string, context: InputContext) => void;
+  /** Called with the current plain text whenever the editor content changes. */
+  onTextChange?: (text: string) => void;
   /** Called when user clicks stop button during loading */
   onStop?: () => void;
   placeholder?: string;
@@ -534,6 +536,7 @@ interface TiptapInputProps {
 
 export function TiptapInput({
   onSend,
+  onTextChange,
   onStop,
   placeholder = "Type a message...",
   disabled = false,
@@ -561,6 +564,8 @@ export function TiptapInput({
   const { t } = useTranslation();
   const tRef = useRef(t);
   useEffect(() => { tRef.current = t; }, [t]);
+  const onTextChangeRef = useRef(onTextChange);
+  useEffect(() => { onTextChangeRef.current = onTextChange; }, [onTextChange]);
   const isHero = variant === "hero";
   const [claudeMode, setClaudeMode] = useState<"acceptEdits" | "plan">("acceptEdits");
   const [opencodeMode, setOpencodeMode] = useState<"build" | "plan">("build");
@@ -791,6 +796,9 @@ export function TiptapInput({
         }
         return false;
       },
+    },
+    onUpdate: ({ editor: updatedEditor }) => {
+      onTextChangeRef.current?.(updatedEditor.getText());
     },
     immediatelyRender: false,
   });

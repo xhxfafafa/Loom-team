@@ -20,6 +20,7 @@ pub mod binary_manager;
 pub mod claude_code_process;
 pub mod docker;
 pub mod installation_state;
+mod launch_options;
 pub mod mcp_setup;
 pub mod paths;
 pub mod process;
@@ -33,6 +34,7 @@ pub mod warmup;
 pub use binary_manager::AcpBinaryManager;
 pub use claude_code_process::{ClaudeCodeConfig, ClaudeCodeProcess};
 pub use installation_state::AcpInstallationState;
+pub use launch_options::SessionLaunchOptions;
 pub use paths::AcpPaths;
 pub use registry_fetch::{fetch_registry, fetch_registry_json};
 pub use registry_types::*;
@@ -93,18 +95,12 @@ pub struct AcpSessionRecord {
     pub parent_session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub specialist_id: Option<String>,
+    /// Team execution chain for top-level team-agent-lead sessions.
+    /// `None` means legacy Full Delivery.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_chain_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub specialist_system_prompt: Option<String>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct SessionLaunchOptions {
-    pub specialist_id: Option<String>,
-    pub specialist_system_prompt: Option<String>,
-    pub allowed_native_tools: Option<Vec<String>>,
-    pub initialize_timeout_ms: Option<u64>,
-    pub provider_args: Option<Vec<String>>,
-    pub acp_mcp_servers: Option<Vec<serde_json::Value>>,
 }
 
 // ─── Managed Process ────────────────────────────────────────────────────
@@ -583,6 +579,7 @@ impl AcpManager {
             first_prompt_sent: false,
             parent_session_id: parent_session_id.clone(),
             specialist_id: options.specialist_id.clone(),
+            team_chain_id: options.team_chain_id.clone(),
             specialist_system_prompt: options.specialist_system_prompt.clone(),
         };
 
@@ -1472,6 +1469,7 @@ mod tests {
                 first_prompt_sent: false,
                 parent_session_id: None,
                 specialist_id: None,
+                team_chain_id: None,
                 specialist_system_prompt: None,
             },
         );

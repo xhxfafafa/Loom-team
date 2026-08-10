@@ -9,6 +9,11 @@ import { isClaudeCodeSdkConfigured } from "@/core/acp/claude-code-sdk-adapter";
 import type { AgentInstanceConfig } from "@/core/acp/agent-instance-factory";
 import type { WorkspaceAgentConfig, WorkspaceAgentProvider } from "@/core/acp/workspace-agent/workspace-agent-config";
 import { initRoutaOrchestrator } from "@/core/orchestration/orchestrator-singleton";
+import {
+  buildTeamChainPolicyPrompt,
+  TEAM_CHAIN_IDS,
+  validateTeamChainAssignment,
+} from "@/core/orchestration/team-chain";
 import { getRoutaSystem } from "@/core/routa-system";
 import { AgentRole } from "@/core/models/agent";
 import { getSpecialistById, type SpecialistConfig } from "@/core/orchestration/specialist-prompts";
@@ -283,6 +288,11 @@ export async function handleSessionNew({
   const name = (p.name as string | undefined)?.trim() || undefined;
   const worktreeId = (p.worktreeId as string | undefined) || undefined;
   const specialistId = (p.specialistId as string | undefined);
+  const teamChainValidation = validateTeamChainAssignment({
+    teamChainId: p.teamChainId,
+    specialistId,
+    parentSessionId: (p.parentSessionId as string | undefined) || undefined,
+  });
   const specialistLocale = (p.specialistLocale as string | undefined) ?? "en";
   const specialist = await loadSpecialistConfig(specialistId, specialistLocale);
   const customSystemPrompt = (p.systemPrompt as string | undefined)?.trim() || undefined;
@@ -349,6 +359,18 @@ export async function handleSessionNew({
       message: "workspaceId is required",
     });
   }
+  if (!teamChainValidation.ok) {
+    const teamChainMessage = teamChainValidation.reason === "invalid_value"
+      ? `teamChainId must be one of: ${TEAM_CHAIN_IDS.join(", ")}`
+      : teamChainValidation.reason === "requires_team_lead"
+        ? "teamChainId is only allowed on team-agent-lead sessions"
+        : "teamChainId is only allowed on top-level team sessions";
+    return jsonrpcResponse(id ?? null, null, {
+      code: -32602,
+      message: teamChainMessage,
+    });
+  }
+  const teamChainId = teamChainValidation.teamChainId;
 
   if (idempotencyKey) {
     cleanupIdempotencyCache();
@@ -529,9 +551,14 @@ export async function handleSessionNew({
     }
   }
 
+  // The chain policy is part of the persisted specialistSystemPrompt so it
+  // survives provider-process recreation unchanged (no mid-run re-injection).
+  const teamChainPolicyPrompt = buildTeamChainPolicyPrompt(teamChainId);
+
   const specialistPromptSections = [
     customSystemPrompt,
     buildSpecialistSystemPrompt(specialist),
+    teamChainPolicyPrompt,
     relevantHistoryMemorySection,
     relevantFeatureTreeContextSection,
     taskAdaptiveHarnessSummary,
@@ -557,6 +584,7 @@ export async function handleSessionNew({
     modeId,
     model,
     specialistId: specialistId ?? undefined,
+    teamChainId: teamChainId ?? undefined,
     sandboxId,
     specialistSystemPrompt,
     acpStatus: "connecting",
@@ -837,6 +865,7 @@ export async function handleSessionNew({
         model,
         routaAgentId: routaAgentId ?? workspaceSessionAgentId ?? acpSessionId,
         specialistId: specialistId ?? undefined,
+        teamChainId: teamChainId ?? undefined,
         sandboxId,
         specialistSystemPrompt,
         acpStatus: "ready",
@@ -864,6 +893,7 @@ export async function handleSessionNew({
         modeId,
         model,
         specialistId: specialistId ?? undefined,
+        teamChainId: teamChainId ?? undefined,
         ...refreshExecutionBinding(executionBinding),
       }).catch((err) =>
         console.error(`[ACP Route] Background DB persist failed for ${sessionId}:`, err),

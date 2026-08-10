@@ -27,9 +27,9 @@ pub mod provider_adapter;
 pub mod registry_fetch;
 pub mod registry_types;
 pub mod runtime_manager;
+mod session_lifecycle;
 pub mod terminal_manager;
 pub mod warmup;
-
 pub use binary_manager::AcpBinaryManager;
 pub use claude_code_process::{ClaudeCodeConfig, ClaudeCodeProcess};
 pub use installation_state::AcpInstallationState;
@@ -39,7 +39,7 @@ pub use registry_types::*;
 pub use runtime_manager::{current_platform, AcpRuntimeManager, RuntimeInfo, RuntimeType};
 pub use warmup::{AcpWarmupService, WarmupState, WarmupStatus};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -161,6 +161,9 @@ pub struct AcpManager {
     notification_channels: Arc<RwLock<HashMap<String, broadcast::Sender<serde_json::Value>>>>,
     /// Our sessionId → message history (session/update notifications)
     history: Arc<RwLock<HashMap<String, Vec<serde_json::Value>>>>,
+    /// Claude turns confirmed as terminal and therefore safe for explicit
+    /// memory cleanup when automatic release is disabled.
+    completed_sessions: Arc<RwLock<HashSet<String>>>,
 }
 
 impl Default for AcpManager {
@@ -189,6 +192,7 @@ impl AcpManager {
             processes: Arc::new(RwLock::new(HashMap::new())),
             notification_channels: Arc::new(RwLock::new(HashMap::new())),
             history: Arc::new(RwLock::new(HashMap::new())),
+            completed_sessions: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -1030,6 +1034,7 @@ impl AcpManager {
         self.sessions.write().await.remove(session_id);
         // Remove notification channel
         self.notification_channels.write().await.remove(session_id);
+        self.completed_sessions.write().await.remove(session_id);
     }
 
     /// Subscribe to SSE notifications for a session.
@@ -1106,8 +1111,14 @@ impl AcpManager {
                 // Spawn the prompt in a background task so we can return immediately
                 let process = Arc::clone(p);
                 let text = text.to_string();
+                let manager = self.clone();
+                let completed_session_id = session_id.to_string();
                 tokio::spawn(async move {
-                    let _ = process.prompt(&text).await;
+                    if let Ok(stop_reason) = process.prompt(&text).await {
+                        manager
+                            .record_completed_claude_turn(&completed_session_id, stop_reason)
+                            .await;
+                    }
                 });
                 Ok(())
             }
@@ -1385,7 +1396,7 @@ mod tests {
         get_preset_by_id_with_registry, get_presets, truncate_content, validate_session_cwd,
         AcpManager, AcpSessionRecord,
     };
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::fs;
     use std::sync::Arc;
     use tokio::sync::RwLock;
@@ -1478,6 +1489,7 @@ mod tests {
             processes: Arc::new(RwLock::new(HashMap::new())),
             notification_channels: Arc::new(RwLock::new(HashMap::new())),
             history: Arc::new(RwLock::new(HashMap::new())),
+            completed_sessions: Arc::new(RwLock::new(HashSet::new())),
         };
 
         manager
@@ -1509,6 +1521,7 @@ mod tests {
                 tx,
             )]))),
             history: Arc::new(RwLock::new(HashMap::new())),
+            completed_sessions: Arc::new(RwLock::new(HashSet::new())),
         };
 
         manager
@@ -1540,6 +1553,7 @@ mod tests {
             processes: Arc::new(RwLock::new(HashMap::new())),
             notification_channels: Arc::new(RwLock::new(HashMap::new())),
             history: Arc::new(RwLock::new(HashMap::new())),
+            completed_sessions: Arc::new(RwLock::new(HashSet::new())),
         };
 
         manager

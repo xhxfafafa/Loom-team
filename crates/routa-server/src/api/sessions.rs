@@ -372,12 +372,20 @@ async fn delete_session(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, ServerError> {
-    // Try to kill in-memory process (may be None if DB-only after restart)
-    let in_memory_found = state
-        .acp_manager
-        .delete_session(&session_id)
-        .await
-        .is_some();
+    // Match the web lifecycle: save durable history, then terminate the
+    // provider and run its registered MCP teardown before deleting the record.
+    // `delete_session` used to remove the managed process directly and skipped
+    // the MCP cleanup owned by `AcpManager::kill_session`.
+    let in_memory_found = state.acp_manager.get_session(&session_id).await.is_some();
+    if let Some(history) = state.acp_manager.get_session_history(&session_id).await {
+        if !history.is_empty() {
+            let _ = state
+                .acp_session_store
+                .save_history(&session_id, &history)
+                .await;
+        }
+    }
+    state.acp_manager.kill_session(&session_id).await;
 
     // Always delete from the database
     state.acp_session_store.delete(&session_id).await?;

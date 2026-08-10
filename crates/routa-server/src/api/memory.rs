@@ -101,14 +101,43 @@ async fn get_legacy_memory_stats(
     (legacy_headers(), get_memory_stats(state, query).await)
 }
 
-/// POST /api/system/memory — Trigger memory cleanup.
+/// POST /api/system/memory — Release completed desktop agent runtimes.
 ///
-/// For desktop version, this is a no-op.
-async fn cleanup_memory(State(_state): State<AppState>) -> Json<serde_json::Value> {
+/// Only provider-confirmed completed sessions are eligible. Active work and
+/// parent/child dependencies stay untouched; durable SQLite history is saved
+/// before the process and its MCP teardown are released.
+async fn cleanup_memory(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let session_ids = state.acp_manager.collect_completed_session_ids().await;
+    let mut agent_processes_terminated = 0usize;
+
+    for session_id in session_ids {
+        if let Some(history) = state.acp_manager.get_session_history(&session_id).await {
+            if !history.is_empty()
+                && state
+                    .acp_session_store
+                    .save_history(&session_id, &history)
+                    .await
+                    .is_err()
+            {
+                continue;
+            }
+        }
+        state.acp_manager.kill_session(&session_id).await;
+        agent_processes_terminated += 1;
+    }
+
     Json(serde_json::json!({
         "success": true,
-        "message": "Memory cleanup not needed in desktop version",
-        "cleaned": 0
+        "message": "Released completed desktop agent runtimes",
+        "cleaned": agent_processes_terminated,
+        "runtime": {
+            "agentProcessesTerminated": agent_processes_terminated,
+            // Rust provider teardown currently owns config/transport cleanup
+            // internally but does not expose a per-proxy completion signal.
+            // Report zero rather than fabricate a proxy count.
+            "mcpProxiesCleaned": 0,
+            "failures": []
+        }
     }))
 }
 

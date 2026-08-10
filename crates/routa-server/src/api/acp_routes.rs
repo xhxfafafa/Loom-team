@@ -23,45 +23,15 @@ use routa_core::orchestration::{OrchestratorConfig, RoutaOrchestrator, Specialis
 use routa_core::storage::{LocalSessionProvider, SessionRecord};
 use routa_core::store::acp_session_store::{AcpSessionRow, CreateAcpSessionParams};
 
+mod session_support;
+use session_support::{
+    is_confirmed_normal_completion, maybe_release_completed_session, resolve_session_cwd,
+};
+#[cfg(test)]
+use session_support::has_explicit_cwd;
+
 pub fn router() -> Router<AppState> {
     Router::new().route("/", get(acp_sse).post(acp_rpc))
-}
-
-fn has_explicit_cwd(value: Option<&str>) -> bool {
-    value
-        .map(str::trim)
-        .map(|cwd| !cwd.is_empty() && cwd != ".")
-        .unwrap_or(false)
-}
-
-async fn resolve_session_cwd(
-    state: &AppState,
-    workspace_id: &str,
-    requested_cwd: Option<&str>,
-) -> String {
-    if let Some(cwd) = requested_cwd.filter(|value| has_explicit_cwd(Some(value))) {
-        return cwd.trim().to_string();
-    }
-
-    if let Ok(Some(codebase)) = state.codebase_store.get_default(workspace_id).await {
-        if !codebase.repo_path.trim().is_empty() {
-            return codebase.repo_path;
-        }
-    }
-
-    if let Ok(codebases) = state.codebase_store.list_by_workspace(workspace_id).await {
-        if let Some(codebase) = codebases
-            .into_iter()
-            .find(|codebase| !codebase.repo_path.trim().is_empty())
-        {
-            return codebase.repo_path;
-        }
-    }
-
-    std::env::current_dir()
-        .ok()
-        .map(|path| path.to_string_lossy().to_string())
-        .unwrap_or_else(|| ".".to_string())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1108,6 +1078,7 @@ async fn acp_rpc(
                     let session_id_clone = session_id.clone();
                     let state_clone = state.clone();
                     Box::pin(async_stream::stream! {
+                        let mut confirmed_normal_completion = false;
                         // Stream notifications until turn_complete or disconnect
                         loop {
                             match rx.recv().await {
@@ -1127,6 +1098,7 @@ async fn acp_rpc(
                                         .and_then(|u| u.get("sessionUpdate"))
                                         .and_then(|s| s.as_str())
                                         == Some("turn_complete");
+                                    confirmed_normal_completion = is_confirmed_normal_completion(&rewritten);
 
                                     yield Ok::<_, Infallible>(
                                         Event::default().data(rewritten.to_string())
@@ -1155,6 +1127,9 @@ async fn acp_rpc(
                         if let Some(history) = state_clone.acp_manager.get_session_history(&session_id_clone).await {
                             let _ = state_clone.acp_session_store.save_history(&session_id_clone, &history).await;
                         }
+                        maybe_release_completed_session(
+                            &state_clone, &session_id_clone, confirmed_normal_completion,
+                        ).await;
                     })
                 } else {
                     // No broadcast channel - return empty stream with error

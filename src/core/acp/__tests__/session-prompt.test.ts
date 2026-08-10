@@ -31,6 +31,12 @@ const storeMock = vi.hoisted(() => ({
   markFirstPromptSent: vi.fn(),
   upsertSession: vi.fn(),
   pushNotification: vi.fn(),
+  isSessionStreaming: vi.fn(() => false),
+  listSessions: vi.fn((): Array<{ sessionId: string; parentSessionId?: string }> => []),
+  markSessionRuntimeRelease: vi.fn(),
+  releaseTransientRuntimeBuffers: vi.fn(),
+  flushSessionTraces: vi.fn(),
+  getConsolidatedHistory: vi.fn(() => []),
 }));
 
 const getPresetByIdMock = vi.hoisted(() => vi.fn());
@@ -299,6 +305,134 @@ describe("session-prompt", () => {
       pending: true,
     });
     expect(storeMock.flushAgentBuffer).toHaveBeenCalledWith("claude-1");
+    expect(managerMock.killSession).not.toHaveBeenCalled();
+  });
+
+  it("releases a completed Claude process after persisting its history", async () => {
+    managerMock.isClaudeSession.mockReturnValue(true);
+    managerMock.getClaudeProcess.mockReturnValue({
+      alive: true,
+      prompt: vi.fn(async () => ({ stopReason: "end_turn" })),
+    });
+
+    const response = await handleSessionPrompt({
+      id: 7,
+      params: { sessionId: "claude-complete", prompt: "finish the task" },
+      jsonrpcResponse: (id, result, error) => new Response(JSON.stringify({ id, result, error })),
+      createSessionUpdateForwarder: () => vi.fn(),
+      buildMcpConfigForClaude: vi.fn(async () => []),
+      requireWorkspaceId: vi.fn(() => "ws-1"),
+      encodeSsePayload: JSON.stringify,
+    });
+
+    expect(await response.json()).toMatchObject({ result: { stopReason: "end_turn" } });
+    expect(persistSessionHistorySnapshotMock).toHaveBeenCalledWith("claude-complete", storeMock);
+    expect(managerMock.killSession).toHaveBeenCalledWith("claude-complete");
+  });
+
+  it("does not release a Claude turn that still requires the runtime (tool_use)", async () => {
+    managerMock.isClaudeSession.mockReturnValue(true);
+    managerMock.getClaudeProcess.mockReturnValue({
+      alive: true,
+      prompt: vi.fn(async () => ({ stopReason: "tool_use" })),
+    });
+
+    const response = await handleSessionPrompt({
+      id: 8,
+      params: { sessionId: "claude-tool-use", prompt: "run the tools" },
+      jsonrpcResponse: (id, result, error) => new Response(JSON.stringify({ id, result, error })),
+      createSessionUpdateForwarder: () => vi.fn(),
+      buildMcpConfigForClaude: vi.fn(async () => []),
+      requireWorkspaceId: vi.fn(() => "ws-1"),
+      encodeSsePayload: JSON.stringify,
+    });
+
+    expect(await response.json()).toMatchObject({ result: { stopReason: "tool_use" } });
+    expect(managerMock.killSession).not.toHaveBeenCalled();
+    expect(storeMock.releaseTransientRuntimeBuffers).not.toHaveBeenCalled();
+  });
+
+  it("keeps a completed Claude process alive when auto-release is disabled", async () => {
+    vi.stubEnv("ROUTA_AUTO_RELEASE_COMPLETED_CLAUDE", "0");
+    managerMock.isClaudeSession.mockReturnValue(true);
+    managerMock.getClaudeProcess.mockReturnValue({
+      alive: true,
+      prompt: vi.fn(async () => ({ stopReason: "end_turn" })),
+    });
+
+    const response = await handleSessionPrompt({
+      id: 9,
+      params: { sessionId: "claude-flagged", prompt: "finish the task" },
+      jsonrpcResponse: (id, result, error) => new Response(JSON.stringify({ id, result, error })),
+      createSessionUpdateForwarder: () => vi.fn(),
+      buildMcpConfigForClaude: vi.fn(async () => []),
+      requireWorkspaceId: vi.fn(() => "ws-1"),
+      encodeSsePayload: JSON.stringify,
+    });
+
+    expect(await response.json()).toMatchObject({ result: { stopReason: "end_turn" } });
+    expect(managerMock.killSession).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
+  it("does not release a completed Claude session with an active child session", async () => {
+    managerMock.isClaudeSession.mockReturnValue(true);
+    managerMock.getClaudeProcess.mockReturnValue({
+      alive: true,
+      prompt: vi.fn(async () => ({ stopReason: "end_turn" })),
+    });
+    managerMock.hasActiveSession.mockImplementation(
+      (sessionId: string) => sessionId === "child-1" || sessionId === "claude-parent",
+    );
+    storeMock.listSessions.mockReturnValue([
+      { sessionId: "child-1", parentSessionId: "claude-parent" },
+    ]);
+
+    const response = await handleSessionPrompt({
+      id: 10,
+      params: { sessionId: "claude-parent", prompt: "finish the task" },
+      jsonrpcResponse: (id, result, error) => new Response(JSON.stringify({ id, result, error })),
+      createSessionUpdateForwarder: () => vi.fn(),
+      buildMcpConfigForClaude: vi.fn(async () => []),
+      requireWorkspaceId: vi.fn(() => "ws-1"),
+      encodeSsePayload: JSON.stringify,
+    });
+
+    expect(await response.json()).toMatchObject({ result: { stopReason: "end_turn" } });
+    expect(managerMock.killSession).not.toHaveBeenCalled();
+  });
+
+  it("recreates a released Claude session from durable metadata on the next prompt", async () => {
+    managerMock.hasActiveSession.mockReturnValue(false);
+    managerMock.isClaudeSession.mockReturnValue(true);
+    managerMock.getClaudeProcess.mockReturnValue({
+      alive: true,
+      prompt: vi.fn(async () => ({ stopReason: "end_turn" })),
+    });
+    managerMock.createClaudeSession.mockResolvedValue("claude-agent-2");
+    storeMock.getSession.mockImplementation((sessionId: string) => ({
+      sessionId,
+      cwd: "/workspace",
+      workspaceId: "ws-1",
+      provider: "claude",
+      role: "CRAFTER",
+      createdAt: new Date().toISOString(),
+    }));
+
+    const response = await handleSessionPrompt({
+      id: 11,
+      params: { sessionId: "claude-recreated", prompt: "follow-up question" },
+      jsonrpcResponse: (id, result, error) => new Response(JSON.stringify({ id, result, error })),
+      createSessionUpdateForwarder: () => vi.fn(),
+      buildMcpConfigForClaude: vi.fn(async () => []),
+      requireWorkspaceId: vi.fn(() => "ws-1"),
+      encodeSsePayload: JSON.stringify,
+    });
+
+    expect(await response.json()).toMatchObject({ result: { stopReason: "end_turn" } });
+    expect(managerMock.createClaudeSession).toHaveBeenCalledTimes(1);
+    expect(managerMock.createClaudeSession.mock.calls[0][0]).toBe("claude-recreated");
+    expect(storeMock.pushUserMessage).toHaveBeenCalledWith("claude-recreated", "follow-up question");
   });
 
   it("returns ACP-shaped error data for standard process failures", async () => {

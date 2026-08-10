@@ -28,6 +28,7 @@ import type { McpServerProfile } from "@/core/mcp/mcp-server-profiles";
 import { pendingAcpCreations } from "@/core/acp/pending-acp-creations";
 import { persistSessionHistorySnapshot } from "@/core/acp/session-history";
 import { buildProviderModelArgs } from "@/core/acp/provider-model-args";
+import type { AcpSessionKillResult } from "@/core/acp/acp-process-manager";
 
 type JsonRpcResponseFactory = (
   id: string | number | null,
@@ -216,6 +217,29 @@ function maybePushSyntheticTurnComplete(
         : {}),
     },
   });
+}
+
+function isCompletedClaudeTurn(result: unknown): boolean {
+  if (!result || typeof result !== "object") return false;
+  const stopReason = (result as { stopReason?: unknown }).stopReason;
+  // `tool_use` and `max_tokens` may require the current runtime to keep
+  // working. A normal completed turn can be restarted from the saved session.
+  return stopReason === "end_turn" || stopReason === "stop_sequence";
+}
+
+async function releaseCompletedClaudeProcess(
+  sessionId: string,
+  result: unknown,
+  manager: {
+    killSession(sessionId: string): Promise<AcpSessionKillResult | void>;
+    hasActiveSession(sessionId: string): boolean;
+  },
+  store: ReturnType<typeof getHttpSessionStore>,
+): Promise<void> {
+  if (!isCompletedClaudeTurn(result)) return;
+  const { finalizeSessionRuntime } = await import("@/core/acp/session-runtime-finalizer");
+  const release = await finalizeSessionRuntime(sessionId, "completed", { manager, store });
+  if (!release.released) return;
 }
 
 function isAcpErrorLike(error: unknown): error is AcpErrorLike {
@@ -978,7 +1002,8 @@ export async function handleSessionPrompt({
         const result = await restarted.prompt(sessionId, promptText);
         maybePushSyntheticTurnComplete(store, sessionId, result);
         store.flushAgentBuffer(sessionId);
-        void persistSessionHistorySnapshot(sessionId, store);
+        await persistSessionHistorySnapshot(sessionId, store);
+        await releaseCompletedClaudeProcess(sessionId, result, manager, store);
         return jsonrpcResponse(id ?? null, result);
       } catch (err) {
         if (isSessionPromptTimeoutError(err)) {
@@ -1005,7 +1030,8 @@ export async function handleSessionPrompt({
       const result = await claudeProc.prompt(sessionId, promptText);
       maybePushSyntheticTurnComplete(store, sessionId, result);
       store.flushAgentBuffer(sessionId);
-      void persistSessionHistorySnapshot(sessionId, store);
+      await persistSessionHistorySnapshot(sessionId, store);
+      await releaseCompletedClaudeProcess(sessionId, result, manager, store);
       return jsonrpcResponse(id ?? null, result);
     } catch (err) {
       if (isSessionPromptTimeoutError(err)) {

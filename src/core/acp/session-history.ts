@@ -1,4 +1,4 @@
-import { getHttpSessionStore } from "@/core/acp/http-session-store";
+import type { SessionUpdateNotification } from "@/core/acp/http-session-store";
 import { saveHistoryToDb } from "@/core/acp/session-db-persister";
 import { SessionWriteBuffer } from "@/core/acp/session-write-buffer";
 
@@ -13,9 +13,14 @@ export function getSessionWriteBuffer(): SessionWriteBuffer {
   return writeBuffer;
 }
 
+/** Minimal store surface needed to snapshot consolidated session history. */
+export interface HistorySnapshotStore {
+  getConsolidatedHistory(sessionId: string): SessionUpdateNotification[];
+}
+
 export function persistSessionHistorySnapshot(
   sessionId: string,
-  store: ReturnType<typeof getHttpSessionStore>,
+  store: HistorySnapshotStore,
 ): Promise<void> {
   const buffer = getSessionWriteBuffer();
   buffer.replace(sessionId, store.getConsolidatedHistory(sessionId));

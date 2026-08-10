@@ -80,6 +80,10 @@ export interface RoutaSessionActivity {
   terminalState?: "completed" | "failed" | "timed_out";
   terminalReason?: string;
   terminalAt?: string;
+  /** Why the session runtime was released (see session-runtime-finalizer). */
+  runtimeReleaseReason?: string;
+  /** When the session runtime was released. */
+  runtimeReleasedAt?: string;
 }
 
 function isRecoverablePromptTimeoutStatus(
@@ -290,6 +294,8 @@ class HttpSessionStore {
     this.agentEventSubscribers.delete(sessionId);
     // Detach SSE if connected
     this.sseControllers.delete(sessionId);
+    this.streamingSessionIds.delete(sessionId);
+    this.lastAccessTime.delete(sessionId);
     return this.sessions.delete(sessionId);
   }
 
@@ -304,6 +310,71 @@ class HttpSessionStore {
 
   markSessionFailed(sessionId: string, reason: string): RoutaSessionActivity | undefined {
     return this.setSessionTerminalState(sessionId, "failed", reason);
+  }
+
+  /**
+   * Record that the session's runtime (provider process / MCP proxy / transient
+   * buffers) was released by the runtime finalizer. The durable session record,
+   * message history, and activity stay intact so a later prompt can recreate the
+   * runtime from durable metadata.
+   */
+  markSessionRuntimeRelease(sessionId: string, reason: string): void {
+    const nowIso = new Date().toISOString();
+    const existing = this.sessionActivities.get(sessionId);
+    if (existing) {
+      this.sessionActivities.set(sessionId, {
+        ...existing,
+        runtimeReleaseReason: reason,
+        runtimeReleasedAt: nowIso,
+      });
+      return;
+    }
+    const createdAt = this.sessions.get(sessionId)?.createdAt ?? nowIso;
+    this.sessionActivities.set(sessionId, {
+      sessionId,
+      createdAt,
+      lastActivityAt: nowIso,
+      lastMeaningfulActivityAt: nowIso,
+      runtimeReleaseReason: reason,
+      runtimeReleasedAt: nowIso,
+    });
+  }
+
+  /**
+   * Flush any buffered trace chunks for the session before its runtime is
+   * released, so traces survive process termination.
+   */
+  flushSessionTraces(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session?.cwd) return;
+    this.traceRecorder.flushSession(sessionId, session.cwd, session.provider ?? "unknown");
+  }
+
+  /**
+   * Release recreatable transient buffers for a session: SSE controllers,
+   * pending notification queues, event bridges/subscribers, notification
+   * interceptors, and assistant output caches.
+   *
+   * Durable state is intentionally kept: the session record, message history,
+   * and activity metadata remain so the runtime can be recreated on demand.
+   */
+  releaseTransientRuntimeBuffers(sessionId: string): void {
+    const controller = this.sseControllers.get(sessionId);
+    if (controller) {
+      try {
+        controller.close();
+      } catch {
+        // Controller was already closed/errored; nothing to do.
+      }
+      this.sseControllers.delete(sessionId);
+    }
+    this.pendingNotifications.delete(sessionId);
+    this.agentEventBridges.get(sessionId)?.cleanup();
+    this.agentEventBridges.delete(sessionId);
+    this.agentEventSubscribers.delete(sessionId);
+    this.notificationInterceptors.delete(sessionId);
+    this.sessionAssistantOutput.delete(sessionId);
+    this.streamingSessionIds.delete(sessionId);
   }
 
   /**
@@ -853,7 +924,8 @@ class HttpSessionStore {
 
   /**
    * Periodic cleanup check. Runs automatically every 5 minutes.
-   * - Removes stale sessions (inactive for > 1 hour)
+   * - Routes evictable stale sessions through the runtime finalizer so their
+   *   provider processes and MCP proxies are reclaimed, not just their records
    * - Limits history and pending notification sizes
    */
   private maybeCleanup(): void {
@@ -863,9 +935,71 @@ class HttpSessionStore {
     }
     this.lastCleanupTime = now;
 
-    const removed = this.forceCleanup();
-    if (removed > 0) {
-      console.log(`[HttpSessionStore] Periodic cleanup: removed ${removed} stale sessions`);
+    const evictable = this.collectEvictableSessionIds();
+    this.trimRemainingSessionBuffers();
+    if (evictable.length === 0) {
+      return;
+    }
+
+    // Dynamic import avoids a static cycle (the finalizer imports this store).
+    void import("./session-runtime-finalizer")
+      .then(({ finalizeAndRemoveSessions }) => finalizeAndRemoveSessions(evictable, "stale-cleanup"))
+      .catch((error) => {
+        console.warn("[HttpSessionStore] Periodic runtime cleanup failed:", error);
+      });
+  }
+
+  /**
+   * Collect session IDs eligible for eviction: stale beyond the threshold and
+   * not protected by an active SSE connection, active streaming, an active
+   * parent session, or the ROUTA orchestrator role.
+   */
+  collectEvictableSessionIds(options?: { aggressive?: boolean }): string[] {
+    const now = Date.now();
+    const staleThreshold = options?.aggressive
+      ? HttpSessionStore.STALE_SESSION_MS / 2 // 30 minutes if aggressive
+      : HttpSessionStore.STALE_SESSION_MS; // 1 hour normally
+
+    const evictable: string[] = [];
+
+    for (const [sessionId, lastAccess] of this.lastAccessTime.entries()) {
+      const isStale = now - lastAccess > staleThreshold;
+      const hasActiveSse = this.sseControllers.has(sessionId);
+      const isStreaming = this.streamingSessionIds.has(sessionId);
+
+      // Only evict if stale AND not actively used
+      if (!isStale || hasActiveSse || isStreaming) {
+        continue;
+      }
+
+      const session = this.sessions.get(sessionId);
+
+      // Protect child sessions whose parent is still active
+      const isChildSession = !!session?.parentSessionId;
+      const parentStillActive = isChildSession && this.sessions.has(session!.parentSessionId!);
+      if (parentStillActive) {
+        // Refresh access time so child stays alive while parent exists
+        this.lastAccessTime.set(sessionId, now);
+        continue;
+      }
+
+      // Protect ROUTA orchestrator sessions — they are long-running and must not
+      // be evicted while child CRAFTERs / GATEs could still be running.
+      if (session?.role === "ROUTA") {
+        this.lastAccessTime.set(sessionId, now);
+        continue;
+      }
+
+      evictable.push(sessionId);
+    }
+
+    return evictable;
+  }
+
+  private trimRemainingSessionBuffers(): void {
+    for (const sessionId of this.sessions.keys()) {
+      this.limitHistorySize(sessionId);
+      this.limitPendingSize(sessionId);
     }
   }
 
@@ -873,56 +1007,21 @@ class HttpSessionStore {
    * Force cleanup of stale sessions and oversized buffers.
    * Returns the number of sessions removed.
    *
-   * Called automatically by maybeCleanup() but can also be triggered
-   * manually when memory pressure is detected.
+   * This is the synchronous, record-only eviction path. Runtime-aware cleanup
+   * (process + MCP reclamation) lives in session-runtime-finalizer and is the
+   * preferred entry point for memory-pressure cleanup.
    */
   forceCleanup(options?: { aggressive?: boolean }): number {
-    const now = Date.now();
-    const staleThreshold = options?.aggressive
-      ? HttpSessionStore.STALE_SESSION_MS / 2 // 30 minutes if aggressive
-      : HttpSessionStore.STALE_SESSION_MS; // 1 hour normally
+    const evictable = this.collectEvictableSessionIds(options);
 
-    let removedCount = 0;
-
-    // Remove stale sessions
-    for (const [_sessionId, lastAccess] of this.lastAccessTime.entries()) {
-      const isStale = now - lastAccess > staleThreshold;
-      const hasActiveSse = this.sseControllers.has(_sessionId);
-      const isStreaming = this.streamingSessionIds.has(_sessionId);
-
-      // Only remove if stale AND not actively used
-      if (isStale && !hasActiveSse && !isStreaming) {
-        const session = this.sessions.get(_sessionId);
-
-        // Protect child sessions whose parent is still active
-        const isChildSession = !!session?.parentSessionId;
-        const parentStillActive = isChildSession && this.sessions.has(session!.parentSessionId!);
-        if (parentStillActive) {
-          // Refresh access time so child stays alive while parent exists
-          this.lastAccessTime.set(_sessionId, now);
-          continue;
-        }
-
-        // Protect ROUTA orchestrator sessions — they are long-running and must not
-        // be evicted while child CRAFTERs / GATEs could still be running.
-        if (session?.role === "ROUTA") {
-          this.lastAccessTime.set(_sessionId, now);
-          continue;
-        }
-
-        this.deleteSession(_sessionId);
-        this.lastAccessTime.delete(_sessionId);
-        removedCount++;
-      }
+    for (const sessionId of evictable) {
+      this.deleteSession(sessionId);
     }
 
     // Limit buffer sizes for remaining sessions
-    for (const sessionId of this.sessions.keys()) {
-      this.limitHistorySize(sessionId);
-      this.limitPendingSize(sessionId);
-    }
+    this.trimRemainingSessionBuffers();
 
-    return removedCount;
+    return evictable.length;
   }
 
   /**

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getHttpSessionStore } from "@/core/acp/http-session-store";
-import { getAcpProcessManager } from "@/core/acp/processer";
-import { saveHistoryToDb } from "@/core/acp/session-db-persister";
+import { finalizeSessionRuntime } from "@/core/acp/session-runtime-finalizer";
 import {
   getRequiredRunnerUrl,
   isForwardedAcpRequest,
@@ -34,13 +33,17 @@ export async function POST(
     });
   }
 
-  try {
-    await saveHistoryToDb(sessionId, store.getConsolidatedHistory(sessionId));
-  } catch (error) {
-    console.error(`[SessionDisconnect] Failed to persist history for ${sessionId}:`, error);
-  }
+  // Unified terminal path: persist history/trace, mark the release reason,
+  // kill the provider process + MCP proxy, then clear transient buffers.
+  // The durable session record is retained for on-demand recreation.
+  const release = await finalizeSessionRuntime(sessionId, "disconnect");
 
-  await getAcpProcessManager().killSession(sessionId);
-
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    runtime: {
+      released: release.released,
+      processTerminated: release.process?.killed ?? false,
+      errors: release.errors,
+    },
+  });
 }

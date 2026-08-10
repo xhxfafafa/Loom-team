@@ -7,6 +7,7 @@
 
 import { getHttpSessionStore } from "@/core/acp/http-session-store";
 import { getAcpProcessManager } from "@/core/acp/processer";
+import { finalizeSessionRuntime } from "@/core/acp/session-runtime-finalizer";
 import { getRoutaSystem } from "@/core/routa-system";
 import { getKanbanEventBroadcaster } from "@/core/kanban/kanban-event-broadcaster";
 import { GitWorktreeService } from "@/core/git/git-worktree-service";
@@ -30,7 +31,11 @@ export function createTeamRunDeletionPorts(): TeamRunDeletionPorts {
       return sessionStore.listSessions();
     },
     hasActiveProcess: (sessionId) => processManager.hasActiveSession(sessionId),
-    killSessionProcess: (sessionId) => processManager.killSession(sessionId),
+    // Route Team Run kills through the unified finalizer so history/trace are
+    // persisted and MCP proxies are cleaned before the process is terminated.
+    killSessionProcess: async (sessionId) => {
+      await finalizeSessionRuntime(sessionId, "team-run-delete");
+    },
     system,
     clearInMemorySession: (sessionId) => {
       sessionStore.deleteSession(sessionId);

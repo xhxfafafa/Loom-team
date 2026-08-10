@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getHttpSessionStore } from "@/core/acp/http-session-store";
 import { getPresetById } from "@/core/acp/acp-presets";
 import { loadSessionFromDb, loadSessionFromLocalStorage, renameSessionInDb, deleteSessionFromDb } from "@/core/acp/session-db-persister";
+import { finalizeSessionRuntime } from "@/core/acp/session-runtime-finalizer";
 import {
   getRequiredRunnerUrl,
   isForwardedAcpRequest,
@@ -180,6 +181,10 @@ export async function DELETE(
     });
   }
 
+  // Reclaim the owned runtime (provider process + MCP proxy) before removing
+  // the logical session. History/trace are persisted first by the finalizer.
+  const release = await finalizeSessionRuntime(sessionId, "delete");
+
   const success = store.deleteSession(sessionId);
 
   if (!success) {
@@ -191,5 +196,12 @@ export async function DELETE(
 
   await deleteSessionFromDb(sessionId);
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    runtime: {
+      released: release.released,
+      processTerminated: release.process?.killed ?? false,
+      errors: release.errors,
+    },
+  });
 }

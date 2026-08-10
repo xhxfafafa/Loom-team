@@ -12,6 +12,7 @@ const {
   proxyRequestToRunner,
   getRequiredRunnerUrl,
   isForwardedAcpRequest,
+  finalizeSessionRuntime,
 } = vi.hoisted(() => ({
   hydrateFromDb: vi.fn(),
   getSession: vi.fn(),
@@ -23,6 +24,11 @@ const {
   proxyRequestToRunner: vi.fn(),
   getRequiredRunnerUrl: vi.fn(),
   isForwardedAcpRequest: vi.fn(),
+  finalizeSessionRuntime: vi.fn(),
+}));
+
+vi.mock("@/core/acp/session-runtime-finalizer", () => ({
+  finalizeSessionRuntime,
 }));
 
 vi.mock("@/core/acp/http-session-store", () => ({
@@ -61,6 +67,13 @@ describe("/api/sessions/[sessionId] GET", () => {
     proxyRequestToRunner.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     getRequiredRunnerUrl.mockReturnValue("http://runner.internal");
     isForwardedAcpRequest.mockReturnValue(false);
+    finalizeSessionRuntime.mockResolvedValue({
+      sessionId: "session-123",
+      reason: "delete",
+      released: true,
+      process: { sessionId: "session-123", killed: true, mcpCleaned: true, errors: [] },
+      errors: [],
+    });
   });
 
   it("returns ACP runtime status fields for Kanban session backfill", async () => {
@@ -195,6 +208,36 @@ describe("/api/sessions/[sessionId] GET", () => {
     expect(proxyRequestToRunner).toHaveBeenCalledTimes(1);
     expect(deleteSession).not.toHaveBeenCalled();
     expect(deleteSessionFromDb).not.toHaveBeenCalled();
+    expect(finalizeSessionRuntime).not.toHaveBeenCalled();
+  });
+
+  it("finalizes the owned runtime before deleting an embedded session", async () => {
+    getSession.mockReturnValue({
+      sessionId: "session-123",
+      cwd: "/tmp/project",
+      workspaceId: "workspace-1",
+      executionMode: "embedded",
+    });
+    let deleteSawFinalization = false;
+    deleteSession.mockImplementation(() => {
+      deleteSawFinalization = finalizeSessionRuntime.mock.calls.length === 1;
+      return true;
+    });
+
+    const response = await DELETE(
+      new NextRequest("http://localhost/api/sessions/session-123", { method: "DELETE" }),
+      { params: Promise.resolve({ sessionId: "session-123" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(finalizeSessionRuntime).toHaveBeenCalledWith("session-123", "delete");
+    expect(deleteSawFinalization).toBe(true);
+    expect(deleteSession).toHaveBeenCalledWith("session-123");
+    expect(deleteSessionFromDb).toHaveBeenCalledWith("session-123");
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      runtime: { released: true, processTerminated: true },
+    });
   });
 
   it("proxies PATCH rename to the runner for runner-owned sessions", async () => {

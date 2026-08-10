@@ -9,11 +9,11 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { getSessionStoreMemoryUsage } from "@/core/acp/http-session-store";
 import {
-  getSessionStoreMemoryUsage,
-  cleanupSessionStore,
-  getHttpSessionStore,
-} from "@/core/acp/http-session-store";
+  cleanupSessionRuntimesForMemory,
+  type RuntimeCleanupReport,
+} from "@/core/acp/session-runtime-finalizer";
 
 export const dynamic = "force-dynamic";
 
@@ -223,13 +223,19 @@ export async function GET(request: NextRequest) {
     gcTriggered: boolean;
     message: string;
     sessionsRemoved?: number;
+    agentProcessesTerminated?: number;
+    mcpProxiesCleaned?: number;
+    failures?: RuntimeCleanupReport["failures"];
   } | undefined;
   if (triggerCleanup) {
     const gcResult = await performMemoryCleanup({ forceGC: true });
-    const sessionsRemoved = cleanupSessionStore({ aggressive });
+    const runtimeCleanup = await cleanupSessionRuntimesForMemory({ aggressive });
     cleanupResult = {
       ...gcResult,
-      sessionsRemoved,
+      sessionsRemoved: runtimeCleanup.sessionsRemoved,
+      agentProcessesTerminated: runtimeCleanup.agentProcessesTerminated,
+      mcpProxiesCleaned: runtimeCleanup.mcpProxiesCleaned,
+      failures: runtimeCleanup.failures,
     };
   }
 
@@ -332,7 +338,7 @@ export async function POST(request: NextRequest) {
     const aggressive = body.aggressive === true;
 
     const gcResult = await performMemoryCleanup(body);
-    const sessionsRemoved = cleanupSessionStore({ aggressive });
+    const runtimeCleanup = await cleanupSessionRuntimesForMemory({ aggressive });
 
     // Get stats after cleanup
     const stats = calculateMemoryStats();
@@ -343,8 +349,13 @@ export async function POST(request: NextRequest) {
         cleanup: {
           gc: gcResult,
           sessionStore: {
-            sessionsRemoved,
+            sessionsRemoved: runtimeCleanup.sessionsRemoved,
             remaining: sessionStoreStats.sessionCount,
+          },
+          runtime: {
+            agentProcessesTerminated: runtimeCleanup.agentProcessesTerminated,
+            mcpProxiesCleaned: runtimeCleanup.mcpProxiesCleaned,
+            failures: runtimeCleanup.failures,
           },
         },
         memoryAfter: stats,
@@ -381,17 +392,23 @@ export async function DELETE(request: NextRequest) {
   monitor.peakRss = 0;
 
   let sessionsCleared = 0;
+  let runtime: Pick<RuntimeCleanupReport, "agentProcessesTerminated" | "mcpProxiesCleaned" | "failures"> | undefined;
   if (clearSessions) {
-    const store = getHttpSessionStore();
-    const stats = store.getMemoryUsage();
-    sessionsCleared = stats.sessionCount;
-    // Force aggressive cleanup removes all sessions
-    cleanupSessionStore({ aggressive: true });
+    // Force aggressive cleanup removes stale sessions and reclaims their
+    // provider processes / MCP proxies before dropping the logical records.
+    const cleanup = await cleanupSessionRuntimesForMemory({ aggressive: true });
+    sessionsCleared = cleanup.sessionsRemoved;
+    runtime = {
+      agentProcessesTerminated: cleanup.agentProcessesTerminated,
+      mcpProxiesCleaned: cleanup.mcpProxiesCleaned,
+      failures: cleanup.failures,
+    };
   }
 
   return NextResponse.json({
     message: "Memory monitoring history cleared" +
       (clearSessions ? ` and ${sessionsCleared} sessions removed` : ""),
     sessionsCleared,
+    runtime,
   });
 }

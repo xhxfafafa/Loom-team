@@ -4,39 +4,28 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   hydrateFromDb,
   getSession,
-  getConsolidatedHistory,
   proxyRequestToRunner,
   getRequiredRunnerUrl,
   isForwardedAcpRequest,
-  saveHistoryToDb,
-  killSession,
+  finalizeSessionRuntime,
 } = vi.hoisted(() => ({
   hydrateFromDb: vi.fn(),
   getSession: vi.fn(),
-  getConsolidatedHistory: vi.fn(),
   proxyRequestToRunner: vi.fn(),
   getRequiredRunnerUrl: vi.fn(),
   isForwardedAcpRequest: vi.fn(),
-  saveHistoryToDb: vi.fn(),
-  killSession: vi.fn(),
+  finalizeSessionRuntime: vi.fn(),
 }));
 
 vi.mock("@/core/acp/http-session-store", () => ({
   getHttpSessionStore: () => ({
     hydrateFromDb,
     getSession,
-    getConsolidatedHistory,
   }),
 }));
 
-vi.mock("@/core/acp/session-db-persister", () => ({
-  saveHistoryToDb,
-}));
-
-vi.mock("@/core/acp/processer", () => ({
-  getAcpProcessManager: () => ({
-    killSession,
-  }),
+vi.mock("@/core/acp/session-runtime-finalizer", () => ({
+  finalizeSessionRuntime,
 }));
 
 vi.mock("@/core/acp/runner-routing", () => ({
@@ -55,7 +44,19 @@ describe("/api/sessions/[sessionId]/disconnect POST", () => {
     getRequiredRunnerUrl.mockReturnValue("http://runner.internal");
     isForwardedAcpRequest.mockReturnValue(false);
     proxyRequestToRunner.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
-    saveHistoryToDb.mockResolvedValue(undefined);
+    finalizeSessionRuntime.mockResolvedValue({
+      sessionId: "session-123",
+      reason: "disconnect",
+      released: true,
+      process: {
+        sessionId: "session-123",
+        killed: true,
+        runtimeKind: "claude-process",
+        mcpCleaned: true,
+        errors: [],
+      },
+      errors: [],
+    });
   });
 
   it("proxies runner-owned sessions instead of killing local state", async () => {
@@ -73,7 +74,38 @@ describe("/api/sessions/[sessionId]/disconnect POST", () => {
 
     expect(response.status).toBe(200);
     expect(proxyRequestToRunner).toHaveBeenCalledTimes(1);
-    expect(saveHistoryToDb).not.toHaveBeenCalled();
-    expect(killSession).not.toHaveBeenCalled();
+    expect(finalizeSessionRuntime).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the session is unknown", async () => {
+    getSession.mockReturnValue(undefined);
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/sessions/missing/disconnect", { method: "POST" }),
+      { params: Promise.resolve({ sessionId: "missing" }) },
+    );
+
+    expect(response.status).toBe(404);
+    expect(finalizeSessionRuntime).not.toHaveBeenCalled();
+  });
+
+  it("routes embedded disconnects through the unified runtime finalizer", async () => {
+    getSession.mockReturnValue({
+      sessionId: "session-123",
+      cwd: "/tmp/project",
+      workspaceId: "workspace-1",
+      executionMode: "embedded",
+    });
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/sessions/session-123/disconnect", { method: "POST" }),
+      { params: Promise.resolve({ sessionId: "session-123" }) },
+    );
+
+    expect(finalizeSessionRuntime).toHaveBeenCalledWith("session-123", "disconnect");
+    expect(await response.json()).toEqual({
+      ok: true,
+      runtime: { released: true, processTerminated: true, errors: [] },
+    });
   });
 });

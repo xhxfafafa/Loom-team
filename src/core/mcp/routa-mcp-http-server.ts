@@ -277,6 +277,13 @@ export class RoutaMcpHttpServer {
       let session = sessionId ? this.sessions.get(sessionId) : undefined;
 
       if (!session) {
+        // ACP session ID embedded in the /mcp URL by the MCP config generator
+        // (?sid=). Read it exactly once, when the transport/server is created,
+        // so the tool manager can resolve the owning Team Run server-side from
+        // the Session tree and stamp a durable teamRunId on created tasks and
+        // cards. Reused transports keep the sid they were created with.
+        const acpSessionId = url.searchParams.get("sid") ?? undefined;
+
         // Create a new transport + MCP server for this session
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => crypto.randomUUID(),
@@ -293,6 +300,7 @@ export class RoutaMcpHttpServer {
         const { server } = createRoutaMcpServer({
           workspaceId: this.workspaceId,
           toolMode: this._toolMode,
+          sessionId: acpSessionId,
         });
         await server.connect(transport);
 

@@ -1,24 +1,7 @@
-/**
- * RoutaOrchestrator
- *
- * The core orchestration engine that bridges MCP tool calls with actual
- * ACP process spawning. When a coordinator delegates a task, the orchestrator:
- *
- * 1. Checks delegation depth (max 2 levels to prevent infinite recursion)
- * 2. Resolves specialist configuration
- * 3. Creates a child agent record with delegation depth metadata
- * 4. Spawns a real ACP process for the child agent
- * 5. Sends the task as the initial prompt
- * 6. Subscribes for completion events
- * 7. When the child reports back, wakes the parent agent
- *
- * This enables the full Coordinator → Implementor → Verifier lifecycle.
- */
-
 import { v4 as uuidv4 } from "uuid";
 import * as fs from "fs";
 import * as path from "path";
-import { AgentRole, AgentStatus } from "../models/agent";
+import { AgentRole, AgentStatus, type Agent } from "../models/agent";
 import { TaskStatus, type Task } from "../models/task";
 import { AgentEventType } from "../events/event-bus";
 import { ToolResult, successResult, errorResult } from "../tools/tool-result";
@@ -30,18 +13,14 @@ import {
 } from "./specialist-prompts";
 import type { RoutaSystem } from "../routa-system";
 import type { AcpProcessManager } from "../acp/acp-process-manager";
-import type { NotificationHandler } from "../acp/protocol-types";
 import {
   checkDelegationDepth,
   calculateChildDepth,
   buildAgentMetadata,
 } from "./delegation-depth";
-import { getProviderAdapter } from "../acp/provider-adapter";
 import { AgentEventBridge, makeStartedEvent } from "../acp/agent-event-bridge";
 import type { WorkspaceAgentEvent } from "../acp/agent-event-bridge";
 import { getHttpSessionStore } from "../acp/http-session-store";
-import { LifecycleNotifier } from "../acp/lifecycle-notifier";
-import { createWorkspaceSessionSandbox } from "../sandbox/permissions";
 import { AgentMemoryWriter, type CompletionSnapshotSource } from "../storage/agent-memory-writer";
 import { TraceReader } from "../trace/reader";
 import { buildTraceRunDigest, formatDigestForRole } from "../trace/trace-run-digest";
@@ -54,13 +33,19 @@ import {
   normalizeOptionalText,
   type ChildCompletionMemorySnapshot,
 } from "./completion-memory";
-import { appendSessionNotificationEventOnce, persistCapturedProviderSessionId } from "../acp/session-db-persister";
+import { appendSessionNotificationEventOnce } from "../acp/session-db-persister";
 import {
   buildPromptDeliveryReceiptNotification,
   finalizePromptDelivery,
 } from "../acp/prompt-delivery";
 import { deriveNextTeamReportDeliveryId } from "./team-report-delivery";
 import { releaseCompletedChildRuntime } from "./completed-child-release";
+import { resolveOwningTeamRunIdFromSessions } from "./team-run-ownership";
+import { applyTaskStatusTransition, loadTaskBoardColumns } from "../kanban/task-status-transition";
+import {
+  createDelegatedChildSession,
+  dispatchDelegatedChildPrompt,
+} from "./child-session-lifecycle";
 import type {
   ChildAgentRecord,
   TeamRuntimeStateRestore,
@@ -106,9 +91,6 @@ export interface OrchestratorConfig {
   serverPort?: string;
 }
 
-/**
- * Delegation group for wait_mode="after_all"
- */
 interface DelegationGroup {
   groupId: string;
   parentAgentId: string;
@@ -117,8 +99,23 @@ interface DelegationGroup {
   completedAgentIds: Set<string>;
 }
 
-function isWorkspaceProvider(provider: string): boolean {
-  return provider === "workspace" || provider === "workspace-agent" || provider === "routa-native";
+/** Append a delegation child session id to the task's session history, deduped. */
+function appendDelegationSessionId(
+  sessionIds: string[] | undefined,
+  sessionId: string,
+): string[] {
+  const existing = sessionIds ?? [];
+  return existing.includes(sessionId) ? [...existing] : [...existing, sessionId];
+}
+
+/** An existing delegation binding that can be reused instead of spawning again. */
+interface ActiveDelegationBinding {
+  agentId: string;
+  sessionId: string;
+  agentName?: string;
+  specialist?: string;
+  specialistName?: string;
+  provider?: string;
 }
 
 const TEAM_LEAD_SPECIALIST_ID = "team-agent-lead";
@@ -245,6 +242,8 @@ export class RoutaOrchestrator {
   private childCompletionMemoryPromises = new Map<string, Promise<void>>();
   /** Map: agentId → in-flight completion finalizer to dedupe concurrent wake-ups */
   private childCompletionPromises = new Map<string, Promise<void>>();
+  /** Map: taskId → in-flight delegation attempt, serializing concurrent delegates per task */
+  private taskDelegationGuards = new Map<string, Promise<ToolResult>>();
 
   constructor(
     system: RoutaSystem,
@@ -496,15 +495,7 @@ export class RoutaOrchestrator {
   async delegateTaskWithSpawn(
     params: DelegateWithSpawnParams
   ): Promise<ToolResult> {
-    const {
-      taskId,
-      callerAgentId,
-      callerSessionId,
-      workspaceId,
-      specialist: specialistInput,
-      additionalInstructions,
-      waitMode = "immediate",
-    } = params;
+    const { taskId, callerAgentId, specialist: specialistInput } = params;
 
     // 0. Check delegation depth (prevents infinite recursion)
     const depthCheck = await checkDelegationDepth(this.system.agentStore, callerAgentId);
@@ -520,7 +511,34 @@ export class RoutaOrchestrator {
       );
     }
 
-    // 2. Get the task
+    // Concurrent delegation attempts for the same task are serialized inside
+    // this orchestrator instance.
+    return this.withTaskDelegationGuard(taskId, () =>
+      this.executeTaskDelegation(params, specialistConfig, depthCheck.currentDepth),
+    );
+  }
+
+  /**
+   * Execute one delegation attempt inside the per-task guard:
+   * re-read the task, reuse an active binding when one exists, create the
+   * pending agent and child session WITHOUT prompting, persist the binding,
+   * and only then activate the agent and dispatch the prompt.
+   */
+  private async executeTaskDelegation(
+    params: DelegateWithSpawnParams,
+    specialistConfig: SpecialistConfig,
+    parentDepth: number,
+  ): Promise<ToolResult> {
+    const {
+      taskId,
+      callerAgentId,
+      callerSessionId,
+      workspaceId,
+      additionalInstructions,
+      waitMode = "immediate",
+    } = params;
+
+    // 2. Re-read the task inside the per-task guard.
     let task: Task | undefined;
     try {
       task = await this.system.taskStore.get(taskId);
@@ -539,6 +557,23 @@ export class RoutaOrchestrator {
           `First call create_task to create tasks, then use the returned taskId (UUID format like "dda97509-b414-4c50-9835-73a1ec2f..."). ` +
           `Alternatively, use convert_task_blocks to convert @@@task blocks into tasks, or list_tasks to see existing tasks.`;
       return errorResult(`Task not found: ${taskId}. ${hint}`);
+    }
+
+    // 2.5. Reuse an existing active binding (idempotent re-delegation): never
+    // spawn a duplicate agent/session while the previous delegation is live.
+    const existingBinding = await this.resolveActiveDelegationBinding(task);
+    if (existingBinding) {
+      return this.buildDelegatedResult({
+        task,
+        agentId: existingBinding.agentId,
+        sessionId: existingBinding.sessionId,
+        agentName: existingBinding.agentName,
+        specialistId: existingBinding.specialist ?? specialistConfig.id,
+        specialistName: existingBinding.specialistName,
+        provider: existingBinding.provider,
+        waitMode,
+        reused: true,
+      });
     }
 
     // 3. Determine provider
@@ -572,7 +607,7 @@ export class RoutaOrchestrator {
 
     // Build metadata including delegation depth
     const agentMetadata = buildAgentMetadata(
-      calculateChildDepth(depthCheck.currentDepth),
+      calculateChildDepth(parentDepth),
       callerAgentId,
       specialistConfig.id,
       runtimeRosterMetadata,
@@ -657,37 +692,81 @@ export class RoutaOrchestrator {
       additionalContext: enrichedAdditionalContext,
     });
 
-    // 6. Assign task to agent
-    task.assignedTo = agentId;
-    task.status = TaskStatus.IN_PROGRESS;
-    task.updatedAt = new Date();
-    await this.system.taskStore.save(task);
-    await this.system.agentStore.updateStatus(agentId, AgentStatus.ACTIVE);
-
-    // 7. Spawn the ACP process
+    // 6. Create the child session BEFORE persisting the binding, but do not
+    // dispatch the initial prompt yet: the prompt may only be sent after the
+    // binding is durable.
     const childSessionId = uuidv4();
-    let childSandboxId: string | undefined;
+    let createdSession: { sandboxId?: string; acpSessionId: string };
     try {
-      const spawnResult = await this.spawnChildAgent(
+      createdSession = await this.createChildAgentSession(
         childSessionId,
         agentId,
         provider,
         cwd,
-        delegationPrompt,
         callerSessionId,
         workspaceId,
       );
-      childSandboxId = spawnResult.sandboxId;
     } catch (err) {
-      // Clean up on spawn failure
+      // The binding was never persisted: fail the fresh agent and leave the
+      // task in its previous state.
       await this.system.agentStore.updateStatus(agentId, AgentStatus.ERROR);
-      task.status = TaskStatus.BLOCKED;
-      task.updatedAt = new Date();
-      await this.system.taskStore.save(task);
       return errorResult(
         `Failed to spawn agent process: ${err instanceof Error ? err.message : String(err)}`
       );
     }
+
+    // 7. Persist the delegation binding before activating the child. The
+    // per-task guard serializes delegates in this runtime; task.sessionId
+    // remains the creating session and child sessions live in sessionIds.
+    const teamRunId = task.teamRunId ?? (await this.resolveTeamRunIdForCaller(callerSessionId));
+    const sessionIds = appendDelegationSessionId(task.sessionIds, childSessionId);
+    task.assignedTo = agentId;
+    task.status = TaskStatus.IN_PROGRESS;
+    task.sessionIds = sessionIds;
+    if (teamRunId) task.teamRunId = teamRunId;
+    task.updatedAt = new Date();
+    try {
+      await this.system.taskStore.save(task);
+    } catch (err) {
+      await this.releaseUnboundChildResources(agentId, childSessionId);
+      return errorResult(
+        `Failed to persist delegation binding for task ${taskId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    // 8. Activate the agent and dispatch the initial prompt ONLY after the
+    // binding has been persisted.
+    this.dispatchChildAgentEvent(agentId, makeStartedEvent(childSessionId, provider));
+    await this.system.agentStore.updateStatus(agentId, AgentStatus.ACTIVE);
+    try {
+      await this.dispatchChildInitialPrompt(
+        agentId,
+        childSessionId,
+        createdSession.acpSessionId,
+        provider,
+        delegationPrompt,
+      );
+    } catch (err) {
+      // Keep the failed session recorded in sessionIds for diagnostics; mark
+      // the agent ERROR and move the task to BLOCKED through the unified
+      // status transition.
+      await this.system.agentStore.updateStatus(agentId, AgentStatus.ERROR);
+      const current = await this.system.taskStore.get(taskId).catch(() => undefined);
+      if (
+        current?.assignedTo === agentId &&
+        current.sessionIds?.includes(childSessionId) &&
+        current.status === TaskStatus.IN_PROGRESS
+      ) {
+        const boardColumns = await loadTaskBoardColumns(this.system, current);
+        applyTaskStatusTransition(current, TaskStatus.BLOCKED, boardColumns);
+        await this.system.taskStore.save(current);
+      }
+      return errorResult(
+        `Failed to start agent process: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
+    const childSandboxId = createdSession.sandboxId;
 
     // 8. Track the child agent
     const record: ChildAgentRecord = {
@@ -754,11 +833,6 @@ export class RoutaOrchestrator {
       timestamp: new Date(),
     });
 
-    const waitMessage =
-      waitMode === "after_all"
-        ? "You will be notified when ALL delegated agents in this group complete."
-        : "You will be notified when this agent completes.";
-
     try {
       const childMemoryWriter = this.getMemoryWriter(cwd);
       const memoryWrites = [
@@ -803,260 +877,182 @@ export class RoutaOrchestrator {
       `[Orchestrator] Delegated task "${task.title}" to ${specialistConfig.name} agent ${agentId} (provider: ${provider})`
     );
 
-    return successResult({
+    return this.buildDelegatedResult({
+      task,
       agentId,
-      taskId,
-      agentName,
-      specialist: specialistConfig.id,
-      provider,
       sessionId: childSessionId,
+      agentName,
+      specialistId: specialistConfig.id,
+      specialistName: specialistConfig.name,
+      provider,
       waitMode,
-      message: `Task "${task.title}" delegated to ${specialistConfig.name} agent. ${waitMessage}`,
+      reused: false,
     });
   }
 
+  private withTaskDelegationGuard(
+    taskId: string,
+    work: () => Promise<ToolResult>,
+  ): Promise<ToolResult> {
+    const previous = this.taskDelegationGuards.get(taskId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(work);
+    const tracked = next.finally(() => {
+      if (this.taskDelegationGuards.get(taskId) === tracked) {
+        this.taskDelegationGuards.delete(taskId);
+      }
+    });
+    this.taskDelegationGuards.set(taskId, tracked);
+    return next;
+  }
+
+  private async resolveActiveDelegationBinding(
+    task: Task,
+  ): Promise<ActiveDelegationBinding | undefined> {
+    if (!task.assignedTo || task.status !== TaskStatus.IN_PROGRESS) return undefined;
+
+    let agent: Agent | undefined;
+    try {
+      agent = await this.system.agentStore.get(task.assignedTo);
+    } catch {
+      return undefined;
+    }
+    if (!agent || agent.status !== AgentStatus.ACTIVE) return undefined;
+    const activeAgent = agent;
+
+    const specialistId = activeAgent.metadata?.specialist;
+    const describe = (sessionId: string, provider?: string): ActiveDelegationBinding => ({
+      agentId: activeAgent.id,
+      sessionId,
+      agentName: activeAgent.name,
+      specialist: specialistId,
+      specialistName: specialistId ? getSpecialistById(specialistId)?.name : undefined,
+      provider,
+    });
+
+    const record = this.childAgents.get(activeAgent.id);
+    if (record) return describe(record.sessionId, record.provider);
+
+    // Runtime tracking may be unavailable (e.g. after a restart): fall back to
+    // the session registry, most recent child session first.
+    const sessionStore = getHttpSessionStore();
+    for (const sessionId of [...(task.sessionIds ?? [])].reverse()) {
+      const session = sessionStore.getSession(sessionId);
+      if (session && session.acpStatus !== "error") {
+        return describe(sessionId);
+      }
+    }
+    return undefined;
+  }
+
   /**
-   * Spawn a child ACP agent process and send the initial prompt.
+   * Resolve the owning Team Run root for the caller session so delegated tasks
+   * keep their Team Run binding even when the task was created without one.
+   * Best-effort: resolution failures never block delegation.
    */
-  private async spawnChildAgent(
+  private async resolveTeamRunIdForCaller(callerSessionId: string): Promise<string | undefined> {
+    if (!this.hasKnownSessionId(callerSessionId)) return undefined;
+    try {
+      const store = getHttpSessionStore();
+      return await resolveOwningTeamRunIdFromSessions(callerSessionId, async () => {
+        await store.hydrateFromDb();
+        return store.listSessions();
+      });
+    } catch {
+      return undefined;
+    }
+  }
+
+  private buildDelegatedResult(input: {
+    task: Task;
+    agentId: string;
+    sessionId: string;
+    agentName?: string;
+    specialistId: string;
+    specialistName?: string;
+    provider?: string;
+    waitMode: "immediate" | "after_all";
+    reused: boolean;
+  }): ToolResult {
+    const waitMessage =
+      input.waitMode === "after_all"
+        ? "You will be notified when ALL delegated agents in this group complete."
+        : "You will be notified when this agent completes.";
+    const specialistLabel = input.specialistName ?? input.specialistId;
+    return successResult({
+      agentId: input.agentId,
+      taskId: input.task.id,
+      ...(input.agentName ? { agentName: input.agentName } : {}),
+      specialist: input.specialistId,
+      ...(input.provider ? { provider: input.provider } : {}),
+      sessionId: input.sessionId,
+      waitMode: input.waitMode,
+      status: "delegated",
+      message: input.reused
+        ? `Task "${input.task.title}" is already delegated to an active ${specialistLabel} agent. ${waitMessage}`
+        : `Task "${input.task.title}" delegated to ${specialistLabel} agent. ${waitMessage}`,
+    });
+  }
+
+  private async releaseUnboundChildResources(agentId: string, sessionId: string): Promise<void> {
+    try {
+      await this.processManager.killSession(sessionId);
+    } catch (err) {
+      console.warn(`[Orchestrator] Failed to stop unbound child session ${sessionId}:`, err);
+    }
+    this.childAgentBridges.get(agentId)?.cleanup();
+    this.childAgentBridges.delete(agentId);
+    this.cleanupReportWatcher(agentId);
+    try {
+      await this.system.agentStore.updateStatus(agentId, AgentStatus.ERROR);
+    } catch {
+      // Best-effort: the agent record may already be gone.
+    }
+  }
+
+  private async createChildAgentSession(
     sessionId: string,
     agentId: string,
     provider: string,
     cwd: string,
-    initialPrompt: string,
     parentSessionId: string,
     workspaceId?: string,
-  ): Promise<{ sandboxId?: string }> {
-    const isClaudeCode = provider === "claude";
-    const isClaudeCodeSdk = provider === "claude-code-sdk";
-    const isNativeWorkspaceAgent = isWorkspaceProvider(provider);
+  ): Promise<{ sandboxId?: string; acpSessionId: string }> {
+    const result = await createDelegatedChildSession({
+      sessionId,
+      agentId,
+      provider,
+      cwd,
+      parentSessionId,
+      workspaceId,
+      system: this.system,
+      processManager: this.processManager,
+      serverPort: this.detectServerPort(),
+      notificationSink: this.notificationHandler,
+      onCompletionUpdate: (id, params) => this.checkForCompletion(id, params),
+      onAgentEvent: (id, event) => this.dispatchChildAgentEvent(id, event),
+      watchForReports: (id, workdir) => this.watchForReportFiles(id, workdir),
+    });
+    this.childAgentBridges.set(agentId, result.bridge);
+    return result;
+  }
 
-    // Create AgentEventBridge for this child agent
-    const bridge = new AgentEventBridge(sessionId);
-    this.childAgentBridges.set(agentId, bridge);
-    this.dispatchChildAgentEvent(agentId, makeStartedEvent(sessionId, provider));
-
-    // Build a LifecycleNotifier so the child auto-notifies its parent on session end
-    const agent = await this.system.agentStore.get(agentId);
-    const effectiveWorkspaceId = workspaceId ?? agent?.workspaceId;
-    if (!effectiveWorkspaceId) {
-      throw new Error(`workspaceId is required to spawn child agent ${agentId}`);
-    }
-    const lifecycleNotifier = new LifecycleNotifier(
-      this.system.eventBus,
-      this.system.agentStore,
-      this.system.conversationStore,
-      {
-        agentId,
-        workspaceId: effectiveWorkspaceId,
-        parentId: agent?.parentId,
-        agentName: agent?.name,
-      }
-    );
-
-    const notificationHandler: NotificationHandler = (msg) => {
-      if (msg.method === "session/update" && msg.params) {
-        const params = msg.params as Record<string, unknown>;
-
-        // Check for completion signals in the update
-        this.checkForCompletion(agentId, params);
-
-        // Convert to semantic WorkspaceAgentEvents via bridge
-        const adapter = getProviderAdapter(provider);
-        const normalized = adapter.normalize(sessionId, params);
-        if (normalized) {
-          const updates = Array.isArray(normalized) ? normalized : [normalized];
-          for (const update of updates) {
-            const agentEvents = bridge.process(update);
-            for (const agentEvent of agentEvents) {
-              this.dispatchChildAgentEvent(agentId, agentEvent);
-            }
-          }
-        }
-
-        // Store the notification in the child session's own history
-        // so it can be restored on page reload
-        if (this.notificationHandler) {
-          this.notificationHandler(sessionId, {
-            ...params,
-            sessionId,
-          });
-        }
-
-        // Forward notifications to the parent session's SSE
-        if (this.notificationHandler) {
-          this.notificationHandler(parentSessionId, {
-            ...params,
-            sessionId: parentSessionId,
-            childAgentId: agentId,
-            childSessionId: sessionId,
-          });
-        }
-      }
-    };
-
-    // Detect the actual server port dynamically
-    const port = this.detectServerPort();
-    const host = process.env.HOST ?? "localhost";
-    const baseMcpUrl = `http://${host}:${port}/api/mcp`;
-    // Embed workspaceId (?wsId=) and parentSessionId (?sid=) so the MCP server
-    // can scope tool calls (e.g. create_note) to the correct session.
-    const mcpUrlObj = new URL(baseMcpUrl);
-    mcpUrlObj.searchParams.set("wsId", effectiveWorkspaceId);
-    mcpUrlObj.searchParams.set("sid", parentSessionId);
-    const mcpUrl = mcpUrlObj.toString();
-
-    let acpSessionId: string;
-    let sandboxId: string | undefined;
-
-    if (isNativeWorkspaceAgent) {
-      sandboxId = (await createWorkspaceSessionSandbox({
-        workspaceId: effectiveWorkspaceId,
-        workdir: cwd,
-      }))?.id;
-
-      acpSessionId = await this.processManager.createWorkspaceAgentSession(
-        sessionId,
-        cwd,
-        notificationHandler,
-        {
-          agentTools: this.system.tools,
-          workspaceId: effectiveWorkspaceId,
-          agentId,
-          sandboxId,
-          lifecycleNotifier,
-        },
-      );
-
-      const workspaceAgent = this.processManager.getWorkspaceAgent(sessionId);
-      if (workspaceAgent) {
-        (async () => {
-          try {
-            for await (const _ of workspaceAgent.promptStream(initialPrompt, acpSessionId)) {
-              // notifications are forwarded via notificationHandler
-            }
-            this.autoReportIfNeeded(agentId);
-          } catch (err) {
-            console.error(`[Orchestrator] Workspace child agent ${agentId} failed:`, err);
-            this.handleChildError(agentId, err);
-          }
-        })();
-      }
-    } else if (isClaudeCode) {
-      const mcpConfigJson = JSON.stringify({
-        mcpServers: {
-          routa: { url: mcpUrl, type: "http" },
-        },
-      });
-
-      acpSessionId = await this.processManager.createClaudeSession(
-        sessionId,
-        cwd,
-        notificationHandler,
-        [mcpConfigJson],
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        (captured: string) => {
-          // Persist the provider-native ID reported by system/init so the
-          // child runtime can later resume natively after a release/restart.
-          void persistCapturedProviderSessionId(sessionId, captured);
-        },
-      );
-
-      // Watch for .report_to_parent_*.json files in the cwd
-      // Claude Code sometimes writes these files instead of calling the MCP tool
-      this.watchForReportFiles(agentId, cwd);
-
-      // Send the initial prompt and handle completion
-      const claudeProc = this.processManager.getClaudeProcess(sessionId);
-      if (claudeProc) {
-        // Await the prompt so we can detect when the child finishes
-        claudeProc.prompt(acpSessionId, initialPrompt)
-          .then((result) => {
-            console.log(
-              `[Orchestrator] Child agent ${agentId} prompt completed:`,
-              JSON.stringify(result).slice(0, 200)
-            );
-            // Auto-report if the agent hasn't called report_to_parent
-            this.autoReportIfNeeded(agentId);
-          })
-          .catch((err) => {
-            console.error(
-              `[Orchestrator] Child agent ${agentId} prompt failed:`,
-              err
-            );
-            this.handleChildError(agentId, err);
-          });
-      }
-    } else if (isClaudeCodeSdk) {
-      acpSessionId = await this.processManager.createClaudeCodeSdkSession(
-        sessionId,
-        cwd,
-        notificationHandler,
-        { provider: "claude-code-sdk" },
-        lifecycleNotifier,
-        (captured: string) => {
-          // Persist the real SDK-native session ID (never the synthetic
-          // adapter handle) once the SDK reports it.
-          void persistCapturedProviderSessionId(sessionId, captured);
-        },
-      );
-
-      // Send the initial prompt via the SDK adapter
-      const sdkAdapter = this.processManager.getClaudeCodeSdkAdapter(sessionId);
-      if (sdkAdapter) {
-        (async () => {
-          try {
-            for await (const _ of sdkAdapter.promptStream(initialPrompt, acpSessionId)) {
-              // notifications are forwarded via notificationHandler
-            }
-            this.autoReportIfNeeded(agentId);
-          } catch (err) {
-            console.error(`[Orchestrator] Claude Code SDK child agent ${agentId} failed:`, err);
-            this.handleChildError(agentId, err);
-          }
-        })();
-      }
-    } else {
-      acpSessionId = await this.processManager.createSession(
-        sessionId,
-        cwd,
-        notificationHandler,
-        provider,
-        undefined, // initialModeId
-        undefined, // extraArgs
-        undefined, // extraEnv
-        workspaceId,
-      );
-
-      // Send the initial prompt and handle completion
-      const proc = this.processManager.getProcess(sessionId);
-      if (proc) {
-        proc.prompt(acpSessionId, initialPrompt)
-          .then((result) => {
-            console.log(
-              `[Orchestrator] Child agent ${agentId} prompt completed:`,
-              JSON.stringify(result).slice(0, 200)
-            );
-            this.autoReportIfNeeded(agentId);
-          })
-          .catch((err) => {
-            console.error(
-              `[Orchestrator] Child agent ${agentId} prompt failed:`,
-              err
-            );
-            this.handleChildError(agentId, err);
-          });
-      }
-    }
-
-    console.log(
-      `[Orchestrator] Spawned ${provider} process for agent ${agentId} (session: ${sessionId}, mcpUrl: ${mcpUrl})`
-    );
-    return { sandboxId };
+  private dispatchChildInitialPrompt(
+    agentId: string,
+    sessionId: string,
+    acpSessionId: string,
+    provider: string,
+    prompt: string,
+  ): Promise<void> {
+    return dispatchDelegatedChildPrompt({
+      agentId,
+      sessionId,
+      acpSessionId,
+      provider,
+      prompt,
+      processManager: this.processManager,
+      onComplete: (id) => void this.autoReportIfNeeded(id),
+      onError: (id, error) => this.handleChildError(id, error),
+    });
   }
 
   /**

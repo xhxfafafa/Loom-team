@@ -54,6 +54,7 @@ import { ToolResult, successResult, errorResult } from './tool-result';
 import { applySandboxPermissionConstraints, SandboxPermissionConstraints } from "../sandbox";
 import { resolveTaskStatusForBoardColumn } from "../models/kanban";
 import { resolveReviewLaneConvergenceTarget } from "../kanban/review-lane-convergence";
+import { applyTaskStatusTransition, loadTaskBoardColumns } from "../kanban/task-status-transition";
 import {
   PermissionStore,
   PermissionRequest,
@@ -188,7 +189,7 @@ function shouldEmitSyntheticCompletion(params: {
 export class AgentTools {
   private artifactStore?: ArtifactStore;
   private permissionStore?: PermissionStore;
-  private kanbanBoardStore?: Pick<KanbanBoardStore, "get">;
+  private kanbanBoardStore?: Pick<KanbanBoardStore, "get" | "getDefault">;
 
   constructor(
     private agentStore: AgentStore,
@@ -209,7 +210,7 @@ export class AgentTools {
     this.permissionStore = store;
   }
 
-  setKanbanBoardStore(store: Pick<KanbanBoardStore, "get">): void {
+  setKanbanBoardStore(store: Pick<KanbanBoardStore, "get" | "getDefault">): void {
     this.kanbanBoardStore = store;
   }
 
@@ -513,13 +514,12 @@ export class AgentTools {
       return errorResult(`Agent ${agentId} has no parent to report to`);
     }
 
-    // Update task status
+    // Update task status via the shared status↔column transition.
     if (report.taskId) {
       const task = await this.taskStore.get(report.taskId);
       if (task) {
-        task.status = report.success ? TaskStatus.COMPLETED : TaskStatus.NEEDS_FIX;
+        applyTaskStatusTransition(task, report.success ? TaskStatus.COMPLETED : TaskStatus.NEEDS_FIX, await loadTaskBoardColumns({ kanbanBoardStore: this.kanbanBoardStore }, task));
         task.completionSummary = report.summary;
-        task.updatedAt = new Date();
         await this.taskStore.save(task);
       }
     }
@@ -811,11 +811,10 @@ export class AgentTools {
     }
 
     const oldStatus = task.status;
-    task.status = statusUpper;
+    applyTaskStatusTransition(task, statusUpper, await loadTaskBoardColumns({ kanbanBoardStore: this.kanbanBoardStore }, task));
     if (summary) {
       task.completionSummary = summary;
     }
-    task.updatedAt = new Date();
     await this.taskStore.save(task);
 
     // Emit status change event
@@ -894,7 +893,7 @@ export class AgentTools {
     if (updates.scope !== undefined) task.scope = updates.scope;
     if (updates.status) {
       const statusUpper = updates.status.toUpperCase() as TaskStatus;
-      task.status = statusUpper;
+      applyTaskStatusTransition(task, statusUpper, await loadTaskBoardColumns({ kanbanBoardStore: this.kanbanBoardStore }, task));
     }
     if (updates.completionSummary !== undefined) task.completionSummary = updates.completionSummary;
     if (updates.verificationVerdict !== undefined) {

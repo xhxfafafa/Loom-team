@@ -1,7 +1,9 @@
 ---
 title: Team run initial prompt can be dropped before the lead session is selected
+date: "2026-08-10"
 status: resolved
 kind: issue
+area: "team"
 created_at: 2026-08-10
 updated_at: 2026-08-10
 ---

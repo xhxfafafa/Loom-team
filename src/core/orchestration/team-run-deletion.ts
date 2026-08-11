@@ -113,7 +113,8 @@ export interface TeamRunDeletionPlan {
   explicitKanbanTaskIds: string[];
   /** Subset of kanbanTaskIds matched only by the legacy session-tree links. */
   legacyKanbanTaskIds: string[];
-  /** Cards linked to the team but shared with live outside sessions; kept. */
+  /** Legacy cards (no `teamRunId`) linked to the team tree and referenced by
+   *  live outside sessions; kept. Explicitly owned cards never land here. */
   sharedKanbanTaskIds: string[];
   /** Artifacts belonging to deleted cards. */
   artifactIds: string[];
@@ -259,45 +260,51 @@ async function buildPlanFromSessions(
   const agentIds = [...privateAgentIds].filter((agentId) => workspaceAgentIds.has(agentId));
   const sharedAgentIds = [...treeSessionAgentIds].filter((agentId) => outsideSessionAgentIds.has(agentId));
 
-  // Kanban cards are collected two ways and the results deduplicated:
+  // Kanban card ownership follows a strict priority:
   //
-  // 1. Explicit ownership (preferred): cards stamped with this Team Run's ID
-  //    (`task.teamRunId === root.sessionId`). These are deleted even when their
-  //    session links are stale or detached, so ownership no longer depends on
-  //    unreliable parentSessionId inference. Cards owned by a *different* Team
-  //    Run are never touched here.
-  // 2. Legacy fallback: cards whose session-link fields intersect the tree, for
-  //    historical cards created before `teamRunId` existed. Cards explicitly
-  //    owned by another team are excluded from this inference.
-  //
-  // In both cases a card that a live session *outside* the tree references is
-  // preserved as shared.
+  // 1. Explicit ownership is authoritative. `task.teamRunId` names the Team
+  //    Run that owns the card:
+  //    - `teamRunId === root.sessionId` → the card belongs to this team and is
+  //      deleted, no matter what its session-link fields say.
+  //    - any other non-empty `teamRunId` → the card belongs to another team
+  //      and is never touched, even when it references this tree's sessions.
+  //    The session-link fields (`sessionId`, `triggerSessionId`, `sessionIds`,
+  //    `laneSessions`) only record execution history; they never override
+  //    explicit ownership. This matters because kanban lane automation creates
+  //    sessions without a Team root `parentSessionId`, so those sessions sit
+  //    outside the Team tree even when they execute a Team-owned card.
+  // 2. Legacy inference only applies to cards with no `teamRunId` at all
+  //    (created before `teamRunId` existed): such a card is deleted when its
+  //    session links intersect the tree, unless a live session *outside* the
+  //    tree also references it — in which case it is preserved as shared.
   const tasks = await ports.system.taskStore.listByWorkspace(root.workspaceId);
   const kanbanTaskIds: string[] = [];
   const explicitKanbanTaskIds: string[] = [];
   const legacyKanbanTaskIds: string[] = [];
   const sharedKanbanTaskIds: string[] = [];
   for (const task of tasks) {
-    const explicitOwner = task.teamRunId === root.sessionId;
-    const ownedByOtherTeam = !!task.teamRunId && task.teamRunId !== root.sessionId;
+    if (task.teamRunId) {
+      if (task.teamRunId === root.sessionId) {
+        kanbanTaskIds.push(task.id);
+        explicitKanbanTaskIds.push(task.id);
+      }
+      continue;
+    }
 
     const refs = collectTaskSessionRefs(task);
-    const legacyLinked = !ownedByOtherTeam && refs.some((id) => treeSet.has(id));
+    const linkedToDeletedTree = refs.some((id) => treeSet.has(id));
+    if (!linkedToDeletedTree) continue;
 
-    if (!explicitOwner && !legacyLinked) continue;
-
-    const hasExternalLiveRef = refs.some((id) => !treeSet.has(id) && existingSessionIds.has(id));
-    if (hasExternalLiveRef) {
+    const linkedToLiveOutsideSession = refs.some(
+      (id) => !treeSet.has(id) && existingSessionIds.has(id),
+    );
+    if (linkedToLiveOutsideSession) {
       sharedKanbanTaskIds.push(task.id);
       continue;
     }
 
     kanbanTaskIds.push(task.id);
-    if (explicitOwner) {
-      explicitKanbanTaskIds.push(task.id);
-    } else {
-      legacyKanbanTaskIds.push(task.id);
-    }
+    legacyKanbanTaskIds.push(task.id);
   }
 
   // Artifacts belong to exactly one task (artifact.taskId), so deleting the

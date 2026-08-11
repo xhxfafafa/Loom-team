@@ -825,22 +825,171 @@ describe("deleteTeamRun", () => {
     expect(result.deleted.kanbanCards).toBe(1);
   });
 
-  it("preserves explicitly owned cards that a live outside session still references", async () => {
+  it("deletes explicitly owned cards whose live lane sessions lack a team parent", async () => {
+    // Kanban lane automation creates sessions without the Team root as
+    // `parentSessionId`, so they sit outside the Team tree even while live.
+    // Explicit `teamRunId` ownership must win over that execution history —
+    // this is the regression where such cards were misclassified as shared
+    // and left behind on the board.
+    const events: string[] = [];
+    const ports = createPorts(
+      {
+        sessions: [
+          ...defaultTeamSessions(),
+          teamSession("lane-session-1", { name: "Lane automation", role: "claude" }),
+        ],
+        tasks: [
+          taskFixture({
+            id: "task-explicit-lane",
+            teamRunId: "root-1",
+            triggerSessionId: "lane-session-1",
+            sessionIds: ["lane-session-1"],
+            laneSessions: [{ sessionId: "lane-session-1" }],
+          }),
+        ],
+      },
+      events,
+    );
+
+    const result = await deleteTeamRun(ports, "root-1");
+    const deleted = getTrackedState(ports);
+
+    expect(deleted.tasks).toEqual(["task-explicit-lane"]);
+    expect(result.deleted.kanbanCards).toBe(1);
+    expect(result.preserved.sharedKanbanCards).toBe(0);
+    expect(new Set(events.filter((event) => event.startsWith("kanban-event:")))).toEqual(
+      new Set(["kanban-event:task-explicit-lane"]),
+    );
+  });
+
+  it("deletes explicitly owned cards even when they also link live tree and outside sessions", async () => {
+    // Session execution history (tree-internal or not) never overrides an
+    // explicit `teamRunId`: the card is deleted regardless.
+    const events: string[] = [];
+    const ports = createPorts(
+      {
+        sessions: defaultTeamSessions(),
+        tasks: [
+          taskFixture({
+            id: "task-explicit-shared-history",
+            teamRunId: "root-1",
+            sessionIds: ["child-1", "outsider-1"],
+          }),
+        ],
+      },
+      events,
+    );
+
+    const result = await deleteTeamRun(ports, "root-1");
+    const deleted = getTrackedState(ports);
+
+    expect(deleted.tasks).toEqual(["task-explicit-shared-history"]);
+    expect(result.deleted.kanbanCards).toBe(1);
+    expect(result.preserved.sharedKanbanCards).toBe(0);
+  });
+
+  it("deletes artifacts only for cards that are actually deleted", async () => {
+    const ports = createPorts({
+      sessions: [
+        ...defaultTeamSessions(),
+        teamSession("lane-session-1", { name: "Lane automation", role: "claude" }),
+      ],
+      tasks: [
+        taskFixture({
+          id: "task-explicit-lane",
+          teamRunId: "root-1",
+          laneSessions: [{ sessionId: "lane-session-1" }],
+        }),
+        taskFixture({
+          id: "task-other-team",
+          teamRunId: "other-root",
+          sessionIds: ["root-1"],
+        }),
+        taskFixture({
+          id: "task-legacy-shared",
+          sessionIds: ["root-1", "outsider-1"],
+        }),
+      ],
+      artifactsByTask: {
+        "task-explicit-lane": ["artifact-explicit"],
+        "task-other-team": ["artifact-other-team"],
+        "task-legacy-shared": ["artifact-shared"],
+      },
+    });
+
+    const result = await deleteTeamRun(ports, "root-1");
+    const deleted = getTrackedState(ports);
+
+    expect(deleted.tasks).toEqual(["task-explicit-lane"]);
+    expect(deleted.artifactsByTask).toEqual(["task-explicit-lane"]);
+    expect(result.deleted.artifacts).toBe(1);
+  });
+
+  it("keeps shared worktrees protected when explicitly owned cards are deleted", async () => {
     const ports = createPorts({
       sessions: defaultTeamSessions(),
       tasks: [
         taskFixture({
-          id: "task-explicit-shared",
+          id: "task-explicit",
           teamRunId: "root-1",
-          sessionIds: ["outsider-1"],
+          worktreeId: "wt-shared-with-survivor",
         }),
+        taskFixture({
+          id: "task-survivor",
+          sessionId: "outsider-1",
+          worktreeId: "wt-shared-with-survivor",
+        }),
+      ],
+      worktrees: [
+        worktreeFixture({ id: "wt-shared-with-survivor" }),
+        worktreeFixture({ id: "wt-exclusive", sessionId: "child-1" }),
       ],
     });
 
-    const plan = await buildTeamRunDeletionPlan(ports, "root-1", "ws-1");
+    const result = await deleteTeamRun(ports, "root-1");
+    const deleted = getTrackedState(ports);
 
-    expect(plan.kanbanTaskIds).toEqual([]);
-    expect(plan.sharedKanbanTaskIds).toEqual(["task-explicit-shared"]);
+    expect(deleted.tasks).toEqual(["task-explicit"]);
+    // The survivor's reference still wins: the shared worktree is preserved
+    // even though the explicitly owned card referencing it was deleted.
+    expect(deleted.worktrees).toEqual(["wt-exclusive"]);
+    expect(result.preserved.sharedWorktrees).toBe(1);
+  });
+
+  it("keeps preview explicit/legacy/preserved counts consistent with the executed deletion", async () => {
+    const sessions = [
+      ...defaultTeamSessions(),
+      teamSession("lane-session-1", { name: "Lane automation", role: "claude" }),
+    ];
+    const tasks = [
+      // Explicit owner with a live lane session outside the tree → explicit.
+      taskFixture({
+        id: "task-explicit",
+        teamRunId: "root-1",
+        laneSessions: [{ sessionId: "lane-session-1" }],
+      }),
+      // Legacy card linked only to the tree → legacy.
+      taskFixture({ id: "task-legacy", triggerSessionId: "child-1" }),
+      // Legacy card shared with a live outside session → preserved shared.
+      taskFixture({ id: "task-shared", sessionIds: ["root-1", "outsider-1"] }),
+      // Owned by another team → never counted for deletion.
+      taskFixture({ id: "task-other-team", teamRunId: "other-root", sessionIds: ["root-1"] }),
+    ];
+
+    const plan = await buildTeamRunDeletionPlan(createPorts({ sessions, tasks }), "root-1", "ws-1");
+
+    expect(new Set(plan.explicitKanbanTaskIds)).toEqual(new Set(["task-explicit"]));
+    expect(new Set(plan.legacyKanbanTaskIds)).toEqual(new Set(["task-legacy"]));
+    expect(new Set(plan.kanbanTaskIds)).toEqual(new Set(["task-explicit", "task-legacy"]));
+    expect(new Set(plan.sharedKanbanTaskIds)).toEqual(new Set(["task-shared"]));
+
+    const events: string[] = [];
+    const ports = createPorts({ sessions, tasks }, events);
+    const result = await deleteTeamRun(ports, "root-1");
+
+    expect(result.deleted.kanbanCards).toBe(plan.kanbanTaskIds.length);
+    expect(result.preserved.sharedKanbanCards).toBe(plan.sharedKanbanTaskIds.length);
+    expect(new Set(getTrackedState(ports).tasks)).toEqual(new Set(plan.kanbanTaskIds));
   });
 
   // ─── Persistent drivers ──────────────────────────────────────────────

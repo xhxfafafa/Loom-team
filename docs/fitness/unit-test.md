@@ -180,8 +180,10 @@ metrics:
   - 锁定 Team Run 身份识别规则：显式标记（team-agent-lead / ROUTA + team 名称）、parentSessionId 树收集（含环保护）、根判定（顶层 + 标记或 ROUTA 有后代）。
 - `src/core/orchestration/__tests__/team-run-deletion.test.ts`
   - 锁定删除服务安全边界：空 team、多级子会话、先停活进程再删数据、无法停止时零变更中止、runner 会话拒绝、仅删除 team 专属看板卡、共享 worktree/卡片保留、非 team 根/跨 workspace 拒绝、sqlite 单事务删除路径。
+  - 锁定卡片所有权矩阵（`teamRunId` 为权威来源，Session 执行历史不得覆盖）：显式 Team-owned 卡片在无 Session 引用、仅有不存在 Session、关联存活但无 Team 父级的 lane Session、同时关联树内与树外存活 Session 时均删除；显式属于其他 Team 的卡片即使关联待删树也保留；无 `teamRunId` 的历史卡片仅按 Team Session 树保守推断（仅树内引用删除、树内+树外存活 Session 保留为共享、无树内引用保留）；Artifact 仅随实际删除的卡片删除；共享 Worktree 继续受存活卡片保护；preview 的 explicit/legacy/preserved 计数与实际删除计划一致。
 - `src/app/api/team-runs/__tests__/route.test.ts`
   - 锁定 `DELETE /api/team-runs/:rootSessionId` 与 `GET /api/team-runs/:rootSessionId/preview` 的语义响应：成功计数、404/409/422/500 错误码映射、预览 no-store。
+  - 锁定显式所有权回归：`teamRunId` 指向待删 Team 根、且唯一存活 Session 为无 Team 父级 lane Session 的卡片，会在 DELETE 中实际删除并计入 preview 的 `explicitKanbanCards`。
 - `src/app/workspace/[workspaceId]/team/__tests__/delete-team-run-dialog.test.tsx`
   - 锁定删除确认对话框：预览统计展示、输入 DELETE/Team 名才可确认、取消、runner 阻断、删除/预览失败的本地化错误。
 

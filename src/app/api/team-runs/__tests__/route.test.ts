@@ -76,10 +76,22 @@ function resetState() {
       cwd: "/tmp/project",
       workspaceId: "ws-1",
     },
+    // Kanban lane automation session: live, but without the Team root as
+    // parentSessionId, so it sits outside the Team tree.
+    {
+      sessionId: "lane-1",
+      name: "Lane automation",
+      role: "claude",
+      cwd: "/tmp/project",
+      workspaceId: "ws-1",
+    },
   ];
   state.tasks = [
     { id: "task-1", triggerSessionId: "root-1" },
     { id: "task-out", sessionId: "solo-1" },
+    // Explicitly owned by this Team Run even though its only live session is
+    // a parentless lane session outside the Team tree — must be deleted.
+    { id: "task-explicit", teamRunId: "root-1", laneSessions: [{ sessionId: "lane-1" }] },
   ];
   state.deletedTasks = [];
   state.notified = [];
@@ -118,11 +130,11 @@ describe("DELETE /api/team-runs/:rootSessionId", () => {
     expect(body.ok).toBe(true);
     expect(body.result.rootSessionId).toBe("root-1");
     expect(body.result.deleted.sessions).toBe(2);
-    expect(body.result.deleted.kanbanCards).toBe(1);
+    expect(body.result.deleted.kanbanCards).toBe(2);
     expect(body.result.preserved).toEqual({ sharedKanbanCards: 0, sharedWorktrees: 0 });
-    expect(state.deletedTasks).toEqual(["task-1"]);
+    expect(state.deletedTasks).toEqual(["task-1", "task-explicit"]);
     expect(state.deletedTasks).not.toContain("task-out");
-    expect(state.notified).toEqual(["task-1"]);
+    expect(state.notified).toEqual(["task-1", "task-explicit"]);
   });
 
   it("accepts the workspace guard as a query parameter", async () => {
@@ -198,8 +210,8 @@ describe("GET /api/team-runs/:rootSessionId/preview", () => {
     expect(body.counts).toEqual({
       sessions: 2,
       activeAgents: 0,
-      kanbanCards: 1,
-      explicitKanbanCards: 0,
+      kanbanCards: 2,
+      explicitKanbanCards: 1,
       legacyKanbanCards: 1,
       artifacts: 0,
       worktrees: 0,
@@ -210,7 +222,9 @@ describe("GET /api/team-runs/:rootSessionId/preview", () => {
     });
     expect(body.hasRunnerSessions).toBe(false);
     expect(body.sessionIds).toEqual(["root-1", "child-1"]);
-    expect(body.kanbanTaskIds).toEqual(["task-1"]);
+    expect(body.kanbanTaskIds).toEqual(["task-1", "task-explicit"]);
+    expect(body.explicitKanbanTaskIds).toEqual(["task-explicit"]);
+    expect(body.legacyKanbanTaskIds).toEqual(["task-1"]);
     expect(body.sharedKanbanTaskIds).toEqual([]);
     expect(state.deletedTasks).toEqual([]);
   });

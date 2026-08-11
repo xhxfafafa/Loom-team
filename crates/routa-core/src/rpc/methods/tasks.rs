@@ -220,8 +220,16 @@ pub async fn update_status(
 ) -> Result<UpdateStatusResult, RpcError> {
     let status = TaskStatus::from_str(&params.status)
         .ok_or_else(|| RpcError::BadRequest(format!("Invalid status: {}", params.status)))?;
-    state.task_store.update_status(&params.id, &status).await?;
-    Ok(UpdateStatusResult { updated: true })
+    // Route through the unified status transition so terminal statuses keep
+    // Task.status and its Kanban column consistent in one write.
+    let updated = crate::kanban::update_task_status_with_transition(
+        &state.task_store,
+        &state.kanban_store,
+        &params.id,
+        status,
+    )
+    .await?;
+    Ok(UpdateStatusResult { updated })
 }
 
 // ---------------------------------------------------------------------------

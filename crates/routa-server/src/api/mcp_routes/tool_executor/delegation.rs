@@ -116,6 +116,7 @@ pub(super) async fn execute(
                 Arc::new(state.acp_manager.clone()),
                 state.agent_store.clone(),
                 state.task_store.clone(),
+                state.kanban_store.clone(),
                 state.event_bus.clone(),
             );
             let params = DelegateWithSpawnParams {
@@ -154,11 +155,30 @@ pub(super) async fn execute(
             } else {
                 crate::models::task::TaskStatus::NeedsFix
             };
+            let new_status_str = new_status.as_str();
 
-            if let Err(e) = state.task_store.update_status(task_id, &new_status).await {
-                return Some(tool_result_error(&format!(
-                    "Failed to update task status: {e}"
-                )));
+            // Route through the unified status transition so a terminal
+            // report keeps Task.status and its Kanban column consistent
+            // in one write (parity with Web AgentTools.reportToParent).
+            match routa_core::kanban::update_task_status_with_transition(
+                &state.task_store,
+                &state.kanban_store,
+                task_id,
+                new_status,
+            )
+            .await
+            {
+                Ok(true) => {}
+                Ok(false) => {
+                    return Some(tool_result_error(&format!(
+                        "Failed to update task status: task {task_id} not found"
+                    )))
+                }
+                Err(e) => {
+                    return Some(tool_result_error(&format!(
+                        "Failed to update task status: {e}"
+                    )))
+                }
             }
 
             let event = crate::events::AgentEvent {
@@ -178,7 +198,7 @@ pub(super) async fn execute(
                 "success": true,
                 "taskId": task_id,
                 "reported": true,
-                "taskStatus": new_status.as_str()
+                "taskStatus": new_status_str
             }))
         }
         "send_message_to_agent" => {

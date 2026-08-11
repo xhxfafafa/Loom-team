@@ -94,17 +94,22 @@ pub async fn list_cards_by_column(
         .find(|column| column.id == params.column_id)
         .ok_or_else(|| RpcError::NotFound(format!("Column {} not found", params.column_id)))?;
     let mut tasks = tasks_for_board(state, &board).await?;
-    tasks.retain(|task| task.column_id.as_deref().unwrap_or("backlog") == params.column_id);
+    tasks.retain(|task| {
+        crate::kanban::resolve_effective_column_id_for_read(task, Some(&board)) == params.column_id
+    });
     tasks.sort_by_key(|task| task.position);
 
+    let board_id = board.id.clone();
+    let cards = tasks
+        .into_iter()
+        .map(|task| crate::kanban::task_to_card_with_board(&task, Some(&board)))
+        .collect();
+
     Ok(ListCardsByColumnResult {
-        board_id: board.id,
+        board_id,
         column_id: params.column_id,
         column_name: column.name.clone(),
-        cards: tasks
-            .into_iter()
-            .map(|task| crate::kanban::task_to_card(&task))
-            .collect(),
+        cards,
     })
 }
 
@@ -173,7 +178,9 @@ pub async fn list_cards(
         if !board.columns.iter().any(|c| c.id == column_id) {
             return Err(RpcError::NotFound(format!("Column {column_id} not found")));
         }
-        tasks.retain(|task| task.column_id.as_deref().unwrap_or("backlog") == column_id);
+        tasks.retain(|task| {
+            crate::kanban::resolve_effective_column_id_for_read(task, Some(&board)) == column_id
+        });
     }
 
     if let Some(ref status) = status_filter {
@@ -214,7 +221,7 @@ pub async fn list_cards(
 
     let cards: Vec<KanbanCard> = tasks
         .into_iter()
-        .map(|task| crate::kanban::task_to_card(&task))
+        .map(|task| crate::kanban::task_to_card_with_board(&task, Some(&board)))
         .collect();
     let total = cards.len();
 

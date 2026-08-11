@@ -192,28 +192,41 @@ pub(super) async fn execute(
             let agent_id = args.get("agentId").and_then(|v| v.as_str()).unwrap_or("");
             let reason = args.get("reason").and_then(|v| v.as_str());
             match crate::models::task::TaskStatus::from_str(status_str) {
-                Some(status) => match state.task_store.update_status(task_id, &status).await {
-                    Ok(_) => {
-                        let event = crate::events::AgentEvent {
-                            event_type: crate::events::AgentEventType::TaskStatusChanged,
-                            agent_id: agent_id.to_string(),
-                            workspace_id: workspace_id.to_string(),
-                            data: serde_json::json!({
+                Some(status) => {
+                    // Route through the unified status transition so terminal
+                    // statuses keep Task.status and its Kanban column
+                    // consistent in one write.
+                    match routa_core::kanban::update_task_status_with_transition(
+                        &state.task_store,
+                        &state.kanban_store,
+                        task_id,
+                        status,
+                    )
+                    .await
+                    {
+                        Ok(true) => {
+                            let event = crate::events::AgentEvent {
+                                event_type: crate::events::AgentEventType::TaskStatusChanged,
+                                agent_id: agent_id.to_string(),
+                                workspace_id: workspace_id.to_string(),
+                                data: serde_json::json!({
+                                    "taskId": task_id,
+                                    "status": status_str,
+                                    "reason": reason
+                                }),
+                                timestamp: chrono::Utc::now(),
+                            };
+                            state.event_bus.emit(event).await;
+                            tool_result_json(&serde_json::json!({
+                                "success": true,
                                 "taskId": task_id,
-                                "status": status_str,
-                                "reason": reason
-                            }),
-                            timestamp: chrono::Utc::now(),
-                        };
-                        state.event_bus.emit(event).await;
-                        tool_result_json(&serde_json::json!({
-                            "success": true,
-                            "taskId": task_id,
-                            "status": status_str
-                        }))
+                                "status": status_str
+                            }))
+                        }
+                        Ok(false) => tool_result_error(&format!("Task not found: {task_id}")),
+                        Err(e) => tool_result_error(&e.to_string()),
                     }
-                    Err(e) => tool_result_error(&e.to_string()),
-                },
+                }
                 None => tool_result_error(&format!("Invalid status: {status_str}")),
             }
         }

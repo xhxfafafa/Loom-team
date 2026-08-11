@@ -1,7 +1,9 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::kanban::{set_task_column, task_to_card, KanbanCard};
+use crate::kanban::{
+    resolve_effective_column_id_for_read, set_task_column, task_to_card_with_board, KanbanCard,
+};
 use crate::models::kanban::{default_kanban_board, KanbanBoard, KanbanColumn};
 use crate::models::task::Task;
 use crate::rpc::error::RpcError;
@@ -417,8 +419,10 @@ pub(super) async fn build_board_result(
         .map(|column| {
             let mut cards: Vec<KanbanCard> = tasks
                 .iter()
-                .filter(|task| task.column_id.as_deref().unwrap_or("backlog") == column.id)
-                .map(task_to_card)
+                .filter(|task| {
+                    resolve_effective_column_id_for_read(task, Some(&board)) == column.id
+                })
+                .map(|task| task_to_card_with_board(task, Some(&board)))
                 .collect();
             cards.sort_by_key(|card| card.position);
             KanbanColumnWithCards {

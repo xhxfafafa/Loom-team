@@ -8,8 +8,9 @@ use crate::models::task::{
 };
 use crate::state::AppState;
 use routa_core::kanban::{
-    ensure_task_board_context, resolve_review_lane_convergence_column, set_task_column,
-    sync_task_column_from_status, sync_task_status_from_column,
+    apply_task_status_transition, ensure_task_board_context, is_terminal_task_status,
+    resolve_review_lane_convergence_column, set_task_column, sync_task_column_from_status,
+    sync_task_status_from_column,
 };
 use routa_core::models::task::VerificationVerdict;
 
@@ -291,15 +292,40 @@ impl TaskApplicationService {
             task.last_sync_error = None;
         }
 
+        // Resolve the board context once so pair validation and terminal
+        // transitions share the same columns.
+        ensure_task_board_context(&self.state, &mut task).await?;
+        let board = if let Some(board_id) = &task.board_id {
+            self.state.kanban_store.get(board_id).await?
+        } else {
+            None
+        };
+
         if has_column_update && has_status_update {
             let expected_status = column_id_to_task_status(task.column_id.as_deref());
             let expected_column_id = task_status_to_column_id(&task.status);
-            if expected_status != task.status
-                || task.column_id.as_deref() != Some(expected_column_id)
-            {
-                return Err(ServerError::BadRequest(
-                    "columnId and status must describe the same workflow state".to_string(),
-                ));
+            let literal_pair_matches = expected_status == task.status
+                && task.column_id.as_deref() == Some(expected_column_id);
+            if !literal_pair_matches {
+                // Escape hatch for custom boards: a requested column whose
+                // semantic stage matches the terminal status is a valid pair.
+                let requested_column_stage = board.as_ref().and_then(|value| {
+                    value
+                        .columns
+                        .iter()
+                        .find(|column| Some(column.id.as_str()) == task.column_id.as_deref())
+                        .map(|column| column.stage.as_str())
+                });
+                let semantic_stage_matches = match &task.status {
+                    TaskStatus::Completed => requested_column_stage == Some("done"),
+                    TaskStatus::Blocked => requested_column_stage == Some("blocked"),
+                    _ => false,
+                };
+                if !semantic_stage_matches {
+                    return Err(ServerError::BadRequest(
+                        "columnId and status must describe the same workflow state".to_string(),
+                    ));
+                }
             }
         }
 
@@ -307,14 +333,16 @@ impl TaskApplicationService {
             sync_task_status_from_column(&mut task);
         }
         if has_status_update && !has_column_update {
-            sync_task_column_from_status(&mut task);
+            if is_terminal_task_status(&task.status) {
+                // Terminal statuses resolve the board's done/blocked stage
+                // column in the same write instead of the literal mapping,
+                // which could point at a phantom column on custom boards.
+                let next_status = task.status.clone();
+                apply_task_status_transition(&mut task, next_status, board.as_ref());
+            } else {
+                sync_task_column_from_status(&mut task);
+            }
         }
-        ensure_task_board_context(&self.state, &mut task).await?;
-        let board = if let Some(board_id) = &task.board_id {
-            self.state.kanban_store.get(board_id).await?
-        } else {
-            None
-        };
         if !has_status_update && !has_column_update {
             if let Some(column_id) = resolve_review_lane_convergence_column(&task, board.as_ref()) {
                 if task.column_id.as_deref() != Some(column_id.as_str()) {
@@ -774,6 +802,78 @@ mod tests {
             .expect_err("mismatched workflow state should fail");
 
         assert!(error.to_string().contains("columnId and status"));
+        let _ = fs::remove_file(db_path);
+    }
+
+    async fn rename_done_stage_column(
+        service: &TaskApplicationService,
+        board_id: &str,
+        new_id: &str,
+    ) {
+        let mut board = service
+            .state
+            .kanban_store
+            .get(board_id)
+            .await
+            .expect("read board")
+            .expect("board exists");
+        for column in board.columns.iter_mut() {
+            if column.stage == "done" {
+                column.id = new_id.to_string();
+            }
+        }
+        service
+            .state
+            .kanban_store
+            .update(&board)
+            .await
+            .expect("update board");
+    }
+
+    #[tokio::test]
+    async fn update_task_terminal_status_resolves_custom_done_stage_column() {
+        let (service, db_path) = setup_service().await;
+        let task = seed_task(&service, Some("dev")).await;
+        let board_id = task.board_id.clone().expect("seeded task has a board");
+        rename_done_stage_column(&service, &board_id, "shipped").await;
+
+        let plan = service
+            .update_task(
+                &task.id,
+                UpdateTaskCommand {
+                    status: Some("COMPLETED".to_string()),
+                    ..UpdateTaskCommand::default()
+                },
+            )
+            .await
+            .expect("terminal status update should succeed");
+
+        assert_eq!(plan.task.status, TaskStatus::Completed);
+        assert_eq!(plan.task.column_id.as_deref(), Some("shipped"));
+        let _ = fs::remove_file(db_path);
+    }
+
+    #[tokio::test]
+    async fn update_task_accepts_semantic_stage_pair_on_custom_board() {
+        let (service, db_path) = setup_service().await;
+        let task = seed_task(&service, Some("dev")).await;
+        let board_id = task.board_id.clone().expect("seeded task has a board");
+        rename_done_stage_column(&service, &board_id, "shipped").await;
+
+        let plan = service
+            .update_task(
+                &task.id,
+                UpdateTaskCommand {
+                    column_id: Some("shipped".to_string()),
+                    status: Some("COMPLETED".to_string()),
+                    ..UpdateTaskCommand::default()
+                },
+            )
+            .await
+            .expect("semantic stage pair should be accepted");
+
+        assert_eq!(plan.task.status, TaskStatus::Completed);
+        assert_eq!(plan.task.column_id.as_deref(), Some("shipped"));
         let _ = fs::remove_file(db_path);
     }
 

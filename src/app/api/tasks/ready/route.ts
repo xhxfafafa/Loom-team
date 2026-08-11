@@ -59,6 +59,7 @@ async function serializeTask(task: Task, system: ReturnType<typeof getRoutaSyste
     workspaceId: task.workspaceId,
     sessionId: task.sessionId,
     creationSource: task.creationSource,
+    teamRunId: task.teamRunId,
     completionSummary: task.completionSummary,
     verificationVerdict: task.verificationVerdict,
     verificationReport: task.verificationReport,

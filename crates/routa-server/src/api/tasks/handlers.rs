@@ -5,7 +5,6 @@ use axum::{
 };
 use chrono::Utc;
 use routa_core::events::{AgentEvent, AgentEventType};
-use routa_core::kanban::set_task_column;
 use routa_core::models::artifact::{Artifact, ArtifactType};
 
 use super::changes;
@@ -197,7 +196,13 @@ async fn list_tasks(
 ) -> Result<Json<serde_json::Value>, ServerError> {
     let workspace_id = query.workspace_id.as_deref().unwrap_or("default");
 
-    let tasks = if let Some(session_id) = &query.session_id {
+    let tasks = if let Some(team_run_id) = &query.team_run_id {
+        // Team-run ownership filter takes priority; it is workspace-scoped.
+        state
+            .task_store
+            .list_by_team_run(workspace_id, team_run_id)
+            .await?
+    } else if let Some(session_id) = &query.session_id {
         // Filter by session_id takes priority
         state.task_store.list_by_session(session_id).await?
     } else if let Some(assignee) = &query.assigned_to {
@@ -315,7 +320,16 @@ async fn create_task(
                         task.worktree_id = Some(worktree_id);
                     }
                     Err(err) => {
-                        set_task_column(&mut task, "blocked");
+                        // Worktree creation failed: mark the task blocked through
+                        // the unified terminal transition so status and column
+                        // stay consistent in one write.
+                        let board =
+                            routa_core::kanban::load_task_board(&state.kanban_store, &task).await;
+                        routa_core::kanban::apply_task_status_transition(
+                            &mut task,
+                            TaskStatus::Blocked,
+                            board.as_ref(),
+                        );
                         task.last_sync_error = Some(format!("Worktree creation failed: {err}"));
                     }
                 }
@@ -512,7 +526,16 @@ async fn update_task(
                         task.worktree_id = Some(worktree_id);
                     }
                     Err(err) => {
-                        set_task_column(&mut task, "blocked");
+                        // Worktree creation failed: mark the task blocked through
+                        // the unified terminal transition so status and column
+                        // stay consistent in one write.
+                        let board =
+                            routa_core::kanban::load_task_board(&state.kanban_store, &task).await;
+                        routa_core::kanban::apply_task_status_transition(
+                            &mut task,
+                            TaskStatus::Blocked,
+                            board.as_ref(),
+                        );
                         task.last_sync_error = Some(format!("Worktree creation failed: {err}"));
                         state.task_store.save(&task).await?;
                         emit_kanban_workspace_event(
@@ -600,7 +623,16 @@ async fn update_task_status(
         .get(&id)
         .await?
         .ok_or_else(|| ServerError::NotFound(format!("Task {id} not found")))?;
-    state.task_store.update_status(&id, &status).await?;
+    // Route through the unified status transition so terminal statuses keep
+    // Task.status and its Kanban column consistent in one write (parity with
+    // the Web REST status route).
+    routa_core::kanban::update_task_status_with_transition(
+        &state.task_store,
+        &state.kanban_store,
+        &id,
+        status,
+    )
+    .await?;
     emit_kanban_workspace_event(
         &state,
         &task.workspace_id,

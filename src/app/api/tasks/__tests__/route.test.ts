@@ -231,6 +231,54 @@ describe("/api/tasks GET", () => {
     expect(data.tasks[0].jitContextSnapshot).toBeUndefined();
   });
 
+  it("filters tasks by teamRunId ahead of other query filters", async () => {
+    const teamTask = createTask({
+      id: "task-team",
+      title: "Team run card",
+      objective: "Owned by the team run.",
+      workspaceId: "workspace-1",
+      teamRunId: "team-run-1",
+      sessionId: "lead-session",
+    });
+    teamTask.sessionIds = ["child-session-1"];
+    taskStore.listByWorkspace.mockResolvedValue([
+      teamTask,
+      createTask({
+        id: "task-other",
+        title: "Unrelated card",
+        objective: "Not part of the team run.",
+        workspaceId: "workspace-1",
+      }),
+    ]);
+
+    const response = await GET(new NextRequest(
+      "http://localhost/api/tasks?workspaceId=workspace-1&teamRunId=team-run-1&assignedTo=agent-x&status=IN_PROGRESS",
+    ));
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(taskStore.listByWorkspace).toHaveBeenCalledWith("workspace-1");
+    expect(taskStore.listByAssignee).not.toHaveBeenCalled();
+    expect(taskStore.listByStatus).not.toHaveBeenCalled();
+    expect(data.tasks).toHaveLength(1);
+    expect(data.tasks[0]).toMatchObject({
+      id: "task-team",
+      teamRunId: "team-run-1",
+      sessionId: "lead-session",
+      sessionIds: ["child-session-1"],
+    });
+  });
+
+  it("serializes teamRunId as undefined-safe field on listed tasks", async () => {
+    const response = await GET(new NextRequest("http://localhost/api/tasks?workspaceId=workspace-1"));
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    // task-1 has no team run owner; the field must be present but empty so
+    // both backends agree on the response shape.
+    expect(data.tasks[0].teamRunId ?? null).toBeNull();
+  });
+
   it("rejects task listing without workspaceId", async () => {
     const response = await GET(new NextRequest("http://localhost/api/tasks"));
     const data = await response.json();

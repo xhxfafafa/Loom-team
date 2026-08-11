@@ -193,6 +193,7 @@ async function getTasks(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const workspaceId = requireWorkspaceId(searchParams.get("workspaceId"));
   const sessionId = searchParams.get("sessionId");
+  const teamRunId = searchParams.get("teamRunId");
   const status = searchParams.get("status");
   const assignedTo = searchParams.get("assignedTo");
   const expand = new Set(searchParams.getAll("expand").flatMap((value) => value.split(",").map((item) => item.trim())));
@@ -206,7 +207,12 @@ async function getTasks(request: NextRequest) {
 
   let tasks: Task[];
 
-  if (assignedTo) {
+  if (teamRunId) {
+    // Team-run ownership filter takes priority; it is workspace-scoped.
+    tasks = (await system.taskStore.listByWorkspace(workspaceId)).filter(
+      (t) => t.teamRunId === teamRunId,
+    );
+  } else if (assignedTo) {
     tasks = await system.taskStore.listByAssignee(assignedTo);
   } else if (status) {
     const taskStatus = status.toUpperCase() as TaskStatus;
@@ -563,6 +569,7 @@ async function serializeTask(
     workspaceId: task.workspaceId,
     sessionId: task.sessionId,
     creationSource: task.creationSource,
+    teamRunId: task.teamRunId,
     codebaseIds: task.codebaseIds ?? [],
     contextSearchSpec: task.contextSearchSpec,
     jitContextSnapshot: task.jitContextSnapshot,

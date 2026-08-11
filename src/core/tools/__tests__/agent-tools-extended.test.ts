@@ -386,4 +386,144 @@ describe("AgentTools extended coverage", () => {
     }));
     expect(updated?.jitContextSnapshot?.summary).toBe("Recovered history context for kanban-workflow.");
   });
+
+  async function saveCustomTerminalBoard() {
+    await kanbanBoardStore.save(createKanbanBoard({
+      id: "board-terminal",
+      workspaceId: "ws-1",
+      name: "Custom",
+      columns: [
+        { id: "backlog", name: "Backlog", stage: "backlog", position: 0 },
+        { id: "dev", name: "Dev", stage: "dev", position: 1 },
+        { id: "shipped", name: "Shipped", stage: "done", position: 2 },
+        { id: "stuck", name: "Stuck", stage: "blocked", position: 3 },
+      ],
+    }));
+  }
+
+  it("reportToParent resolves COMPLETED onto the board's done-stage column", async () => {
+    await saveCustomTerminalBoard();
+    const parent = createAgent({
+      id: "parent-terminal",
+      name: "Lead",
+      role: AgentRole.ROUTA,
+      workspaceId: "ws-1",
+      modelTier: ModelTier.SMART,
+      metadata: {},
+    });
+    const child = createAgent({
+      id: "child-terminal",
+      name: "Crafter",
+      role: AgentRole.CRAFTER,
+      workspaceId: "ws-1",
+      parentId: "parent-terminal",
+      modelTier: ModelTier.BALANCED,
+      metadata: {},
+    });
+    await agentStore.save(parent);
+    await agentStore.save(child);
+
+    const task = createTask({
+      id: "task-terminal-1",
+      title: "Terminal report",
+      objective: "Report success onto a custom done lane",
+      workspaceId: "ws-1",
+      boardId: "board-terminal",
+      columnId: "dev",
+    });
+    task.assignedTo = "child-terminal";
+    task.status = TaskStatus.IN_PROGRESS;
+    await taskStore.save(task);
+
+    const report = await tools.reportToParent({
+      agentId: "child-terminal",
+      report: {
+        agentId: "child-terminal",
+        taskId: "task-terminal-1",
+        success: true,
+        summary: "Done",
+      },
+    });
+
+    expect(report.success).toBe(true);
+    const updated = await taskStore.get("task-terminal-1");
+    expect(updated?.status).toBe(TaskStatus.COMPLETED);
+    expect(updated?.columnId).toBe("shipped");
+  });
+
+  it("updateTaskStatus resolves BLOCKED onto the board's blocked-stage column", async () => {
+    await saveCustomTerminalBoard();
+    const task = createTask({
+      id: "task-terminal-2",
+      title: "Blocked status",
+      objective: "Blocked status lands on the custom blocked lane",
+      workspaceId: "ws-1",
+      boardId: "board-terminal",
+      columnId: "dev",
+    });
+    task.status = TaskStatus.IN_PROGRESS;
+    await taskStore.save(task);
+
+    const result = await tools.updateTaskStatus({
+      taskId: "task-terminal-2",
+      status: "blocked",
+      agentId: "agent-1",
+    });
+
+    expect(result.success).toBe(true);
+    const updated = await taskStore.get("task-terminal-2");
+    expect(updated?.status).toBe(TaskStatus.BLOCKED);
+    expect(updated?.columnId).toBe("stuck");
+  });
+
+  it("updateTaskStatus keeps the column for non-terminal statuses and NEEDS_FIX", async () => {
+    await saveCustomTerminalBoard();
+    const task = createTask({
+      id: "task-terminal-3",
+      title: "Needs fix",
+      objective: "NEEDS_FIX gets no automatic column mapping",
+      workspaceId: "ws-1",
+      boardId: "board-terminal",
+      columnId: "dev",
+    });
+    task.status = TaskStatus.IN_PROGRESS;
+    await taskStore.save(task);
+
+    const result = await tools.updateTaskStatus({
+      taskId: "task-terminal-3",
+      status: "NEEDS_FIX",
+      agentId: "agent-1",
+    });
+
+    expect(result.success).toBe(true);
+    const updated = await taskStore.get("task-terminal-3");
+    expect(updated?.status).toBe(TaskStatus.NEEDS_FIX);
+    expect(updated?.columnId).toBe("dev");
+  });
+
+  it("updateTask status-only COMPLETED resolves the done-stage column without board context", async () => {
+    // No board exists for the task or workspace: the transition falls back
+    // to the literal terminal stage id instead of writing a phantom column.
+    const task = createTask({
+      id: "task-terminal-4",
+      title: "No board context",
+      objective: "Terminal transition without a board",
+      workspaceId: "ws-1",
+      columnId: "",
+    });
+    task.status = TaskStatus.IN_PROGRESS;
+    await taskStore.save(task);
+
+    const result = await tools.updateTask({
+      taskId: "task-terminal-4",
+      updates: { status: "completed" },
+      agentId: "agent-1",
+    });
+
+    expect(result.success).toBe(true);
+    const updated = await taskStore.get("task-terminal-4");
+    expect(updated?.status).toBe(TaskStatus.COMPLETED);
+    expect(updated?.columnId).toBe("done");
+  });
+
 });

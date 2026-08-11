@@ -11,6 +11,8 @@ const calculateChildDepthMock = vi.hoisted(() => vi.fn((depth: number) => depth 
 const buildAgentMetadataMock = vi.hoisted(() => vi.fn());
 const uuidMock = vi.hoisted(() => vi.fn());
 const getSessionMock = vi.hoisted(() => vi.fn());
+const hydrateFromDbMock = vi.hoisted(() => vi.fn(async () => {}));
+const listSessionsMock = vi.hoisted(() => vi.fn(() => [] as Array<Record<string, unknown>>));
 const recordDelegationMock = vi.hoisted(() => vi.fn(async () => {}));
 const recordChildSessionStartMock = vi.hoisted(() => vi.fn(async () => {}));
 const recordChildCompletionMock = vi.hoisted(() => vi.fn(async () => {}));
@@ -62,6 +64,8 @@ vi.mock("uuid", () => ({
 vi.mock("@/core/acp/http-session-store", () => ({
   getHttpSessionStore: () => ({
     getSession: getSessionMock,
+    hydrateFromDb: hydrateFromDbMock,
+    listSessions: listSessionsMock,
   }),
 }));
 
@@ -90,6 +94,7 @@ function createSystemFixture() {
     verificationCommands: ["npm run test"],
     testCases: ["layout renders correctly"],
     workspaceId: "ws-1",
+    sessionId: "creator-session",
     position: 0,
     labels: [],
   });
@@ -125,6 +130,26 @@ function createSystemFixture() {
     },
   });
 
+  const childAgent = createAgent({
+    id: "child-agent-1",
+    name: "crafter-frontend-polish-task",
+    role: AgentRole.CRAFTER,
+    workspaceId: "ws-1",
+    modelTier: ModelTier.BALANCED,
+    metadata: { specialist: "crafter" },
+  });
+  childAgent.status = AgentStatus.ACTIVE;
+
+  const winnerAgent = createAgent({
+    id: "winner-agent",
+    name: "crafter-winner",
+    role: AgentRole.CRAFTER,
+    workspaceId: "ws-1",
+    modelTier: ModelTier.BALANCED,
+    metadata: { specialist: "crafter" },
+  });
+  winnerAgent.status = AgentStatus.ACTIVE;
+
   const agentStore = {
     get: vi.fn(async (agentId: string) => {
       if (agentId === "caller-agent") {
@@ -132,6 +157,12 @@ function createSystemFixture() {
       }
       if (agentId === "existing-team-agent") {
         return existingRosterAgent;
+      }
+      if (agentId === "child-agent-1") {
+        return childAgent;
+      }
+      if (agentId === "winner-agent") {
+        return winnerAgent;
       }
       return undefined;
     }),
@@ -161,6 +192,8 @@ function createSystemFixture() {
     task,
     callerAgent,
     existingRosterAgent,
+    childAgent,
+    winnerAgent,
     system,
     processManager,
   };
@@ -182,9 +215,36 @@ function createOrchestratorFixture() {
   return { ...fixture, orchestrator };
 }
 
+/**
+ * Stub the two-phase child runtime (session creation + prompt dispatch) so
+ * delegation tests do not touch real provider adapters.
+ */
+function stubChildSessionRuntime(
+  orchestrator: InstanceType<typeof RoutaOrchestrator>,
+  impl?: {
+    create?: () => Promise<{ sandboxId?: string; acpSessionId: string }>;
+    dispatch?: () => Promise<void>;
+  },
+) {
+  const createChildAgentSession = vi.fn(
+    impl?.create ?? (async () => ({ sandboxId: "sandbox-1", acpSessionId: "acp-session-1" })),
+  );
+  const dispatchChildInitialPrompt = vi.fn(impl?.dispatch ?? (async () => {}));
+  (
+    orchestrator as unknown as { createChildAgentSession: typeof createChildAgentSession }
+  ).createChildAgentSession = createChildAgentSession;
+  (
+    orchestrator as unknown as { dispatchChildInitialPrompt: typeof dispatchChildInitialPrompt }
+  ).dispatchChildInitialPrompt = dispatchChildInitialPrompt;
+  return { createChildAgentSession, dispatchChildInitialPrompt };
+}
+
 describe("RoutaOrchestrator", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // mockReset (not just clear): the mockReturnValueOnce queue must not leak
+    // unconsumed values into the next test.
+    uuidMock.mockReset();
     getSessionMock.mockReset();
     getSessionMock.mockReturnValue(undefined);
     AgentMemoryWriterMock.mockClear();
@@ -309,8 +369,7 @@ describe("RoutaOrchestrator", () => {
     getSessionMock.mockImplementation((sessionId: string) =>
       sessionId === "caller-session" ? { cwd: "/workspace/parent-repo" } : undefined,
     );
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    stubChildSessionRuntime(orchestrator);
 
     const result = await orchestrator.delegateTaskWithSpawn({
       taskId: task.id,
@@ -343,8 +402,7 @@ describe("RoutaOrchestrator", () => {
     getSessionMock.mockImplementation((sessionId: string) =>
       sessionId === "caller-session" ? { cwd: "/workspace/selected-repo" } : undefined,
     );
-    const spawnChildAgent = vi.fn(async () => ({ sandboxId: "sandbox-1" }));
-    (orchestrator as unknown as { spawnChildAgent: typeof spawnChildAgent }).spawnChildAgent = spawnChildAgent;
+    const { createChildAgentSession } = stubChildSessionRuntime(orchestrator);
 
     const result = await orchestrator.delegateTaskWithSpawn({
       taskId: task.id,
@@ -355,12 +413,11 @@ describe("RoutaOrchestrator", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(spawnChildAgent).toHaveBeenCalledWith(
+    expect(createChildAgentSession).toHaveBeenCalledWith(
       expect.any(String),
       "child-agent-1",
       "claude",
       "/workspace/selected-repo",
-      "delegation prompt",
       "caller-session",
       "ws-1",
     );
@@ -368,8 +425,7 @@ describe("RoutaOrchestrator", () => {
 
   it("skips parent delegation memory when the caller session is unknown", async () => {
     const { orchestrator, task } = createOrchestratorFixture();
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    stubChildSessionRuntime(orchestrator);
 
     const result = await orchestrator.delegateTaskWithSpawn({
       taskId: task.id,
@@ -390,8 +446,7 @@ describe("RoutaOrchestrator", () => {
   it("creates after_all delegation groups and assigns roster metadata for team leads", async () => {
     const { orchestrator, system, callerAgent, task } = createOrchestratorFixture();
     callerAgent.metadata.specialist = "team-agent-lead";
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    stubChildSessionRuntime(orchestrator);
     const sessionRegistrationHandler = vi.fn();
     orchestrator.setSessionRegistrationHandler(sessionRegistrationHandler);
 
@@ -425,6 +480,7 @@ describe("RoutaOrchestrator", () => {
         id: task.id,
         status: TaskStatus.IN_PROGRESS,
         assignedTo: "child-agent-1",
+        sessionIds: ["session-uuid-1"],
       }),
     );
     expect(system.agentStore.updateStatus).toHaveBeenCalledWith(
@@ -456,8 +512,7 @@ describe("RoutaOrchestrator", () => {
 
   it("deduplicates concurrent completion finalization for the same child", async () => {
     const { orchestrator, task } = createOrchestratorFixture();
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    stubChildSessionRuntime(orchestrator);
     const sendPromptToSessionMock = vi.fn(async () => {});
     (orchestrator as unknown as { sendPromptToSession: typeof sendPromptToSessionMock }).sendPromptToSession =
       sendPromptToSessionMock;
@@ -500,8 +555,7 @@ describe("RoutaOrchestrator", () => {
 
   it("serializes overlapping completion memory writes for the same child", async () => {
     const { orchestrator, task } = createOrchestratorFixture();
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    stubChildSessionRuntime(orchestrator);
 
     await orchestrator.delegateTaskWithSpawn({
       taskId: task.id,
@@ -557,8 +611,7 @@ describe("RoutaOrchestrator", () => {
 
   it("updates completion memory when a later reported snapshot adds completion details", async () => {
     const { orchestrator, task } = createOrchestratorFixture();
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    stubChildSessionRuntime(orchestrator);
     const sendPromptToSessionMock = vi.fn(async () => {});
     (orchestrator as unknown as { sendPromptToSession: typeof sendPromptToSessionMock }).sendPromptToSession =
       sendPromptToSessionMock;
@@ -626,8 +679,7 @@ describe("RoutaOrchestrator", () => {
 
   it("retries waking the parent on session-end fallback without rewriting completion memory", async () => {
     const { orchestrator, task } = createOrchestratorFixture();
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    stubChildSessionRuntime(orchestrator);
     const sendPromptToSessionMock = vi
       .fn()
       .mockRejectedValueOnce(new Error("wake exploded"))
@@ -681,8 +733,7 @@ describe("RoutaOrchestrator", () => {
 
   it("still skips session-end finalization after a successful completion", async () => {
     const { orchestrator, task } = createOrchestratorFixture();
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    stubChildSessionRuntime(orchestrator);
     const sendPromptToSessionMock = vi.fn(async () => {});
     (orchestrator as unknown as { sendPromptToSession: typeof sendPromptToSessionMock }).sendPromptToSession =
       sendPromptToSessionMock;
@@ -735,8 +786,7 @@ describe("RoutaOrchestrator", () => {
 
   it("keeps completion handling non-blocking when the task snapshot lookup fails", async () => {
     const { orchestrator, system, task } = createOrchestratorFixture();
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    stubChildSessionRuntime(orchestrator);
     const sendPromptToSessionMock = vi.fn(async () => {});
     (orchestrator as unknown as { sendPromptToSession: typeof sendPromptToSessionMock }).sendPromptToSession =
       sendPromptToSessionMock;
@@ -775,12 +825,13 @@ describe("RoutaOrchestrator", () => {
     expect(sendPromptToSessionMock).toHaveBeenCalledTimes(1);
   });
 
-  it("rolls back task and agent state when spawning the child process fails", async () => {
+  it("keeps the task unchanged when creating the child session fails before binding", async () => {
     const { orchestrator, system, task } = createOrchestratorFixture();
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => {
+    stubChildSessionRuntime(orchestrator, {
+      create: async () => {
         throw new Error("spawn exploded");
-      });
+      },
+    });
 
     const result = await orchestrator.delegateTaskWithSpawn({
       taskId: task.id,
@@ -794,28 +845,20 @@ describe("RoutaOrchestrator", () => {
       success: false,
       error: "Failed to spawn agent process: spawn exploded",
     });
-    expect(system.agentStore.updateStatus).toHaveBeenNthCalledWith(
-      1,
-      "child-agent-1",
-      AgentStatus.ACTIVE,
-    );
-    expect(system.agentStore.updateStatus).toHaveBeenNthCalledWith(
-      2,
+    // The binding was never persisted: the task keeps its previous state and
+    // only the fresh agent is marked ERROR (never activated first).
+    expect(system.agentStore.updateStatus).toHaveBeenCalledTimes(1);
+    expect(system.agentStore.updateStatus).toHaveBeenCalledWith(
       "child-agent-1",
       AgentStatus.ERROR,
     );
-    expect(system.taskStore.save).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        id: task.id,
-        status: TaskStatus.BLOCKED,
-      }),
-    );
+    expect(system.taskStore.save).not.toHaveBeenCalled();
+    expect(task.status).toBe(TaskStatus.PENDING);
   });
 
   it("delivers completion reports with a deterministic team-report deliveryId", async () => {
     const { orchestrator, task } = createOrchestratorFixture();
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    stubChildSessionRuntime(orchestrator);
     const sendPromptToSessionMock = vi.fn(async () => {});
     (orchestrator as unknown as { sendPromptToSession: typeof sendPromptToSessionMock }).sendPromptToSession =
       sendPromptToSessionMock;
@@ -859,8 +902,7 @@ describe("RoutaOrchestrator", () => {
 
   it("increments the report revision from previously delivered receipts", async () => {
     const { orchestrator, task } = createOrchestratorFixture();
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    stubChildSessionRuntime(orchestrator);
     const sendPromptToSessionMock = vi.fn(async () => {});
     (orchestrator as unknown as { sendPromptToSession: typeof sendPromptToSessionMock }).sendPromptToSession =
       sendPromptToSessionMock;
@@ -894,8 +936,7 @@ describe("RoutaOrchestrator", () => {
 
   it("keeps the delivery retryable (no receipt) when the wake dispatch fails", async () => {
     const { orchestrator, task } = createOrchestratorFixture();
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    stubChildSessionRuntime(orchestrator);
     const sendPromptToSessionMock = vi.fn().mockRejectedValueOnce(new Error("runtime unavailable"));
     (orchestrator as unknown as { sendPromptToSession: typeof sendPromptToSessionMock }).sendPromptToSession =
       sendPromptToSessionMock;
@@ -925,8 +966,7 @@ describe("RoutaOrchestrator", () => {
 
   it("keeps the wake successful when the completed-child release is skipped or fails", async () => {
     const { orchestrator, task } = createOrchestratorFixture();
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    stubChildSessionRuntime(orchestrator);
     const sendPromptToSessionMock = vi.fn(async () => {});
     (orchestrator as unknown as { sendPromptToSession: typeof sendPromptToSessionMock }).sendPromptToSession =
       sendPromptToSessionMock;
@@ -984,8 +1024,7 @@ describe("RoutaOrchestrator", () => {
 
   it("does not release the child runtime when the delivery receipt write fails", async () => {
     const { orchestrator, task } = createOrchestratorFixture();
-    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
-      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    stubChildSessionRuntime(orchestrator);
     const sendPromptToSessionMock = vi.fn(async () => {});
     (orchestrator as unknown as { sendPromptToSession: typeof sendPromptToSessionMock }).sendPromptToSession =
       sendPromptToSessionMock;
@@ -1026,4 +1065,209 @@ describe("RoutaOrchestrator", () => {
     // …but without a durable receipt the child runtime must NOT be released.
     expect(finalizeSessionRuntimeMock).not.toHaveBeenCalled();
   });
+
+  it("returns the canonical delegation result with status delegated", async () => {
+    const { orchestrator, task } = createOrchestratorFixture();
+    stubChildSessionRuntime(orchestrator);
+
+    const result = await orchestrator.delegateTaskWithSpawn({
+      taskId: task.id,
+      callerAgentId: "caller-agent",
+      callerSessionId: "caller-session",
+      workspaceId: task.workspaceId,
+      specialist: "crafter",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        taskId: task.id,
+        agentId: "child-agent-1",
+        sessionId: "session-uuid-1",
+        specialist: "crafter",
+        provider: "claude",
+        status: "delegated",
+      }),
+    );
+  });
+
+  it("reuses an active delegation binding instead of spawning a duplicate", async () => {
+    const { orchestrator, system, task } = createOrchestratorFixture();
+    const { createChildAgentSession } = stubChildSessionRuntime(orchestrator);
+    task.assignedTo = "winner-agent";
+    task.status = TaskStatus.IN_PROGRESS;
+    task.sessionIds = ["existing-child-session"];
+    getSessionMock.mockImplementation((sessionId: string) =>
+      sessionId === "existing-child-session"
+        ? { cwd: "/workspace/selected-repo", acpStatus: "ready" }
+        : sessionId === "caller-session"
+          ? { cwd: "/workspace/selected-repo" }
+          : undefined,
+    );
+
+    const result = await orchestrator.delegateTaskWithSpawn({
+      taskId: task.id,
+      callerAgentId: "caller-agent",
+      callerSessionId: "caller-session",
+      workspaceId: task.workspaceId,
+      specialist: "crafter",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual(
+      expect.objectContaining({
+        taskId: task.id,
+        agentId: "winner-agent",
+        sessionId: "existing-child-session",
+        status: "delegated",
+      }),
+    );
+    expect((result.data as { message: string }).message).toContain("already delegated");
+    // No duplicate resources: no agent, session, or binding write happens.
+    expect(system.tools.createAgent).not.toHaveBeenCalled();
+    expect(createChildAgentSession).not.toHaveBeenCalled();
+    expect(system.taskStore.save).not.toHaveBeenCalled();
+  });
+
+  it("persists the binding before activating the agent or dispatching the prompt", async () => {
+    const { orchestrator, system, task } = createOrchestratorFixture();
+    const { dispatchChildInitialPrompt } = stubChildSessionRuntime(orchestrator);
+    const calls: string[] = [];
+    (system.taskStore.save as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      calls.push("persist");
+    });
+    (system.agentStore.updateStatus as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      calls.push("updateStatus");
+    });
+    dispatchChildInitialPrompt.mockImplementation(async () => {
+      calls.push("dispatch");
+    });
+
+    const result = await orchestrator.delegateTaskWithSpawn({
+      taskId: task.id,
+      callerAgentId: "caller-agent",
+      callerSessionId: "caller-session",
+      workspaceId: task.workspaceId,
+      specialist: "crafter",
+    });
+
+    expect(result.success).toBe(true);
+    expect(calls).toEqual(["persist", "updateStatus", "dispatch"]);
+    expect(dispatchChildInitialPrompt).toHaveBeenCalledWith(
+      "child-agent-1",
+      "session-uuid-1",
+      "acp-session-1",
+      "claude",
+      "delegation prompt",
+    );
+  });
+
+  it("keeps the session for diagnostics and blocks the task when prompt dispatch fails", async () => {
+    const { orchestrator, system, task } = createOrchestratorFixture();
+    stubChildSessionRuntime(orchestrator, {
+      dispatch: async () => {
+        throw new Error("prompt exploded");
+      },
+    });
+    const kanbanBoardStore = {
+      get: vi.fn(async () => undefined),
+      getDefault: vi.fn(async () => undefined),
+    };
+    (system as unknown as { kanbanBoardStore: typeof kanbanBoardStore }).kanbanBoardStore = kanbanBoardStore;
+
+    const result = await orchestrator.delegateTaskWithSpawn({
+      taskId: task.id,
+      callerAgentId: "caller-agent",
+      callerSessionId: "caller-session",
+      workspaceId: task.workspaceId,
+      specialist: "crafter",
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: "Failed to start agent process: prompt exploded",
+    });
+    // The binding was already saved: the failed session stays in sessionIds.
+    expect(task.status).toBe(TaskStatus.BLOCKED);
+    expect(task.sessionIds).toContain("session-uuid-1");
+    expect(task.assignedTo).toBe("child-agent-1");
+    expect(system.agentStore.updateStatus).toHaveBeenCalledWith(
+      "child-agent-1",
+      AgentStatus.ERROR,
+    );
+    expect(system.taskStore.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: task.id,
+        status: TaskStatus.BLOCKED,
+      }),
+    );
+  });
+
+  it("never returns success when persisting the binding throws", async () => {
+    const { orchestrator, system, task, processManager } = createOrchestratorFixture();
+    stubChildSessionRuntime(orchestrator);
+    (system.taskStore.save as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("db locked"),
+    );
+
+    const result = await orchestrator.delegateTaskWithSpawn({
+      taskId: task.id,
+      callerAgentId: "caller-agent",
+      callerSessionId: "caller-session",
+      workspaceId: task.workspaceId,
+      specialist: "crafter",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Failed to persist delegation binding");
+    expect(result.error).toContain("db locked");
+    expect(system.agentStore.updateStatus).not.toHaveBeenCalledWith(
+      "child-agent-1",
+      AgentStatus.ACTIVE,
+    );
+    expect(processManager.killSession).toHaveBeenCalledWith("session-uuid-1");
+  });
+
+  it("serializes concurrent delegation attempts for the same task", async () => {
+    const { orchestrator, system, task } = createOrchestratorFixture();
+    const { createChildAgentSession } = stubChildSessionRuntime(orchestrator);
+    getSessionMock.mockImplementation((sessionId: string) =>
+      sessionId === "session-uuid-1"
+        ? { cwd: "/workspace/project", acpStatus: "ready" }
+        : sessionId === "caller-session"
+          ? { cwd: "/workspace/project" }
+          : undefined,
+    );
+
+    const [first, second] = await Promise.all([
+      orchestrator.delegateTaskWithSpawn({
+        taskId: task.id,
+        callerAgentId: "caller-agent",
+        callerSessionId: "caller-session",
+        workspaceId: task.workspaceId,
+        specialist: "crafter",
+      }),
+      orchestrator.delegateTaskWithSpawn({
+        taskId: task.id,
+        callerAgentId: "caller-agent",
+        callerSessionId: "caller-session",
+        workspaceId: task.workspaceId,
+        specialist: "crafter",
+      }),
+    ]);
+
+    expect(first.success).toBe(true);
+    expect(second.success).toBe(true);
+    // Only one child session is created; the second attempt reuses the binding.
+    expect(createChildAgentSession).toHaveBeenCalledTimes(1);
+    expect(system.tools.createAgent).toHaveBeenCalledTimes(1);
+    expect(second.data).toEqual(
+      expect.objectContaining({
+        agentId: "child-agent-1",
+        sessionId: "session-uuid-1",
+        status: "delegated",
+      }),
+    );
+  });
+
 });

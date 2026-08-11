@@ -18,6 +18,7 @@ const {
   loadSessionFromLocalStorage,
   persistSessionToDb,
   updateSessionExecutionBindingInDb,
+  tryAcquireSessionLeaseInDb,
 } = vi.hoisted(() => {
   const store = {
     attachSse: vi.fn(),
@@ -73,6 +74,7 @@ const {
     loadSessionFromLocalStorage: vi.fn(),
     persistSessionToDb: vi.fn(),
     updateSessionExecutionBindingInDb: vi.fn(),
+    tryAcquireSessionLeaseInDb: vi.fn(async () => true),
   };
 });
 
@@ -87,6 +89,14 @@ vi.mock("@/core/acp/processer", () => ({
 vi.mock("../acp-session-history", () => ({
   getSessionWriteBuffer,
 }));
+
+// The extracted forwarded-notification core module resolves the write buffer
+// through the canonical core path, not the app-level re-export. Keep the real
+// persistSessionHistorySnapshot (other core modules import it from here).
+vi.mock("@/core/acp/session-history", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/core/acp/session-history")>();
+  return { ...actual, getSessionWriteBuffer };
+});
 
 vi.mock("@/core/acp/runner-routing", () => ({
   getSessionRoutingRecord,
@@ -107,6 +117,7 @@ vi.mock("@/core/acp/session-db-persister", async () => {
     loadSessionFromLocalStorage,
     persistSessionToDb,
     updateSessionExecutionBindingInDb,
+    tryAcquireSessionLeaseInDb,
   };
 });
 
@@ -254,7 +265,8 @@ describe("/api/acp GET", () => {
         leaseExpiresAt: expect.any(String),
       }),
     );
-    expect(updateSessionExecutionBindingInDb).toHaveBeenCalledWith(
+    // Lease refresh is an atomic compare-and-swap, not a read-then-save.
+    expect(tryAcquireSessionLeaseInDb).toHaveBeenCalledWith(
       "session-1",
       expect.objectContaining({
         executionMode: "embedded",
@@ -706,7 +718,8 @@ describe("/api/acp POST", () => {
         leaseExpiresAt: expect.any(String),
       }),
     );
-    expect(updateSessionExecutionBindingInDb).toHaveBeenCalledWith(
+    // Lease refresh is an atomic compare-and-swap, not a read-then-save.
+    expect(tryAcquireSessionLeaseInDb).toHaveBeenCalledWith(
       "session-1",
       expect.objectContaining({
         executionMode: "embedded",
@@ -764,8 +777,10 @@ describe("/api/acp POST", () => {
       provider: "codex",
       role: "DEVELOPER",
       routaAgentId: "codex-thread-1",
+      providerSessionId: "codex-native-1",
       toolMode: "full",
       mcpProfile: "kanban-planning",
+      firstPromptSent: true,
       createdAt: new Date("2026-04-08T00:00:00.000Z"),
     });
     acpProcessManager.loadSession.mockResolvedValue("session-codex");
@@ -797,7 +812,9 @@ describe("/api/acp POST", () => {
         provider: "codex",
         role: "DEVELOPER",
       },
-      "codex-thread-1",
+      // Native resume uses the persisted provider-native session ID — never
+      // the durable routaAgentId ("codex-thread-1").
+      "codex-native-1",
       undefined,
       undefined,
     );
@@ -825,6 +842,7 @@ describe("/api/acp POST", () => {
       role: "CRAFTER",
       toolMode: "full",
       mcpProfile: "kanban-planning",
+      firstPromptSent: true,
       createdAt: new Date("2026-04-08T00:00:00.000Z"),
     });
     acpProcessManager.loadSession.mockRejectedValue(new Error("rollout missing"));
@@ -872,6 +890,52 @@ describe("/api/acp POST", () => {
         acpStatus: "ready",
         resumeMode: "recreated",
         nativeResumeError: "rollout missing",
+      },
+    });
+  });
+
+  it("skips native resume for a codex session that never sent its first prompt", async () => {
+    httpSessionStore.getSession.mockReturnValue(undefined);
+    loadSessionFromDb.mockResolvedValue({
+      id: "session-codex",
+      cwd: "/tmp/codex",
+      workspaceId: "workspace-1",
+      provider: "codex",
+      role: "CRAFTER",
+      toolMode: "full",
+      mcpProfile: "kanban-planning",
+      firstPromptSent: false,
+      createdAt: new Date("2026-04-08T00:00:00.000Z"),
+    });
+    acpProcessManager.createSession.mockResolvedValue("session-codex");
+
+    const response = await POST(
+      new NextRequest("http://localhost/api/acp", {
+        method: "POST",
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 10,
+          method: "session/load",
+          params: {
+            sessionId: "session-codex",
+          },
+        }),
+      }),
+    );
+
+    // No provider rollout exists before the first prompt, so native resume is
+    // skipped (matching the Rust backend) and the session is rebuilt instead.
+    expect(acpProcessManager.loadSession).not.toHaveBeenCalled();
+    expect(acpProcessManager.createSession).toHaveBeenCalledTimes(1);
+    await expect(response.json()).resolves.toMatchObject({
+      jsonrpc: "2.0",
+      id: 10,
+      result: {
+        sessionId: "session-codex",
+        provider: "codex",
+        role: "CRAFTER",
+        acpStatus: "ready",
+        resumeMode: "recreated",
       },
     });
   });

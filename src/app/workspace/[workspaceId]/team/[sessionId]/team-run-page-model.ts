@@ -40,6 +40,34 @@ export interface TeamTaskNode {
   status: NormalizedTaskStatus;
   details?: string;
   children: TeamTaskNode[];
+  /** Persisted Task id backing this node (set for task-sourced nodes). */
+  linkedTaskId?: string;
+  /** True for note-only legacy nodes kept as read-only history. */
+  legacy?: boolean;
+  /** Child session ids recorded on the persisted task. */
+  sessionIds?: string[];
+}
+
+/**
+ * Subset of the persisted Task record needed to render the Team task tree.
+ * Matches the `GET /api/tasks` serialization in both backends.
+ */
+export interface PersistedTeamTask {
+  id: string;
+  title: string;
+  objective?: string;
+  status?: string;
+  sessionId?: string;
+  sessionIds?: string[];
+  assignedTo?: string;
+  teamRunId?: string;
+}
+
+/** Structured delegation result recovered from a transcript tool update. */
+export interface DelegationTranscriptResult {
+  sessionId?: string;
+  delegatedTaskId?: string;
+  status?: string;
 }
 
 export interface TeamActivityItem {
@@ -155,7 +183,12 @@ export interface SessionHistoryEntry {
     error?: string;
     toolCallId?: string;
     rawInput?: Record<string, unknown>;
-    rawOutput?: { output?: string };
+    /**
+     * Tool result payload. Depending on the provider adapter this can be the
+     * structured `{ output }` envelope, a plain string (error text / raw MCP
+     * wrapper), or an arbitrary result object.
+     */
+    rawOutput?: { output?: string } | string | Record<string, unknown>;
   };
 }
 
@@ -224,7 +257,7 @@ export function avatarInitials(label: string): string {
 export function normalizeTaskStatus(status?: string): NormalizedTaskStatus {
   const normalized = status?.toUpperCase();
   if (normalized === "COMPLETED" || normalized === "DONE") return "done";
-  if (normalized === "IN_PROGRESS" || normalized === "RUNNING" || normalized === "CONFIRMED") return "in-progress";
+  if (normalized === "IN_PROGRESS" || normalized === "RUNNING" || normalized === "CONFIRMED" || normalized === "DELEGATED") return "in-progress";
   if (normalized === "REVIEW_REQUIRED" || normalized === "WAITING_REVIEW" || normalized === "NEEDS_REVIEW") return "waiting-review";
   if (normalized === "FAILED" || normalized === "BLOCKED" || normalized === "NEEDS_FIX") return "blocked";
   return "not-started";
@@ -561,17 +594,130 @@ export function resolveDelegationRosterSpecialistId(update?: SessionHistoryEntry
   }
 }
 
-export function extractDelegationSessionId(update?: SessionHistoryEntry["update"]): string | undefined {
-  const output = update?.rawOutput?.output;
-  if (!output) return undefined;
-
-  try {
-    const parsed = JSON.parse(output);
-    return typeof parsed?.sessionId === "string" ? parsed.sessionId : undefined;
-  } catch {
-    const match = output.match(/"sessionId"\s*:\s*"([^"]+)"/);
-    return match?.[1];
+export function extractRawOutputText(update?: SessionHistoryEntry["update"]): string | undefined {
+  const rawOutput = update?.rawOutput;
+  if (typeof rawOutput === "string") return rawOutput;
+  if (rawOutput && typeof rawOutput === "object" && typeof rawOutput.output === "string") {
+    return rawOutput.output;
   }
+  return undefined;
+}
+
+function readDelegationResult(
+  value: unknown,
+  result: DelegationTranscriptResult,
+  depth = 0,
+): void {
+  if (depth > 4 || value == null) return;
+  if (typeof value === "string") {
+    try {
+      readDelegationResult(JSON.parse(value), result, depth + 1);
+      return;
+    } catch {
+      result.sessionId ??= value.match(/"sessionId"\s*:\s*"([^"]+)"/)?.[1];
+      result.delegatedTaskId ??= value.match(/"(?:delegatedTaskId|taskId)"\s*:\s*"([^"]+)"/)?.[1];
+      result.status ??= value.match(/"status"\s*:\s*"([^"]+)"/)?.[1];
+      return;
+    }
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => readDelegationResult(item, result, depth + 1));
+    return;
+  }
+  if (typeof value !== "object") return;
+
+  const record = value as Record<string, unknown>;
+  if (typeof record.sessionId === "string") result.sessionId ??= record.sessionId;
+  const taskId = typeof record.delegatedTaskId === "string"
+    ? record.delegatedTaskId
+    : typeof record.taskId === "string"
+      ? record.taskId
+      : undefined;
+  if (taskId) result.delegatedTaskId ??= taskId;
+  if (typeof record.status === "string") result.status ??= record.status;
+  for (const key of ["output", "data", "result", "content", "text"]) {
+    readDelegationResult(record[key], result, depth + 1);
+  }
+}
+
+export function extractDelegationResult(update?: SessionHistoryEntry["update"]): DelegationTranscriptResult {
+  const result: DelegationTranscriptResult = {};
+  readDelegationResult(update?.rawOutput, result);
+  return result;
+}
+
+export function extractDelegationSessionId(update?: SessionHistoryEntry["update"]): string | undefined {
+  return extractDelegationResult(update).sessionId;
+}
+
+/**
+ * Build the Team task tree with persisted Tasks as the primary source.
+ *
+ * - Every persisted Task becomes a node (they are the cards the Kanban board
+ *   actually tracks, so a delegated Task always shows up even when no
+ *   task-shaped Note was written).
+ * - Task-shaped Notes whose `linkedTaskId` matches a persisted Task are
+ *   deduplicated away — the persisted node replaces them.
+ * - Remaining task-shaped Notes stay as read-only legacy nodes, preserving
+ *   their `parentNoteId` hierarchy for historical runs.
+ */
+export function buildTeamTaskTree(
+  tasks: PersistedTeamTask[],
+  notes: NoteData[],
+): TeamTaskNode[] {
+  const taskNodes: TeamTaskNode[] = tasks.map((task) => ({
+    id: `task-${task.id}`,
+    title: task.title,
+    status: normalizeTaskStatus(task.status),
+    details: task.objective?.trim() || undefined,
+    children: [],
+    linkedTaskId: task.id,
+    sessionIds: task.sessionIds ?? [],
+  }));
+
+  const linkedTaskIds = new Set(tasks.map((task) => task.id).filter(Boolean));
+  const legacyNotes = notes.filter((note) => {
+    if (note.metadata.type !== "task") return false;
+    const linkedTaskId = note.metadata.linkedTaskId;
+    return !linkedTaskId || !linkedTaskIds.has(linkedTaskId);
+  });
+
+  const noteById = new Map(legacyNotes.map((note) => [note.id, note]));
+  const childrenByParent = new Map<string, NoteData[]>();
+  const rootNotes: NoteData[] = [];
+
+  for (const note of legacyNotes) {
+    const parentId = note.metadata.parentNoteId;
+    if (!parentId || !noteById.has(parentId)) {
+      rootNotes.push(note);
+      continue;
+    }
+    const existing = childrenByParent.get(parentId) ?? [];
+    existing.push(note);
+    childrenByParent.set(parentId, existing);
+  }
+
+  const buildNoteNode = (noteId: string): TeamTaskNode | null => {
+    const note = noteById.get(noteId);
+    if (!note) return null;
+    const children = (childrenByParent.get(note.id) ?? [])
+      .map((child) => buildNoteNode(child.id))
+      .filter((child): child is TeamTaskNode => Boolean(child));
+    return {
+      id: note.id,
+      title: note.title,
+      status: normalizeTaskStatus(note.metadata.taskStatus),
+      details: note.content.trim() || undefined,
+      children,
+      legacy: true,
+    };
+  };
+
+  const legacyNodes = rootNotes
+    .map((note) => buildNoteNode(note.id))
+    .filter((node): node is TeamTaskNode => Boolean(node));
+
+  return [...taskNodes, ...legacyNodes];
 }
 
 export function inferDeliverableLabel(note: NoteData, ownerId?: string): string {
@@ -711,7 +857,7 @@ export function buildLaneSnippets(history: SessionHistoryEntry[], maxSnippets = 
         ? summarizeText(update.completionSummary ?? extractHistoryText(update) ?? "Member finished and handed the result back to lead.", 180)
         : summarizeText(
           extractHistoryText(update)
-            ?? update.rawOutput?.output
+            ?? extractRawOutputText(update)
             ?? update.error
             ?? (typeof update.rawInput?.additionalInstructions === "string" ? update.rawInput.additionalInstructions : undefined)
             ?? (typeof update.rawInput?.title === "string" ? update.rawInput.title : undefined),

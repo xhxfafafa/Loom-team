@@ -25,10 +25,12 @@ import type { SessionInfo } from "../../types";
 import {
   avatarInitials,
   buildLaneSnippets,
+  buildTeamTaskTree,
   extractAskUserQuestionPayload,
-  extractDelegationSessionId,
+  extractDelegationResult,
   extractGoalFromPrompt,
   extractHistoryText,
+  extractRawOutputText,
   findObjectiveText,
   getActorLabel,
   inferCompletionEvent,
@@ -49,6 +51,7 @@ import {
   type AgentSummary,
   type DeliverableItem,
   type PendingSessionQuestion,
+  type PersistedTeamTask,
   type SessionHistoryEntry,
   type TeamActivityItem,
   type TeamMemberStatus,
@@ -173,6 +176,7 @@ export function TeamRunPageClient() {
   const [teamRuns, setTeamRuns] = useState<SessionInfo[]>([]);
   const [specialists, setSpecialists] = useState<SpecialistSummary[]>([]);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
+  const [teamTasks, setTeamTasks] = useState<PersistedTeamTask[]>([]);
   const [historiesBySessionId, setHistoriesBySessionId] = useState<Record<string, SessionHistoryEntry[]>>({});
   const [messagesBySessionId, setMessagesBySessionId] = useState<Record<string, ChatMessage[]>>({});
   const [selectedSessionId, setSelectedSessionId] = useState<string>(sessionId);
@@ -293,17 +297,22 @@ export function TeamRunPageClient() {
 
   const fetchRunMetadata = useCallback(async () => {
     const contextKey = `${workspaceId}:${sessionId}`;
-    const [sessionRes, sessionsRes, teamRunsRes, agentsRes] = await Promise.all([
+    const [sessionRes, sessionsRes, teamRunsRes, agentsRes, teamTasksRes] = await Promise.all([
       desktopAwareFetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { cache: "no-store" }),
       desktopAwareFetch(`/api/sessions?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store" }),
       desktopAwareFetch(`/api/sessions?workspaceId=${encodeURIComponent(workspaceId)}&surface=team`, { cache: "no-store" }),
       desktopAwareFetch(`/api/agents?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store" }),
+      desktopAwareFetch(
+        `/api/tasks?teamRunId=${encodeURIComponent(sessionId)}&workspaceId=${encodeURIComponent(workspaceId)}`,
+        { cache: "no-store" },
+      ),
     ]);
 
     const sessionData = await sessionRes.json().catch(() => ({}));
     const sessionsData = await sessionsRes.json().catch(() => ({}));
     const teamRunsData = await teamRunsRes.json().catch(() => ({}));
     const agentsData = await agentsRes.json().catch(() => ({}));
+    const teamTasksData = await teamTasksRes.json().catch(() => ({}));
 
     if (contextKeyRef.current !== contextKey) return;
     if (sessionData?.session) {
@@ -317,6 +326,9 @@ export function TeamRunPageClient() {
     }
     if (Array.isArray(agentsData?.agents)) {
       setAgents(agentsData.agents);
+    }
+    if (Array.isArray(teamTasksData?.tasks)) {
+      setTeamTasks(teamTasksData.tasks as PersistedTeamTask[]);
     }
     setIsSwitchingTeamRun(false);
   }, [sessionId, workspaceId]);
@@ -654,42 +666,10 @@ export function TeamRunPageClient() {
     }
   }, [acpUpdates, descendantSessions, requestMetadataRefresh, requestTranscriptRefresh, sessionId]);
 
-  const taskTree = useMemo<TeamTaskNode[]>(() => {
-    const taskNotes = notesHook.notes.filter((note) => note.metadata.type === "task");
-    const taskById = new Map(taskNotes.map((note) => [note.id, note]));
-    const childrenByParent = new Map<string, typeof taskNotes>();
-    const rootNotes: typeof taskNotes = [];
-
-    for (const note of taskNotes) {
-      const parentId = note.metadata.parentNoteId;
-      if (!parentId || !taskById.has(parentId)) {
-        rootNotes.push(note);
-        continue;
-      }
-      const existing = childrenByParent.get(parentId) ?? [];
-      existing.push(note);
-      childrenByParent.set(parentId, existing);
-    }
-
-    const buildNode = (noteId: string): TeamTaskNode | null => {
-      const note = taskById.get(noteId);
-      if (!note) return null;
-      const children = (childrenByParent.get(note.id) ?? [])
-        .map((child) => buildNode(child.id))
-        .filter((child): child is TeamTaskNode => Boolean(child));
-      return {
-        id: note.id,
-        title: note.title,
-        status: normalizeTaskStatus(note.metadata.taskStatus),
-        details: note.content.trim() || undefined,
-        children,
-      };
-    };
-
-    return rootNotes
-      .map((note) => buildNode(note.id))
-      .filter((node): node is TeamTaskNode => Boolean(node));
-  }, [notesHook.notes]);
+  const taskTree = useMemo<TeamTaskNode[]>(
+    () => buildTeamTaskTree(teamTasks, notesHook.notes),
+    [notesHook.notes, teamTasks],
+  );
 
   const allRunSessions = useMemo(
     () => (session ? [session, ...descendantSessions] : descendantSessions),
@@ -712,12 +692,16 @@ export function TeamRunPageClient() {
       if (!toolLabel.includes("delegate_task")) continue;
       const targetRosterId = resolveDelegationRosterSpecialistId(update);
       if (!targetRosterId) continue;
-      const delegatedSessionId = extractDelegationSessionId(update);
-      if (delegatedSessionId) {
-        map.set(delegatedSessionId, targetRosterId);
+      const delegationResult = extractDelegationResult(update);
+      if (delegationResult.sessionId) {
+        map.set(delegationResult.sessionId, targetRosterId);
         continue;
       }
-      if (update.status === "in_progress" || update.status === "completed") {
+      if (
+        update.status === "in_progress"
+        || update.status === "completed"
+        || delegationResult.status?.toLowerCase() === "delegated"
+      ) {
         pendingDelegations.push(targetRosterId);
       }
     }
@@ -754,7 +738,7 @@ export function TeamRunPageClient() {
           });
         const preview =
           extractHistoryText(latestMeaningful?.update) ??
-          summarizeText(latestMeaningful?.update?.rawOutput?.output) ??
+          summarizeText(extractRawOutputText(latestMeaningful?.update)) ??
           summarizeText(latestMeaningful?.update?.error);
         const lastUpdatedAt = latestMeaningful
           ? new Date(entry.createdAt).getTime() + history.indexOf(latestMeaningful) / 1000
@@ -897,7 +881,7 @@ export function TeamRunPageClient() {
           summary: summarizeText(
             typeof update.rawInput?.additionalInstructions === "string"
               ? update.rawInput.additionalInstructions
-              : update.rawOutput?.output,
+              : extractRawOutputText(update),
           ),
           sessionId: linkedStream?.session.sessionId ?? session.sessionId,
           memberSession: toMemberSessionSummary(

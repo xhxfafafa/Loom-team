@@ -34,8 +34,6 @@ import { InMemoryArtifactStore, ArtifactStore } from "./store/artifact-store";
 import { PermissionStore } from "./tools/permission-store";
 import { getKanbanEventBroadcaster } from "./kanban/kanban-event-broadcaster";
 import { AgentEventType } from "./events/event-bus";
-import { ProductGoalStore, InMemoryProductGoalStore } from "./store/product-goal-store";
-import { DevPlanStore, InMemoryDevPlanStore } from "./plan/dev-plan-store";
 
 export interface RoutaSystem {
   agentStore: AgentStore;
@@ -52,10 +50,6 @@ export interface RoutaSystem {
   kanbanBoardStore: KanbanBoardStore;
   /** Artifact store for agent-to-agent communication */
   artifactStore: ArtifactStore;
-  /** Product goal store for structured product intent */
-  productGoalStore: ProductGoalStore;
-  /** Dev plan store for structured product development plans */
-  planStore: DevPlanStore;
   /** Permission store for runtime permission delegation protocol */
   permissionStore: PermissionStore;
   eventBus: EventBus;
@@ -85,8 +79,6 @@ export function createInMemorySystem(): RoutaSystem {
   const workflowRunStore = new InMemoryWorkflowRunStore();
   const kanbanBoardStore = new InMemoryKanbanBoardStore();
   const artifactStore = new InMemoryArtifactStore();
-  const productGoalStore = new InMemoryProductGoalStore();
-  const planStore = new InMemoryDevPlanStore();
   const permissionStore = new PermissionStore();
 
   // CRDT-backed note store with event broadcasting
@@ -121,8 +113,6 @@ export function createInMemorySystem(): RoutaSystem {
     workflowRunStore,
     kanbanBoardStore,
     artifactStore,
-    productGoalStore,
-    planStore,
     permissionStore,
     eventBus,
     tools,
@@ -165,10 +155,6 @@ export function createPgSystem(): RoutaSystem {
   const workflowRunStore = new InMemoryWorkflowRunStore();
   const kanbanBoardStore = new PgKanbanBoardStore(db);
   const artifactStore = new PgArtifactStore(db);
-  const { PgProductGoalStore } = require("./db/pg-product-goal-store") as typeof import("./db/pg-product-goal-store");
-  const { PgDevPlanStore } = require("./db/pg-dev-plan-store") as typeof import("./db/pg-dev-plan-store");
-  const productGoalStore = new PgProductGoalStore(db);
-  const planStore = new PgDevPlanStore(db);
   const permissionStore = new PermissionStore();
 
   // CRDT manager and broadcaster still used for real-time collab
@@ -204,8 +190,6 @@ export function createPgSystem(): RoutaSystem {
     workflowRunStore,
     kanbanBoardStore,
     artifactStore,
-    productGoalStore,
-    planStore,
     permissionStore,
     eventBus,
     tools,
@@ -242,8 +226,6 @@ export function createSqliteSystem(): RoutaSystem {
   // TODO: Implement SqliteWorkflowRunStore for persistent workflow state
   const workflowRunStore = new InMemoryWorkflowRunStore();
   let artifactStore: ArtifactStore;
-  let productGoalStore: ProductGoalStore;
-  let planStore: DevPlanStore;
   const permissionStore = new PermissionStore();
   // True when noteStore doesn't broadcast on save (SqliteNoteStore); NoteTools will broadcast.
   // False when CRDTNoteStore is used as fallback (it already broadcasts internally).
@@ -268,8 +250,6 @@ export function createSqliteSystem(): RoutaSystem {
       SqliteScheduleStore,
       SqliteKanbanBoardStore,
       SqliteArtifactStore,
-      SqliteProductGoalStore,
-      SqliteDevPlanStore,
     } = require("./db/sqlite-stores") as typeof import("./db/sqlite-stores");
 
     const db = getSqliteDatabase();
@@ -285,8 +265,6 @@ export function createSqliteSystem(): RoutaSystem {
     scheduleStore = new SqliteScheduleStore(db);
     kanbanBoardStore = new SqliteKanbanBoardStore(db);
     artifactStore = new SqliteArtifactStore(db);
-    productGoalStore = new SqliteProductGoalStore(db);
-    planStore = new SqliteDevPlanStore(db);
     noteToolsBroadcast = true; // SqliteNoteStore doesn't broadcast — NoteTools must
   } catch (err) {
     // Some builds may not include sqlite native modules.
@@ -306,8 +284,6 @@ export function createSqliteSystem(): RoutaSystem {
     scheduleStore = new InMemoryScheduleStore();
     kanbanBoardStore = new InMemoryKanbanBoardStore();
     artifactStore = new InMemoryArtifactStore();
-    productGoalStore = new InMemoryProductGoalStore();
-    planStore = new InMemoryDevPlanStore();
   }
 
   const eventBus = new EventBus();
@@ -337,8 +313,6 @@ export function createSqliteSystem(): RoutaSystem {
     workflowRunStore,
     kanbanBoardStore,
     artifactStore,
-    productGoalStore,
-    planStore,
     permissionStore,
     eventBus,
     tools,

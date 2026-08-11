@@ -19,16 +19,6 @@ import {
 import type { TaskCreationSource } from "../kanban/task-creation-policy";
 import type { KanbanColumn } from "../models/kanban";
 import type {
-  DevPlanFeedbackEntry,
-  DevPlanRisk,
-  DevPlanTeamAllocation,
-  DevPlanUserStory,
-} from "../plan/dev-plan";
-import type {
-  ProductGoalRepo,
-  ProductGoalRequirementDoc,
-} from "../models/product-goal";
-import type {
   FallbackAgent,
   TaskCommentEntry,
   TaskContextSearchSpec,
@@ -633,39 +623,6 @@ export const artifactRequests = pgTable("artifact_requests", {
   status: text("status").notNull().default("pending"),
   /** ID of artifact that fulfilled this request */
   artifactId: text("artifact_id"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-// ─── Product Goals (structured product intent) ─────────────────────────
-
-export const productGoals = pgTable("product_goals", {
-  id: text("id").primaryKey(),
-  workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
-  goalText: text("goal_text").notNull(),
-  repos: jsonb("repos").$type<ProductGoalRepo[]>().notNull().default([]),
-  requirementDocs: jsonb("requirement_docs").$type<ProductGoalRequirementDoc[]>().notNull().default([]),
-  constraints: jsonb("constraints").$type<string[]>().notNull().default([]),
-  status: text("status").notNull().default("draft"), // draft | active
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-// ─── Dev Plans (structured product development plans) ──────────────────
-
-export const devPlans = pgTable("dev_plans", {
-  id: text("id").primaryKey(),
-  workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
-  goalId: text("goal_id").notNull().references(() => productGoals.id, { onDelete: "cascade" }),
-  status: text("status").notNull().default("draft"), // draft | confirmed | rejected
-  scope: jsonb("scope").$type<string[]>().notNull().default([]),
-  nonGoals: jsonb("non_goals").$type<string[]>().notNull().default([]),
-  risks: jsonb("risks").$type<DevPlanRisk[]>().notNull().default([]),
-  userStories: jsonb("user_stories").$type<DevPlanUserStory[]>().notNull().default([]),
-  technicalApproach: text("technical_approach").notNull().default(""),
-  teamAllocation: jsonb("team_allocation").$type<DevPlanTeamAllocation[]>().notNull().default([]),
-  feedbackLog: jsonb("feedback_log").$type<DevPlanFeedbackEntry[]>().notNull().default([]),
-  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

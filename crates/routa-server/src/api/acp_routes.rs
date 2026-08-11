@@ -10,7 +10,6 @@ use axum::{
 };
 use serde::Deserialize;
 use std::convert::Infallible;
-use std::sync::Arc;
 use tokio_stream::StreamExt as _;
 
 use crate::acp;
@@ -18,13 +17,17 @@ use crate::error::ServerError;
 use crate::state::AppState;
 use routa_core::acp::terminal_manager::TerminalManager;
 use routa_core::acp::SessionLaunchOptions;
-use routa_core::models::agent::{Agent, AgentRole};
-use routa_core::orchestration::{OrchestratorConfig, RoutaOrchestrator, SpecialistConfig};
+use routa_core::orchestration::SpecialistConfig;
 use routa_core::storage::{LocalSessionProvider, SessionRecord};
 use routa_core::store::acp_session_store::{AcpSessionRow, CreateAcpSessionParams};
 
+mod session_recovery;
 mod session_support;
 mod team_chain_support;
+use session_recovery::{
+    build_desktop_recovery_context, ensure_routa_agent_registration, persist_provider_session_id,
+    restore_routa_coordinator_binding, team_bindings_failed_response,
+};
 #[cfg(test)]
 use session_support::has_explicit_cwd;
 use session_support::{
@@ -116,87 +119,6 @@ fn build_coordinator_context_prompt(
     format!(
         "**Your Agent ID:** {agent_id}\n**Workspace ID:** {workspace_id}\n\n## User Request\n\n{user_request}\n"
     )
-}
-
-async fn ensure_routa_agent_registration(
-    state: &AppState,
-    session_id: &str,
-    workspace_id: &str,
-    role: Option<&str>,
-    specialist_id: Option<&str>,
-    existing_routa_agent_id: Option<&str>,
-) -> Result<Option<String>, String> {
-    if role != Some("ROUTA") {
-        return Ok(existing_routa_agent_id.map(|value| value.to_string()));
-    }
-
-    if workspace_id == "default" {
-        state
-            .workspace_store
-            .ensure_default()
-            .await
-            .map_err(|error| error.to_string())?;
-    }
-
-    let mut routa_agent_id = existing_routa_agent_id.map(|value| value.to_string());
-
-    if let Some(existing_id) = routa_agent_id.as_deref() {
-        let existing_agent = state
-            .agent_store
-            .get(existing_id)
-            .await
-            .map_err(|error| error.to_string())?;
-        if existing_agent.is_none() {
-            routa_agent_id = None;
-        }
-    }
-
-    if routa_agent_id.is_none() {
-        let name_prefix = if specialist_id == Some("team-agent-lead") {
-            "team-lead"
-        } else {
-            "routa-coordinator"
-        };
-        let agent = Agent::new(
-            uuid::Uuid::new_v4().to_string(),
-            format!("{}-{}", name_prefix, &session_id[..session_id.len().min(8)]),
-            AgentRole::Routa,
-            workspace_id.to_string(),
-            None,
-            None,
-            None,
-        );
-        state
-            .agent_store
-            .save(&agent)
-            .await
-            .map_err(|error| error.to_string())?;
-        routa_agent_id = Some(agent.id);
-    }
-
-    let acp = Arc::new(state.acp_manager.clone());
-    let orchestrator = RoutaOrchestrator::new(
-        OrchestratorConfig::default(),
-        acp,
-        state.agent_store.clone(),
-        state.task_store.clone(),
-        state.event_bus.clone(),
-    );
-    let routa_agent_id = routa_agent_id.expect("routa agent id must exist for ROUTA session");
-    orchestrator
-        .register_agent_session(&routa_agent_id, session_id)
-        .await;
-    let _ = state
-        .acp_manager
-        .set_routa_agent_id(session_id, &routa_agent_id)
-        .await;
-    state
-        .acp_session_store
-        .set_routa_agent_id(session_id, Some(&routa_agent_id))
-        .await
-        .map_err(|error| error.to_string())?;
-
-    Ok(Some(routa_agent_id))
 }
 
 impl IntoResponse for AcpResponse {
@@ -632,6 +554,8 @@ async fn acp_rpc(
                             .as_ref()
                             .map(|launch| launch.args.as_slice()),
                         parent_session_id.as_deref(),
+                        routa_agent_id.as_deref(),
+                        Some(agent_sid.as_str()),
                     )
                     .await;
 
@@ -872,9 +796,14 @@ async fn acp_rpc(
                                 "[ACP Route] Failed to persist auto-created session: {}",
                                 e
                             );
+                        } else {
+                            persist_provider_session_id(&state, &session_id, &agent_sid).await;
                         }
 
-                        // Also persist to local JSONL file
+                        // Also persist to local JSONL file. The durable
+                        // routa_agent_id is carried over from the persisted
+                        // session; it is never replaced by the provider
+                        // session ID.
                         persist_session_to_jsonl(
                             &session_id,
                             &cwd,
@@ -891,6 +820,10 @@ async fn acp_rpc(
                                 .as_ref()
                                 .map(|launch| launch.args.as_slice()),
                             parent_session_id.as_deref(),
+                            persisted_session
+                                .as_ref()
+                                .and_then(|session| session.routa_agent_id.as_deref()),
+                            Some(agent_sid.as_str()),
                         )
                         .await;
 
@@ -1241,7 +1174,11 @@ async fn acp_rpc(
                         "id": id,
                         "error": {
                             "code": -32004,
-                            "message": format!("Persisted session not found: {}", session_id)
+                            "message": format!("Persisted session not found: {}", session_id),
+                            "data": {
+                                "reason": "session_not_found",
+                                "retryable": false
+                            }
                         }
                     }))));
                 }
@@ -1441,14 +1378,38 @@ async fn acp_rpc(
 
             match create_result {
                 Ok((_our_sid, agent_sid)) => {
-                    let _ = state
-                        .acp_session_store
-                        .set_routa_agent_id(&session_id, Some(&agent_sid))
-                        .await;
-                    let _ = state
-                        .acp_session_store
-                        .set_provider_session_id(&session_id, Some(&agent_sid))
-                        .await;
+                    // Restore the durable Routa logical agent binding; it is
+                    // never derived from the provider session ID.
+                    // All-or-nothing (P1): a ROUTA session whose coordination
+                    // binding cannot be restored must fail recovery with a
+                    // structured error, never silently degrade to a chat-only
+                    // runtime. Isolate the freshly created runtime so no
+                    // orphaned chat-only session survives.
+                    let restored_routa_agent_id = match restore_routa_coordinator_binding(
+                        &state,
+                        &session_id,
+                        &workspace_id,
+                        role.as_deref(),
+                        persisted_session.routa_agent_id.as_deref(),
+                    )
+                    .await
+                    {
+                        Ok(agent_id) => agent_id,
+                        Err(error) => {
+                            tracing::error!(
+                                "[ACP Route] Failed to restore ROUTA coordinator binding for {}: {}",
+                                session_id,
+                                error
+                            );
+                            state.acp_manager.kill_session(&session_id).await;
+                            return Ok(AcpResponse::Json(Json(team_bindings_failed_response(
+                                &id,
+                                &session_id,
+                                &error,
+                            ))));
+                        }
+                    };
+                    persist_provider_session_id(&state, &session_id, &agent_sid).await;
 
                     persist_session_to_jsonl(
                         &session_id,
@@ -1464,8 +1425,19 @@ async fn acp_rpc(
                             .as_ref()
                             .map(|launch| launch.args.as_slice()),
                         parent_session_id.as_deref(),
+                        restored_routa_agent_id.as_deref(),
+                        Some(agent_sid.as_str()),
                     )
                     .await;
+
+                    if resume_mode == "recreated" {
+                        let recovery_context =
+                            build_desktop_recovery_context(&state, &persisted_session).await;
+                        state
+                            .acp_manager
+                            .set_pending_recovery_context(&session_id, recovery_context)
+                            .await;
+                    }
 
                     let resume_capabilities = routa_core::acp::get_resume_capability(&provider)
                         .map(|c| serde_json::to_value(c).unwrap_or(serde_json::json!(null)))
@@ -1904,6 +1876,8 @@ async fn persist_session_to_jsonl(
     custom_command: Option<&str>,
     custom_args: Option<&[String]>,
     parent_session_id: Option<&str>,
+    routa_agent_id: Option<&str>,
+    provider_session_id: Option<&str>,
 ) {
     let now = chrono::Utc::now().to_rfc3339();
     let record = SessionRecord {
@@ -1912,7 +1886,8 @@ async fn persist_session_to_jsonl(
         cwd: cwd.to_string(),
         branch: branch.map(|value| value.to_string()),
         workspace_id: workspace_id.to_string(),
-        routa_agent_id: None,
+        routa_agent_id: routa_agent_id.map(|value| value.to_string()),
+        provider_session_id: provider_session_id.map(|value| value.to_string()),
         provider: provider.map(|s| s.to_string()),
         role: role.map(|s| s.to_string()),
         mode_id: None,
@@ -2395,5 +2370,12 @@ mod tests {
             value["error"]["message"].as_str(),
             Some("Persisted session not found: missing-session")
         );
+        // Structured recovery error data must match the Web contract so the
+        // client can branch on reason instead of parsing messages.
+        assert_eq!(
+            value["error"]["data"]["reason"].as_str(),
+            Some("session_not_found")
+        );
+        assert_eq!(value["error"]["data"]["retryable"].as_bool(), Some(false));
     }
 }

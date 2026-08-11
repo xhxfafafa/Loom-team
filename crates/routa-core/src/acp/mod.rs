@@ -25,6 +25,7 @@ pub mod mcp_setup;
 pub mod paths;
 pub mod process;
 pub mod provider_adapter;
+mod recovery_context;
 pub mod registry_fetch;
 pub mod registry_types;
 pub mod runtime_manager;
@@ -50,6 +51,7 @@ use tokio::sync::{broadcast, RwLock};
 
 use crate::trace::{Contributor, TraceConversation, TraceEventType, TraceRecord, TraceWriter};
 use process::AcpProcess;
+use recovery_context::RecoveryContextStore;
 
 #[cfg(windows)]
 pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -160,6 +162,10 @@ pub struct AcpManager {
     /// Claude turns confirmed as terminal and therefore safe for explicit
     /// memory cleanup when automatic release is disabled.
     completed_sessions: Arc<RwLock<HashSet<String>>>,
+    /// One-shot provider-neutral context injected into the first prompt after
+    /// a context-rebuild recovery. It is runtime-only and never appears as a
+    /// second user-authored timeline message.
+    recovery_contexts: RecoveryContextStore,
 }
 
 impl Default for AcpManager {
@@ -189,7 +195,12 @@ impl AcpManager {
             notification_channels: Arc::new(RwLock::new(HashMap::new())),
             history: Arc::new(RwLock::new(HashMap::new())),
             completed_sessions: Arc::new(RwLock::new(HashSet::new())),
+            recovery_contexts: RecoveryContextStore::default(),
         }
+    }
+
+    pub async fn set_pending_recovery_context(&self, session_id: &str, context: String) {
+        self.recovery_contexts.set(session_id, context).await;
     }
 
     /// List all session records.
@@ -933,6 +944,10 @@ impl AcpManager {
                 managed.trace_writer.clone(),
             )
         };
+        let (effective_text, pending_recovery_context) = self
+            .recovery_contexts
+            .take_for_prompt(session_id, text)
+            .await;
 
         let is_alive = match &process {
             AgentProcessType::Acp(p) => p.is_alive(),
@@ -940,6 +955,9 @@ impl AcpManager {
         };
 
         if !is_alive {
+            self.recovery_contexts
+                .restore(session_id, pending_recovery_context)
+                .await;
             return Err(format!("Agent ({preset_id}) process is not running"));
         }
 
@@ -952,6 +970,8 @@ impl AcpManager {
         .with_conversation(TraceConversation {
             turn: None,
             role: Some("user".to_string()),
+            // Keep the trace user preview faithful to the visible prompt; the
+            // internal recovery block is transport context, not user input.
             content_preview: Some(truncate_content(text, 500)),
             full_content: None,
         });
@@ -963,17 +983,23 @@ impl AcpManager {
             session_id = %session_id,
             preset_id = %preset_id,
             acp_session_id = %acp_session_id,
-            prompt_len = text.len(),
+            prompt_len = effective_text.len(),
             "acp prompt start"
         );
 
         let result = match &process {
-            AgentProcessType::Acp(p) => p.prompt(&acp_session_id, text).await,
-            AgentProcessType::Claude(p) => {
-                let stop_reason = p.prompt(text).await?;
-                Ok(serde_json::json!({ "stopReason": stop_reason }))
-            }
+            AgentProcessType::Acp(p) => p.prompt(&acp_session_id, &effective_text).await,
+            AgentProcessType::Claude(p) => p
+                .prompt(&effective_text)
+                .await
+                .map(|stop_reason| serde_json::json!({ "stopReason": stop_reason })),
         };
+
+        if result.is_err() {
+            self.recovery_contexts
+                .restore(session_id, pending_recovery_context)
+                .await;
+        }
 
         match &result {
             Ok(_) => tracing::info!(
@@ -1032,6 +1058,7 @@ impl AcpManager {
         // Remove notification channel
         self.notification_channels.write().await.remove(session_id);
         self.completed_sessions.write().await.remove(session_id);
+        self.recovery_contexts.remove(session_id).await;
     }
 
     /// Subscribe to SSE notifications for a session.
@@ -1083,16 +1110,27 @@ impl AcpManager {
     /// The actual response is streamed via the broadcast channel.
     /// Use `subscribe()` to receive notifications.
     pub async fn prompt_claude_async(&self, session_id: &str, text: &str) -> Result<(), String> {
-        let processes = self.processes.read().await;
-        let managed = processes
-            .get(session_id)
-            .ok_or_else(|| format!("No agent process for session: {session_id}"))?;
+        let (process, preset_id, trace_writer) = {
+            let processes = self.processes.read().await;
+            let managed = processes
+                .get(session_id)
+                .ok_or_else(|| format!("No agent process for session: {session_id}"))?;
+            (
+                managed.process.clone(),
+                managed.preset_id.clone(),
+                managed.trace_writer.clone(),
+            )
+        };
+        let (effective_text, pending_recovery_context) = self
+            .recovery_contexts
+            .take_for_prompt(session_id, text)
+            .await;
 
         // Record trace
         let trace = TraceRecord::new(
             session_id,
             TraceEventType::UserMessage,
-            Contributor::new(&managed.preset_id, None),
+            Contributor::new(&preset_id, None),
         )
         .with_conversation(TraceConversation {
             turn: None,
@@ -1101,25 +1139,36 @@ impl AcpManager {
             full_content: Some(text.to_string()),
         });
 
-        managed.trace_writer.append_safe(&trace).await;
+        trace_writer.append_safe(&trace).await;
 
-        match &managed.process {
+        match &process {
             AgentProcessType::Claude(p) => {
                 // Spawn the prompt in a background task so we can return immediately
                 let process = Arc::clone(p);
-                let text = text.to_string();
+                let text = effective_text;
                 let manager = self.clone();
                 let completed_session_id = session_id.to_string();
                 tokio::spawn(async move {
-                    if let Ok(stop_reason) = process.prompt(&text).await {
-                        manager
-                            .record_completed_claude_turn(&completed_session_id, stop_reason)
-                            .await;
+                    match process.prompt(&text).await {
+                        Ok(stop_reason) => {
+                            manager
+                                .record_completed_claude_turn(&completed_session_id, stop_reason)
+                                .await;
+                        }
+                        Err(_) => {
+                            manager
+                                .recovery_contexts
+                                .restore(&completed_session_id, pending_recovery_context)
+                                .await;
+                        }
                     }
                 });
                 Ok(())
             }
             AgentProcessType::Acp(_) => {
+                self.recovery_contexts
+                    .restore(session_id, pending_recovery_context)
+                    .await;
                 Err("prompt_claude_async is only for Claude sessions".to_string())
             }
         }
@@ -1388,211 +1437,4 @@ fn truncate_content(text: &str, max_len: usize) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        get_preset_by_id_with_registry, get_presets, truncate_content, validate_session_cwd,
-        AcpManager, AcpSessionRecord,
-    };
-    use std::collections::{HashMap, HashSet};
-    use std::fs;
-    use std::sync::Arc;
-    use tokio::sync::RwLock;
-
-    #[test]
-    fn static_presets_include_codex_acp_for_codex_alias() {
-        let presets = get_presets();
-        assert!(presets.iter().any(|preset| preset.id == "codex-acp"));
-    }
-
-    #[test]
-    fn static_presets_include_qoder() {
-        let presets = get_presets();
-        let qoder = presets
-            .iter()
-            .find(|preset| preset.id == "qoder")
-            .expect("qoder preset");
-        assert_eq!(
-            qoder.args,
-            vec!["--acp".to_string(), "--experimental-mcp-load".to_string()]
-        );
-    }
-
-    #[tokio::test]
-    async fn qodercli_alias_resolves_to_qoder_preset() {
-        let preset = get_preset_by_id_with_registry("qodercli")
-            .await
-            .expect("qodercli alias should resolve");
-        assert_eq!(preset.id, "qodercli");
-        assert_eq!(preset.command, "qodercli");
-        assert_eq!(
-            preset.args,
-            vec!["--acp".to_string(), "--experimental-mcp-load".to_string()]
-        );
-    }
-
-    #[test]
-    fn validate_session_cwd_rejects_missing_or_non_directory_paths() {
-        let temp = tempfile::tempdir().expect("tempdir should create");
-        let missing = temp.path().join("missing-dir");
-        let file_path = temp.path().join("not-a-dir.txt");
-        fs::write(&file_path, "content").expect("file should write");
-
-        let missing_error = validate_session_cwd(missing.to_string_lossy().as_ref())
-            .expect_err("missing directory should fail");
-        assert!(missing_error.contains("directory does not exist"));
-
-        let file_error = validate_session_cwd(file_path.to_string_lossy().as_ref())
-            .expect_err("file path should fail");
-        assert!(file_error.contains("path is not a directory"));
-
-        validate_session_cwd(temp.path().to_string_lossy().as_ref())
-            .expect("existing directory should pass");
-    }
-
-    #[tokio::test]
-    async fn mark_first_prompt_sent_updates_live_session_record() {
-        let manager = AcpManager::new();
-        let session_id = "session-1".to_string();
-        manager.sessions.write().await.insert(
-            session_id.clone(),
-            AcpSessionRecord {
-                session_id: session_id.clone(),
-                name: None,
-                cwd: ".".to_string(),
-                workspace_id: "default".to_string(),
-                routa_agent_id: None,
-                provider: Some("opencode".to_string()),
-                role: Some("CRAFTER".to_string()),
-                mode_id: None,
-                model: None,
-                created_at: chrono::Utc::now().to_rfc3339(),
-                first_prompt_sent: false,
-                parent_session_id: None,
-                specialist_id: None,
-                team_chain_id: None,
-                specialist_system_prompt: None,
-            },
-        );
-
-        manager.mark_first_prompt_sent(&session_id).await;
-
-        let session = manager.get_session(&session_id).await.expect("session");
-        assert!(session.first_prompt_sent);
-    }
-
-    #[tokio::test]
-    async fn push_to_history_skips_parent_child_forwarding_noise() {
-        let manager = AcpManager {
-            sessions: Arc::new(RwLock::new(HashMap::new())),
-            processes: Arc::new(RwLock::new(HashMap::new())),
-            notification_channels: Arc::new(RwLock::new(HashMap::new())),
-            history: Arc::new(RwLock::new(HashMap::new())),
-            completed_sessions: Arc::new(RwLock::new(HashSet::new())),
-        };
-
-        manager
-            .push_to_history(
-                "parent",
-                serde_json::json!({
-                    "sessionId": "parent",
-                    "childAgentId": "child-1",
-                    "update": { "sessionUpdate": "agent_message", "content": { "type": "text", "text": "delegated" } }
-                }),
-            )
-            .await;
-
-        let history = manager
-            .get_session_history("parent")
-            .await
-            .unwrap_or_default();
-        assert!(history.is_empty());
-    }
-
-    #[tokio::test]
-    async fn emit_session_update_broadcasts_when_channel_exists() {
-        let (tx, mut rx) = tokio::sync::broadcast::channel(8);
-        let manager = AcpManager {
-            sessions: Arc::new(RwLock::new(HashMap::new())),
-            processes: Arc::new(RwLock::new(HashMap::new())),
-            notification_channels: Arc::new(RwLock::new(HashMap::from([(
-                "session-1".to_string(),
-                tx,
-            )]))),
-            history: Arc::new(RwLock::new(HashMap::new())),
-            completed_sessions: Arc::new(RwLock::new(HashSet::new())),
-        };
-
-        manager
-            .emit_session_update(
-                "session-1",
-                serde_json::json!({
-                    "sessionUpdate": "turn_complete",
-                    "stopReason": "cancelled"
-                }),
-            )
-            .await
-            .expect("emit should succeed");
-
-        let broadcast = rx.recv().await.expect("broadcast event");
-        assert_eq!(
-            broadcast["params"]["update"]["sessionUpdate"].as_str(),
-            Some("turn_complete")
-        );
-        assert_eq!(
-            broadcast["params"]["update"]["stopReason"].as_str(),
-            Some("cancelled")
-        );
-    }
-
-    #[tokio::test]
-    async fn emit_session_update_persists_history_without_channel() {
-        let manager = AcpManager {
-            sessions: Arc::new(RwLock::new(HashMap::new())),
-            processes: Arc::new(RwLock::new(HashMap::new())),
-            notification_channels: Arc::new(RwLock::new(HashMap::new())),
-            history: Arc::new(RwLock::new(HashMap::new())),
-            completed_sessions: Arc::new(RwLock::new(HashSet::new())),
-        };
-
-        manager
-            .emit_session_update(
-                "session-1",
-                serde_json::json!({
-                    "sessionUpdate": "turn_complete",
-                    "stopReason": "cancelled"
-                }),
-            )
-            .await
-            .expect("emit should succeed");
-
-        let history = manager
-            .get_session_history("session-1")
-            .await
-            .expect("history should exist");
-        assert_eq!(history.len(), 1);
-        assert_eq!(
-            history[0]["update"]["sessionUpdate"].as_str(),
-            Some("turn_complete")
-        );
-    }
-
-    #[test]
-    fn rewrite_notification_session_id_overrides_provider_session_id() {
-        let rewritten = AcpManager::rewrite_notification_session_id(
-            "child-session",
-            serde_json::json!({
-                "sessionId": "provider-session",
-                "update": { "sessionUpdate": "agent_message_chunk", "content": { "text": "hi" } }
-            }),
-        );
-
-        assert_eq!(rewritten["sessionId"].as_str(), Some("child-session"));
-    }
-
-    #[test]
-    fn truncate_content_handles_unicode_boundaries() {
-        assert_eq!(truncate_content("你好世界ABC", 5), "你好...");
-        assert_eq!(truncate_content("你好世界ABC", 3), "你好世");
-        assert_eq!(truncate_content("短文本", 10), "短文本");
-    }
-}
+mod tests;

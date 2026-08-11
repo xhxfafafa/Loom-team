@@ -233,12 +233,24 @@ mod tests {
             .iter()
             .all(|root| root.kind == TranscriptSessionSource::QoderProjects));
 
-        let augment_only = discover_transcript_session_roots_for_client(Some("auggie"));
+        let augment_only = discover_transcript_session_roots_with_overrides_and_client(
+            Some(&home),
+            None,
+            None,
+            None,
+            Some("auggie"),
+        );
         assert!(augment_only
             .iter()
             .all(|root| root.kind == TranscriptSessionSource::AugmentSessions));
 
-        let all = discover_transcript_session_roots_for_client(Some("all"));
+        let all = discover_transcript_session_roots_with_overrides_and_client(
+            Some(&home),
+            None,
+            None,
+            None,
+            Some("all"),
+        );
         assert!(all
             .iter()
             .any(|root| root.kind == TranscriptSessionSource::Codex));

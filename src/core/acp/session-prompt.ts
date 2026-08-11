@@ -1,36 +1,27 @@
 import { getHttpSessionStore, type SessionUpdateNotification } from "@/core/acp/http-session-store";
-import { getPresetById } from "@/core/acp/acp-presets";
-import { isServerlessEnvironment } from "@/core/acp/api-based-providers";
-import { getDockerDetector } from "@/core/acp/docker/detector";
-import { DEFAULT_DOCKER_AGENT_IMAGE } from "@/core/acp/docker/utils";
 import { AgentRole } from "@/core/models/agent";
 import { consumeAcpPromptResponse } from "@/core/acp/prompt-response";
-import { buildCoordinatorPrompt, getSpecialistById } from "@/core/orchestration/specialist-prompts";
-import { TEAM_LEAD_SPECIALIST_ID } from "@/core/orchestration/team-run-identity";
-import { buildTeamChainPolicyPrompt, type TeamChainId } from "@/core/orchestration/team-chain";
-import {
-  createTraceRecord,
-  withWorkspaceId,
-  withMetadata,
-  recordTrace,
-} from "@/core/trace";
-import {
-  loadSessionFromDb,
-  loadSessionFromLocalStorage,
-  persistSessionToDb,
-  updateSessionExecutionBindingInDb,
-} from "@/core/acp/session-db-persister";
+import { buildCoordinatorPrompt } from "@/core/orchestration/specialist-prompts";
 import { resolveSkillContent } from "@/core/skills/skill-resolver";
+import { checkEmbeddedSessionLeaseForDispatch } from "@/core/acp/session-lease";
 import {
-  buildExecutionBinding,
-  getEmbeddedOwnershipIssue,
-  refreshExecutionBinding,
-} from "@/core/acp/execution-backend";
+  buildRecoveryErrorData,
+  buildRecoveryFailedError,
+  computeLeaseRetryAfterMs,
+  RECOVERY_JSON_RPC_CODES,
+} from "@/core/acp/session-recovery-errors";
 import type { McpServerProfile } from "@/core/mcp/mcp-server-profiles";
 import { pendingAcpCreations } from "@/core/acp/pending-acp-creations";
 import { persistSessionHistorySnapshot } from "@/core/acp/session-history";
-import { buildProviderModelArgs } from "@/core/acp/provider-model-args";
+import { acknowledgePromptDeliveryOnce } from "@/core/acp/prompt-delivery";
+import { consumePendingRecoveryContext } from "@/core/acp/recovery-context";
+import { persistCapturedProviderSessionId } from "@/core/acp/session-db-persister";
 import type { AcpSessionKillResult } from "@/core/acp/acp-process-manager";
+import {
+  ensureSessionRuntime,
+  sanitizeClaudeProviderSessionId,
+  SessionRuntimeRecoveryError,
+} from "@/core/acp/session-runtime-recovery";
 
 type JsonRpcResponseFactory = (
   id: string | number | null,
@@ -61,6 +52,14 @@ interface DispatchSessionPromptParams {
   cwd?: string;
   skillName?: string;
   skillContent?: string;
+  /**
+   * Persistent delivery identity for this prompt: a client-generated UUID for
+   * user prompts (retained across network retries), the deterministic
+   * `team-report:…` delivery ID for child completion reports, or a
+   * `resume:…` request ID for explicit Resume. Deduplicated durably via
+   * `appendHistoryOnce`; never a provider conversation ID.
+   */
+  promptId?: string;
 }
 
 type AcpErrorLike = Error & {
@@ -314,29 +313,6 @@ function buildCoordinatorFirstPrompt(input: {
   })}${teamLeadFirstTurnContract}`;
 }
 
-/**
- * Rebuild the combined Team Lead prompt (role prompt + chain policy) from
- * persisted session metadata after an in-memory loss (e.g. backend restart).
- * Mirrors the creation-time composition order in acp-session-create.
- */
-function rebuildTeamLeadRecoveryPrompt(teamChainId: TeamChainId | null): string | undefined {
-  const specialist = getSpecialistById(TEAM_LEAD_SPECIALIST_ID, "en");
-  const specialistSections: string[] = [];
-  if (specialist?.systemPrompt?.trim()) {
-    specialistSections.push(specialist.systemPrompt.trim());
-  }
-  if (specialist?.roleReminder) {
-    specialistSections.push(`**Reminder:** ${specialist.roleReminder}`);
-  }
-
-  const sections = [
-    specialistSections.length > 0 ? specialistSections.join("\n\n---\n") : undefined,
-    buildTeamChainPolicyPrompt(teamChainId) ?? undefined,
-  ].filter((section): section is string => typeof section === "string" && section.trim().length > 0);
-
-  return sections.length > 0 ? sections.join("\n\n---\n\n") : undefined;
-}
-
 async function ensurePromptSessionExists(args: {
   id: string | number | null;
   params: Record<string, unknown>;
@@ -357,269 +333,63 @@ async function ensurePromptSessionExists(args: {
     requireWorkspaceId,
     serverUrlOverride,
   } = args;
-  const { getAcpProcessManager } = await import("@/core/acp/processer");
-  const manager = getAcpProcessManager();
-  const store = getHttpSessionStore();
-  const forwardSessionUpdate = createSessionUpdateForwarder(store, sessionId);
 
-  const sessionExists =
-    manager.hasActiveSession(sessionId);
-
-  if (sessionExists) {
-    return null;
-  }
-
-  console.log(`[ACP Route] Session ${sessionId} not found, auto-creating with default settings...`);
-
-  const storedSession = store.getSession(sessionId);
-  const persistedSession =
-    storedSession
-      ? null
-      : (await loadSessionFromDb(sessionId)) ?? (await loadSessionFromLocalStorage(sessionId));
-  const recoveredSession = storedSession ?? persistedSession ?? undefined;
-  const ownershipIssue = getEmbeddedOwnershipIssue(recoveredSession);
-  if (ownershipIssue) {
-    return jsonrpcResponse(id ?? null, null, {
-      code: -32010,
-      message: ownershipIssue,
-      data: {
-        source: "app",
-        sessionId,
-      },
-    });
-  }
-
-  const cwd = recoveredSession?.cwd ?? (params.cwd as string | undefined) ?? process.cwd();
-  const defaultProvider = isServerlessEnvironment() ? "claude-code-sdk" : "opencode";
-  const provider = (params.provider as string | undefined) ?? recoveredSession?.provider ?? defaultProvider;
-  const workspaceId = requireWorkspaceId(params.workspaceId) ?? recoveredSession?.workspaceId;
-  if (!workspaceId) {
-    return jsonrpcResponse(id ?? null, null, {
-      code: -32602,
-      message: "workspaceId is required to recreate the session",
-    });
-  }
-  const role = recoveredSession?.role ?? "CRAFTER";
-  const toolMode = storedSession?.toolMode;
-  const mcpProfile = storedSession?.mcpProfile;
-  const allowedNativeTools = storedSession?.allowedNativeTools;
-  const specialistId = recoveredSession?.specialistId;
-  let specialistSystemPrompt = storedSession?.specialistSystemPrompt;
-  if (!specialistSystemPrompt && specialistId === TEAM_LEAD_SPECIALIST_ID) {
-    // The in-memory combined prompt is lost across restarts; rebuild it from
-    // persisted metadata (specialistId + teamChainId) so the selected Team
-    // Chain policy keeps participating in recovery.
-    specialistSystemPrompt = rebuildTeamLeadRecoveryPrompt(recoveredSession?.teamChainId ?? null);
-  }
-  const providerSessionId = recoveredSession?.routaAgentId ?? sessionId;
-  const modelArgs = buildProviderModelArgs(provider, recoveredSession?.model ?? storedSession?.model);
-
+  // User prompts recover the provider runtime through the same unified entry
+  // point as explicit session/load Resume and sub-Agent reports.
   try {
-    const preset = getPresetById(provider);
-    const isClaudeCode = preset?.nonStandardApi === true || provider === "claude";
-    const isClaudeCodeSdk = provider === "claude-code-sdk";
-    const isOpencodeSdk = provider === "opencode-sdk";
-    const isDockerOpenCode = provider === "docker-opencode";
-    const isCodex = provider === "codex";
-
-    let acpSessionId: string;
-
-    if (isOpencodeSdk) {
-      const { isOpencodeServerConfigured } = await import("@/core/acp/opencode-sdk-adapter");
-      if (!isOpencodeServerConfigured()) {
-        return jsonrpcResponse(id ?? null, null, {
-          code: -32002,
-          message: "Cannot auto-create session: OpenCode SDK not configured. Set OPENCODE_SERVER_URL environment variable.",
-        });
-      }
-
-      acpSessionId = await manager.createOpencodeSdkSession(
-        sessionId,
-        forwardSessionUpdate,
-      );
-    } else if (isDockerOpenCode) {
-      const dockerStatus = await getDockerDetector().checkAvailability();
-      if (!dockerStatus.available) {
-        return jsonrpcResponse(id ?? null, null, {
-          code: -32003,
-          message: dockerStatus.error
-            ? `Cannot auto-create Docker session: ${dockerStatus.error}`
-            : "Cannot auto-create Docker session: Docker daemon unavailable.",
-        });
-      }
-
-      const authJson = (params.authJson as string | undefined);
-      acpSessionId = await manager.createDockerSession(
-        sessionId,
-        cwd,
-        forwardSessionUpdate,
-        process.env.ROUTA_DOCKER_OPENCODE_IMAGE ?? DEFAULT_DOCKER_AGENT_IMAGE,
-        undefined,
-        authJson,
-      );
-    } else if (isClaudeCodeSdk) {
-      const { isClaudeCodeSdkConfigured } = await import("@/core/acp/claude-code-sdk-adapter");
-      if (!isClaudeCodeSdkConfigured()) {
-        return jsonrpcResponse(id ?? null, null, {
-          code: -32002,
-          message: "Cannot auto-create session: Claude Code SDK not configured. Set ANTHROPIC_AUTH_TOKEN environment variable.",
-        });
-      }
-
-      acpSessionId = await manager.createClaudeCodeSdkSession(
-        sessionId,
-        cwd,
-        forwardSessionUpdate,
-        {
-          provider: "claude-code-sdk",
-          role,
-          specialistId,
-          model: storedSession?.model,
-          allowedNativeTools,
-          systemPromptAppend: specialistSystemPrompt,
-        },
-      );
-    } else if (isClaudeCode) {
-      const mcpConfigs = await buildMcpConfigForClaude(workspaceId, sessionId, toolMode, mcpProfile);
-      acpSessionId = await manager.createClaudeSession(
-        sessionId,
-        cwd,
-        forwardSessionUpdate,
-        mcpConfigs,
-        undefined,
-        role,
-        undefined,
-        allowedNativeTools,
-      );
-    } else if (isCodex) {
-      try {
-        acpSessionId = await manager.loadSession(
-          sessionId,
-          cwd,
-          forwardSessionUpdate,
-          "codex",
-          workspaceId,
-          toolMode,
-          mcpProfile,
-          serverUrlOverride,
-          {
-            provider,
-            role,
-          },
-          providerSessionId,
-          undefined,
-          modelArgs,
-        );
-        console.log(`[ACP Route] Native Codex resume succeeded for session ${sessionId}`);
-      } catch (resumeError) {
-        console.warn(`[ACP Route] Native Codex resume failed for ${sessionId}, falling back to recreate:`, resumeError);
-        acpSessionId = await manager.createSession(
-          sessionId,
-          cwd,
-          forwardSessionUpdate,
-          provider,
-          undefined,
-          modelArgs,
-          undefined,
-          workspaceId,
-          toolMode,
-          mcpProfile,
-          serverUrlOverride,
-          {
-            provider,
-            role,
-          },
-          undefined,
-        );
-      }
-    } else {
-      acpSessionId = await manager.createSession(
-        sessionId,
-        cwd,
-        forwardSessionUpdate,
-        provider,
-        undefined,
-        modelArgs,
-        undefined,
-        workspaceId,
-        toolMode,
-        mcpProfile,
-        serverUrlOverride,
-        {
-          provider,
-          role,
-        },
-        undefined,
-      );
-    }
-
-    const now = new Date();
-    const executionBinding = buildExecutionBinding("embedded");
-    store.upsertSession({
+    await ensureSessionRuntime({
       sessionId,
-      cwd,
-      workspaceId,
-      routaAgentId: acpSessionId,
-      provider,
-      role,
-      toolMode,
-      mcpProfile,
-      allowedNativeTools,
-      specialistId,
-      specialistSystemPrompt,
-      createdAt: now.toISOString(),
-      ...executionBinding,
+      cwdFallback: params.cwd as string | undefined,
+      providerOverride: params.provider as string | undefined,
+      workspaceId: requireWorkspaceId(params.workspaceId) ?? undefined,
+      dockerAuthJson: params.authJson as string | undefined,
+      serverUrlOverride,
+      allowFreshCreate: true,
+      traceSessionStart: true,
+      createSessionUpdateForwarder,
+      buildMcpConfigForClaude,
     });
-
-    await persistSessionToDb({
-      id: sessionId,
-      cwd,
-      workspaceId,
-      routaAgentId: acpSessionId,
-      provider,
-      role,
-      specialistId: specialistId ?? undefined,
-      teamChainId: recoveredSession?.teamChainId ?? undefined,
-      ...executionBinding,
-    });
-
-    console.log(`[ACP Route] Auto-created session: ${sessionId} (provider: ${provider}, agent session: ${acpSessionId})`);
-
-    const sessionStartTrace = withMetadata(
-      withMetadata(
-        withWorkspaceId(
-          createTraceRecord(sessionId, "session_start", { provider }),
-          workspaceId,
-        ),
-        "cwd",
-        cwd,
-      ),
-      "role",
-      role,
-    );
-    recordTrace(cwd, sessionStartTrace);
     return null;
   } catch (err) {
+    if (err instanceof SessionRuntimeRecoveryError) {
+      return jsonrpcResponse(id ?? null, null, err.jsonRpcError);
+    }
     console.error("[ACP Route] Failed to auto-create session:", err);
-    return jsonrpcResponse(id ?? null, null, {
-      code: -32000,
-      message: `Failed to auto-create session: ${err instanceof Error ? err.message : "Unknown error"}`,
-    });
+    const failureError = buildRecoveryFailedError(
+      `Failed to auto-create session: ${err instanceof Error ? err.message : "Unknown error"}`,
+    );
+    return jsonrpcResponse(id ?? null, null, failureError);
   }
 }
 
 function createStreamingSseResponse(args: {
   sessionId: string;
   store: ReturnType<typeof getHttpSessionStore>;
+  encodeSsePayload?: SsePayloadEncoder;
+  /** When present, emit a `prompt_accepted` session/update frame first. */
+  promptId?: string;
   run: (controller: ReadableStreamDefaultController<Uint8Array>, encoder: TextEncoder) => Promise<void>;
 }): Response {
-  const { sessionId, store, run } = args;
+  const { sessionId, store, encodeSsePayload, promptId, run } = args;
   store.enterStreamingMode(sessionId);
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     start(controller) {
       // Emit an initial comment frame so proxies/clients start consuming the stream early.
       controller.enqueue(encoder.encode(": stream-open\n\n"));
+
+      // Durable delivery acknowledgement: this promptId was accepted for
+      // execution before any provider event is emitted.
+      if (promptId && encodeSsePayload) {
+        controller.enqueue(encoder.encode(encodeSsePayload({
+          jsonrpc: "2.0",
+          method: "session/update",
+          params: {
+            sessionId,
+            update: { sessionUpdate: "prompt_accepted", promptId },
+          },
+        })));
+      }
 
       // Do not await the long-running prompt stream in `start()`.
       // Keeping start non-blocking avoids buffering the whole SSE response.
@@ -675,6 +445,17 @@ export async function handleSessionPrompt({
     });
   }
 
+  const promptId = typeof p.promptId === "string" ? p.promptId.trim() : "";
+
+  // Merge the durable delivery acknowledgement into non-streaming results.
+  const withPromptAck = (result: unknown): unknown => {
+    if (!promptId) return result;
+    if (result && typeof result === "object" && !Array.isArray(result)) {
+      return { ...(result as Record<string, unknown>), promptId, promptAccepted: true };
+    }
+    return { result, promptId, promptAccepted: true };
+  };
+
   const { getAcpProcessManager } = await import("@/core/acp/processer");
   const manager = getAcpProcessManager();
   const store = getHttpSessionStore();
@@ -725,14 +506,36 @@ export async function handleSessionPrompt({
 
   const visiblePromptText = promptText;
 
-  const activeSessionRecord = store.getSession(sessionId);
-  if (activeSessionRecord?.executionMode) {
-    const refreshedBinding = refreshExecutionBinding(activeSessionRecord);
-    store.upsertSession(refreshedBinding);
-    void updateSessionExecutionBindingInDb(sessionId, {
-      executionMode: refreshedBinding.executionMode,
-      ownerInstanceId: refreshedBinding.ownerInstanceId,
-      leaseExpiresAt: refreshedBinding.leaseExpiresAt,
+  // Checked lease heartbeat on prompt acceptance (fail-closed). The refresh
+  // uses the same atomic compare-and-swap as recovery acquisition, so it can
+  // never clobber a binding owned by another instance — but when the CAS
+  // PROVES the lease was lost, dispatch must stop and the orphaned runtime is
+  // isolated. When the lease cannot be verified at all (DB outage), dispatch
+  // stops fail-closed WITHOUT killing the runtime; the client keeps the input
+  // and can retry. Sessions without a durable embedded lease record proceed.
+  const leaseCheck = await checkEmbeddedSessionLeaseForDispatch(store, store.getSession(sessionId));
+  if (leaseCheck.status === "lost") {
+    manager.killSession(sessionId);
+    return jsonrpcResponse(id ?? null, null, {
+      code: RECOVERY_JSON_RPC_CODES.runtimeOwned,
+      message:
+        `Session ${sessionId} is currently owned by instance ${leaseCheck.ownerInstanceId ?? "another instance"}; ` +
+        "the local runtime was isolated. The prompt was NOT dispatched; retry against the owning instance.",
+      data: buildRecoveryErrorData("runtime_owned", {
+        ownerInstanceId: leaseCheck.ownerInstanceId,
+        leaseExpiresAt: leaseCheck.leaseExpiresAt,
+        retryAfterMs: computeLeaseRetryAfterMs(leaseCheck.leaseExpiresAt),
+        sessionId,
+      }),
+    });
+  }
+  if (leaseCheck.status === "unavailable") {
+    return jsonrpcResponse(id ?? null, null, {
+      code: RECOVERY_JSON_RPC_CODES.recoveryUnavailable,
+      message:
+        `Session runtime lease for ${sessionId} could not be verified because the session database is unavailable. ` +
+        "The prompt was NOT dispatched; please retry.",
+      data: buildRecoveryErrorData("recovery_unavailable", { retryable: true, sessionId }),
     });
   }
 
@@ -774,8 +577,54 @@ export async function handleSessionPrompt({
     }
   }
 
-  store.pushUserMessage(sessionId, visiblePromptText);
+  // Durable prompt delivery acknowledgement. With a promptId, the user
+  // message / delivery event is recorded exactly once (appendHistoryOnce) and
+  // a duplicate delivery during normal retries neither appends nor dispatches
+  // again — the caller receives the existing acknowledgement. Persistence
+  // failures FAIL CLOSED: the prompt is not dispatched and not reported as
+  // accepted (or duplicate), so the client keeps the input and can retry.
+  if (promptId) {
+    const deliveryAck = await acknowledgePromptDeliveryOnce(sessionId, promptId, visiblePromptText);
+    if (deliveryAck.status === "duplicate") {
+      return jsonrpcResponse(id ?? null, {
+        sessionId,
+        promptId,
+        promptAccepted: true,
+        duplicate: true,
+      });
+    }
+    if (deliveryAck.status === "session_not_found") {
+      return jsonrpcResponse(id ?? null, null, {
+        code: -32004,
+        message: `Session ${sessionId} was not found; the prompt was not recorded or delivered`,
+        data: { reason: "session_not_found", retryable: false, promptId },
+      });
+    }
+    if (deliveryAck.status === "unavailable") {
+      return jsonrpcResponse(id ?? null, null, {
+        code: -32000,
+        message: `Prompt delivery could not be durably recorded: ${deliveryAck.error}. The prompt was NOT dispatched; please retry.`,
+        data: { reason: "prompt_delivery_unavailable", retryable: true, promptId },
+      });
+    }
+    store.pushUserMessage(sessionId, visiblePromptText, promptId);
+  } else {
+    store.pushUserMessage(sessionId, visiblePromptText);
+  }
   await persistSessionHistorySnapshot(sessionId, store);
+
+  // One-shot recovery context prefix: providers without a system-prompt
+  // append channel receive the bounded recovery envelope as a clearly-marked
+  // prefix on the first dispatched prompt after a context rebuild. It is
+  // consumed exactly once here and only after delivery was durably recorded —
+  // a fail-closed persistence failure above keeps it queued for the retry.
+  // The envelope is never recorded in durable history (only visiblePromptText
+  // is) and never re-dispatched on later prompts.
+  const pendingRecoveryContext = consumePendingRecoveryContext(sessionId);
+  if (pendingRecoveryContext) {
+    promptText = `${pendingRecoveryContext}\n\n${promptText}`;
+  }
+
   const sessionRecord = store.getSession(sessionId);
 
   if (manager.isOpencodeAdapterSession(sessionId) || await manager.isOpencodeSdkSessionAsync(sessionId)) {
@@ -801,6 +650,8 @@ export async function handleSessionPrompt({
     return createStreamingSseResponse({
       sessionId,
       store,
+      encodeSsePayload,
+      promptId: promptId || undefined,
       run: async (controller, encoder) => {
         try {
           for await (const event of opcAdapter.promptStream(promptText, sessionId, skillContent, sessionRecord?.workspaceId ?? undefined)) {
@@ -860,6 +711,8 @@ export async function handleSessionPrompt({
     return createStreamingSseResponse({
       sessionId,
       store,
+      encodeSsePayload,
+      promptId: promptId || undefined,
       run: async (controller, encoder) => {
         try {
           for await (const event of dockerAdapter.promptStream(
@@ -928,6 +781,8 @@ export async function handleSessionPrompt({
     return createStreamingSseResponse({
       sessionId,
       store,
+      encodeSsePayload,
+      promptId: promptId || undefined,
       run: async (controller, encoder) => {
         try {
           for await (const event of adapter.promptStream(promptText, sessionId, skillContent)) {
@@ -1006,6 +861,14 @@ export async function handleSessionPrompt({
           restartToolMode,
           restartMcpProfile,
         );
+        // Seed the restart with the persisted provider-native ID when one was
+        // captured from system/init (never the Routa Session ID), so the
+        // conversation resumes natively; the capture hook persists any new
+        // native ID the restarted CLI reports.
+        const restartResumeSeed = sanitizeClaudeProviderSessionId(
+          restartRecord.providerSessionId,
+          sessionId,
+        );
         await manager.createClaudeSession(
           sessionId,
           restartCwd,
@@ -1015,8 +878,12 @@ export async function handleSessionPrompt({
           restartRole,
           undefined,
           restartAllowedNativeTools,
+          restartResumeSeed,
+          (captured: string) => {
+            void persistCapturedProviderSessionId(sessionId, captured);
+          },
         );
-        console.log(`[ACP Route] Restarted Claude Code process for session ${sessionId}`);
+        console.info(`[ACP Route] Restarted Claude Code process for session ${sessionId}`);
       } catch (restartErr) {
         return jsonrpcResponse(id ?? null, null, {
           code: -32000,
@@ -1036,7 +903,7 @@ export async function handleSessionPrompt({
         store.flushAgentBuffer(sessionId);
         await persistSessionHistorySnapshot(sessionId, store);
         await releaseCompletedClaudeProcess(sessionId, result, manager, store);
-        return jsonrpcResponse(id ?? null, result);
+        return jsonrpcResponse(id ?? null, withPromptAck(result));
       } catch (err) {
         if (isSessionPromptTimeoutError(err)) {
           console.warn(
@@ -1045,7 +912,7 @@ export async function handleSessionPrompt({
           );
           store.flushAgentBuffer(sessionId);
           void persistSessionHistorySnapshot(sessionId, store);
-          return jsonrpcResponse(id ?? null, { sessionId, pending: true });
+          return jsonrpcResponse(id ?? null, withPromptAck({ sessionId, pending: true }));
         }
         const message = markSessionPromptError(store, sessionId, err, "Claude Code prompt failed after restart");
         store.flushAgentBuffer(sessionId);
@@ -1064,7 +931,7 @@ export async function handleSessionPrompt({
       store.flushAgentBuffer(sessionId);
       await persistSessionHistorySnapshot(sessionId, store);
       await releaseCompletedClaudeProcess(sessionId, result, manager, store);
-      return jsonrpcResponse(id ?? null, result);
+      return jsonrpcResponse(id ?? null, withPromptAck(result));
     } catch (err) {
       if (isSessionPromptTimeoutError(err)) {
         console.warn(
@@ -1073,7 +940,7 @@ export async function handleSessionPrompt({
         );
         store.flushAgentBuffer(sessionId);
         void persistSessionHistorySnapshot(sessionId, store);
-        return jsonrpcResponse(id ?? null, { sessionId, pending: true });
+        return jsonrpcResponse(id ?? null, withPromptAck({ sessionId, pending: true }));
       }
       const message = markSessionPromptError(store, sessionId, err, "Claude Code prompt failed");
       store.flushAgentBuffer(sessionId);
@@ -1109,7 +976,7 @@ export async function handleSessionPrompt({
     maybePushSyntheticTurnComplete(store, sessionId, result);
     store.flushAgentBuffer(sessionId);
     void persistSessionHistorySnapshot(sessionId, store);
-    return jsonrpcResponse(id ?? null, result);
+    return jsonrpcResponse(id ?? null, withPromptAck(result));
   } catch (err) {
     if (isSessionPromptTimeoutError(err)) {
       console.warn(
@@ -1118,7 +985,7 @@ export async function handleSessionPrompt({
       );
       store.flushAgentBuffer(sessionId);
       void persistSessionHistorySnapshot(sessionId, store);
-      return jsonrpcResponse(id ?? null, { sessionId, pending: true });
+      return jsonrpcResponse(id ?? null, withPromptAck({ sessionId, pending: true }));
     }
     const message = markSessionPromptError(store, sessionId, err, "Prompt failed");
     store.flushAgentBuffer(sessionId);

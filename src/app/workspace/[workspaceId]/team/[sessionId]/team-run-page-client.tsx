@@ -40,6 +40,8 @@ import {
   resolveDelegationRosterSpecialistId,
   resolveDelegationTarget,
   resolveRosterSpecialistId,
+  resolveSessionRuntimeStatus,
+  resolveTeamPromptErrorI18nKey,
   sessionBadge,
   summarizeText,
   TEAM_LEAD_SPECIALIST_ID,
@@ -176,6 +178,10 @@ export function TeamRunPageClient() {
   const [selectedSessionId, setSelectedSessionId] = useState<string>(sessionId);
   const [selectedSessionForModal, setSelectedSessionForModal] = useState<string | null>(null);
   const [timelineInputKey, setTimelineInputKey] = useState(0);
+  const [timelinePrefillText, setTimelinePrefillText] = useState<string | null>(null);
+  const [timelinePromptError, setTimelinePromptError] = useState<string | null>(null);
+  const [timelinePromptSending, setTimelinePromptSending] = useState(false);
+  const [failedTimelinePrompt, setFailedTimelinePrompt] = useState<string | null>(null);
   const [repoSelection, setRepoSelection] = useState<RepoSelection | null>(null);
   const [isSwitchingTeamRun, setIsSwitchingTeamRun] = useState(false);
   const sessionBlockRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -447,11 +453,42 @@ export function TeamRunPageClient() {
     node.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, []);
 
-  const handleTimelinePrompt = useCallback((text: string) => {
-    if (!sessionId) return;
-    void acpPromptSession(sessionId, text);
-    setTimelineInputKey((current) => current + 1);
-  }, [acpPromptSession, sessionId]);
+  const handleTimelinePrompt = useCallback(async (text: string) => {
+    if (!sessionId || timelinePromptSending) return;
+    setTimelinePromptSending(true);
+    setTimelinePromptError(null);
+    try {
+      await acpPromptSession(sessionId, text, undefined, { throwOnError: true });
+      setFailedTimelinePrompt(null);
+      setTimelinePrefillText(null);
+      // Clear the composer only after the backend has accepted the prompt.
+      setTimelineInputKey((current) => current + 1);
+    } catch (err) {
+      // Preserve the unsent input and surface the error (ownership/recovery
+      // failures included) with a Retry action. Retrying a suspended session
+      // goes through the same prompt entry point, which triggers recovery.
+      // Structured recovery failures (ownership, DB unavailability, team
+      // binding restoration) map to localized explanations; anything else
+      // falls back to the raw error message.
+      setFailedTimelinePrompt(text);
+      setTimelinePrefillText(text);
+      setTimelineInputKey((current) => current + 1);
+      const errorI18nKey = resolveTeamPromptErrorI18nKey(err);
+      setTimelinePromptError(
+        errorI18nKey
+          ? t.teamRuntime[errorI18nKey]
+          : (err instanceof Error ? err.message : String(err)),
+      );
+    } finally {
+      setTimelinePromptSending(false);
+    }
+  }, [acpPromptSession, sessionId, t, timelinePromptSending]);
+
+  const handleRetryTimelinePrompt = useCallback(() => {
+    if (!failedTimelinePrompt || timelinePromptSending) return;
+    setTimelinePrefillText(null);
+    void handleTimelinePrompt(failedTimelinePrompt);
+  }, [failedTimelinePrompt, handleTimelinePrompt, timelinePromptSending]);
 
   useEffect(() => {
     if (!sessionId || !acpConnected || acpLoading) return;
@@ -1001,7 +1038,7 @@ export function TeamRunPageClient() {
       actor: specialistsById.get(TEAM_LEAD_SPECIALIST_ID)?.name ?? "Agent Lead",
       roleId: TEAM_LEAD_SPECIALIST_ID,
       roleLabel: TEAM_LEAD_SPECIALIST_ID,
-      status: session?.acpStatus === "error" ? "blocked" : "working",
+      status: session ? resolveSessionRuntimeStatus(session) : "idle",
       lastUpdatedLabel: leadStream?.lastUpdatedLabel ?? formatRelativeTime(session?.createdAt ?? new Date().toISOString()),
       sessionId,
       preview: leadStream?.preview,
@@ -1046,7 +1083,7 @@ export function TeamRunPageClient() {
       let status: TeamMemberStatus = "idle";
 
       if (specialist.id === TEAM_LEAD_SPECIALIST_ID && session) {
-        status = session.acpStatus === "error" ? "blocked" : "working";
+        status = resolveSessionRuntimeStatus(session);
       } else if (latest?.session.acpStatus === "error" || normalizeTaskStatus(latestCompletion?.update?.taskStatus) === "blocked") {
         status = "blocked";
       } else if (normalizeTaskStatus(latestCompletion?.update?.taskStatus) === "done") {
@@ -1223,7 +1260,7 @@ export function TeamRunPageClient() {
   );
 
   const sessionLanes = useMemo<SessionLaneItem[]>(() => {
-    const leadStatus = session?.acpStatus === "error" ? "blocked" : "working";
+    const leadStatus: TeamMemberStatus = session ? resolveSessionRuntimeStatus(session) : "idle";
     const leadSnippets = buildLaneSnippets(rootHistory.filter((entry) => {
       const type = entry.update?.sessionUpdate;
       return type === "user_message" || type === "agent_message" || type === "tool_call_update" || type === "task_completion";
@@ -1445,11 +1482,28 @@ export function TeamRunPageClient() {
             />
 
             <div className="shrink-0 border-t border-desktop-border bg-desktop-bg-primary px-3 py-2">
+              {timelinePromptError && (
+                <div className="mb-2 flex items-start justify-between gap-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                  <span className="min-w-0 break-words">
+                    {t.teamRuntime.promptFailed}: {timelinePromptError}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleRetryTimelinePrompt}
+                    disabled={timelinePromptSending || !failedTimelinePrompt}
+                    className="shrink-0 rounded border border-rose-300 px-2 py-0.5 font-medium transition hover:bg-rose-100 disabled:opacity-50 dark:border-rose-500/40 dark:hover:bg-rose-500/20"
+                  >
+                    {t.teamRuntime.promptRetry}
+                  </button>
+                </div>
+              )}
               <TiptapInput
                 key={timelineInputKey}
                 onSend={(text) => handleTimelinePrompt(text)}
-                disabled={!acpConnected || showRunLoadingState}
+                disabled={!acpConnected || showRunLoadingState || timelinePromptSending}
                 loading={acpLoading}
+                prefillText={timelinePrefillText}
+                onPrefillConsumed={() => setTimelinePrefillText(null)}
                 skills={[]}
                 repoSkills={[]}
                 providers={acpProviders}

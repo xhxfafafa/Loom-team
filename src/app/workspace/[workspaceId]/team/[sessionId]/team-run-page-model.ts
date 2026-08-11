@@ -22,7 +22,15 @@ export interface AgentSummary {
 }
 
 export type NormalizedTaskStatus = "not-started" | "in-progress" | "waiting-review" | "done" | "blocked";
-export type TeamMemberStatus = "idle" | "working" | "blocked" | "reviewing" | "done";
+export type TeamMemberStatus =
+  | "idle"
+  | "working"
+  | "blocked"
+  | "reviewing"
+  | "done"
+  | "suspended"
+  | "recovering"
+  | "failed";
 export type CoordinationEventType = "plan" | "assign" | "revision" | "finding" | "complete" | "blocked";
 export type RoleTone = "lead" | "qa" | "research" | "frontend" | "backend" | "review" | "ux" | "ops" | "general" | "neutral";
 
@@ -184,6 +192,26 @@ export function mapAgentStatus(status?: string): TeamMemberStatus {
   }
 }
 
+/**
+ * Derive the member/lead status from runtime continuity instead of assuming a
+ * Lead is always working.
+ *
+ * - `connecting` → recovering (recovery in progress)
+ * - `error` → failed (recovery/runtime failed with a real error)
+ * - `continuityStatus=active` → working (live runtime)
+ * - anything else (restorable/interrupted/stale or unknown) → suspended
+ *
+ * A session is never labeled working solely because it is the Team Lead.
+ */
+export function resolveSessionRuntimeStatus(
+  session: Pick<SessionInfo, "acpStatus" | "continuityStatus">,
+): TeamMemberStatus {
+  if (session.acpStatus === "connecting") return "recovering";
+  if (session.acpStatus === "error") return "failed";
+  if (session.continuityStatus === "active") return "working";
+  return "suspended";
+}
+
 export function avatarInitials(label: string): string {
   return label
     .split(/\s+/)
@@ -208,10 +236,15 @@ export function statusDotClass(status: TeamMemberStatus): string {
       return "bg-cyan-500";
     case "reviewing":
       return "bg-amber-500";
+    case "recovering":
+      return "bg-amber-500 animate-pulse";
     case "blocked":
+    case "failed":
       return "bg-rose-500";
     case "done":
       return "bg-emerald-500";
+    case "suspended":
+      return "bg-slate-500";
     default:
       return "bg-slate-400";
   }
@@ -741,4 +774,45 @@ export function findObjectiveText(session: SessionInfo | null, rootHistory: Sess
   }
 
   return normalizeObjectiveText(session?.name) ?? "Team objective not captured yet.";
+}
+
+/** i18n keys under `teamRuntime` for structured session-recovery failures. */
+export type TeamPromptErrorI18nKey =
+  | "promptErrorRuntimeOwned"
+  | "promptErrorRecoveryUnavailable"
+  | "promptErrorSessionNotFound"
+  | "promptErrorMissingTeamMetadata"
+  | "promptErrorTeamBindingsIncomplete";
+
+/**
+ * Map a structured session-recovery error (AcpClientError-compatible: a JSON-RPC
+ * `code` plus `data.reason` / `data.failure`) to the Team UI i18n key that
+ * explains it. Returns null for anything without a recognized recovery reason —
+ * callers then fall back to the raw error message. Branching happens ONLY on
+ * the structured fields shared by the Web and Rust backends, never on text.
+ */
+export function resolveTeamPromptErrorI18nKey(err: unknown): TeamPromptErrorI18nKey | null {
+  if (typeof err !== "object" || err === null) return null;
+  const code = (err as { code?: unknown }).code;
+  const data = (err as { data?: unknown }).data;
+  if (typeof code !== "number" || typeof data !== "object" || data === null) return null;
+  const reason = (data as { reason?: unknown }).reason;
+
+  switch (reason) {
+    case "runtime_owned":
+      return code === -32010 ? "promptErrorRuntimeOwned" : null;
+    case "recovery_unavailable":
+      return code === -32011 ? "promptErrorRecoveryUnavailable" : null;
+    case "session_not_found":
+      return code === -32004 ? "promptErrorSessionNotFound" : null;
+    case "recovery_failed": {
+      if (code !== -32012) return null;
+      const failure = (data as { failure?: unknown }).failure;
+      if (failure === "missing_team_metadata") return "promptErrorMissingTeamMetadata";
+      if (failure === "team_bindings_incomplete") return "promptErrorTeamBindingsIncomplete";
+      return null;
+    }
+    default:
+      return null;
+  }
 }

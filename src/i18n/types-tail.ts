@@ -514,4 +514,23 @@ export interface TailTranslationDictionarySections {
     sourceFallback: string;
     sourceLabel: string;
   };
+
+  // Team runtime continuity statuses and prompt failure actions
+  teamRuntime: {
+    statusIdle: string;
+    statusWorking: string;
+    statusBlocked: string;
+    statusReviewing: string;
+    statusDone: string;
+    statusSuspended: string;
+    statusRecovering: string;
+    statusFailed: string;
+    promptFailed: string;
+    promptRetry: string;
+    promptErrorRuntimeOwned: string;
+    promptErrorRecoveryUnavailable: string;
+    promptErrorSessionNotFound: string;
+    promptErrorMissingTeamMetadata: string;
+    promptErrorTeamBindingsIncomplete: string;
+  };
 }

@@ -516,4 +516,26 @@ export const enTail: TailTranslationDictionarySections = {
     sourceFallback: "Generated from template (LLM unavailable)",
     sourceLabel: "Source",
   },
+
+  teamRuntime: {
+    statusIdle: "Idle",
+    statusWorking: "Working",
+    statusBlocked: "Blocked",
+    statusReviewing: "Reviewing",
+    statusDone: "Done",
+    statusSuspended: "Suspended",
+    statusRecovering: "Recovering",
+    statusFailed: "Failed",
+    promptFailed: "Prompt failed",
+    promptRetry: "Retry",
+    promptErrorRuntimeOwned:
+      "This session is currently owned by another Routa instance. Wait for its lease to expire or be released before resuming here.",
+    promptErrorRecoveryUnavailable:
+      "Session ownership could not be verified because the database is unavailable. No runtime was started — please retry.",
+    promptErrorSessionNotFound: "This session no longer exists on the server.",
+    promptErrorMissingTeamMetadata:
+      "Team recovery failed: required team metadata is missing, so the Team runtime cannot be restored. History and input are preserved; the session was not degraded to plain chat.",
+    promptErrorTeamBindingsIncomplete:
+      "Team recovery failed: the team runtime bindings could not be restored. History and input are preserved; the session was not degraded to plain chat. Please retry.",
+  },
 };

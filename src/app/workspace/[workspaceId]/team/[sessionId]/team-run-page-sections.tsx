@@ -203,6 +203,7 @@ export function TeamMembersSection({
   onFocusSession: (sessionId: string) => void;
 }) {
   const { t } = useTranslation();
+  const statusLabels = useTeamMemberStatusLabels();
   return (
     <aside className="min-h-0 overflow-hidden border-l border-desktop-border bg-desktop-bg-secondary">
       <div className="border-b border-desktop-border px-2.5 py-1.5">
@@ -236,7 +237,7 @@ export function TeamMembersSection({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <div className="truncate text-[11px] font-semibold text-desktop-text-primary">{member.actor}</div>
-                      <span className="shrink-0 text-[10px] uppercase tracking-[0.12em] text-desktop-text-secondary">{member.status}</span>
+                      <span className="shrink-0 text-[10px] uppercase tracking-[0.12em] text-desktop-text-secondary">{statusLabels[member.status]}</span>
                     </div>
                     <div className="mt-0.5 truncate text-[10px] text-desktop-text-secondary">
                       {member.sessionId ? member.roleLabel : `${member.roleLabel} · ${t.team.noSessionYet}`}
@@ -345,20 +346,35 @@ function TaskStatusPill({ status }: { status: NormalizedTaskStatus }) {
   );
 }
 
+function useTeamMemberStatusLabels(): Record<TeamMemberStatus, string> {
+  const { t } = useTranslation();
+  return {
+    idle: t.teamRuntime.statusIdle,
+    working: t.teamRuntime.statusWorking,
+    blocked: t.teamRuntime.statusBlocked,
+    reviewing: t.teamRuntime.statusReviewing,
+    done: t.teamRuntime.statusDone,
+    suspended: t.teamRuntime.statusSuspended,
+    recovering: t.teamRuntime.statusRecovering,
+    failed: t.teamRuntime.statusFailed,
+  };
+}
+
 function SessionStatusPill({ status }: { status: TeamMemberStatus }) {
+  const statusLabels = useTeamMemberStatusLabels();
   const tone =
     status === "working"
       ? "bg-cyan-100 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300"
-      : status === "reviewing"
+      : status === "reviewing" || status === "recovering"
         ? "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
         : status === "done"
           ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-          : status === "blocked"
+          : status === "blocked" || status === "failed"
             ? "bg-rose-100 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"
             : "bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300";
   return (
     <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] ${tone}`}>
-      {status}
+      {statusLabels[status]}
     </span>
   );
 }

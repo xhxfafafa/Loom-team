@@ -510,4 +510,24 @@ export const zhTail: TailTranslationDictionarySections = {
     sourceFallback: "由模板生成（大模型不可用）",
     sourceLabel: "来源",
   },
+
+  teamRuntime: {
+    statusIdle: "空闲",
+    statusWorking: "工作中",
+    statusBlocked: "受阻",
+    statusReviewing: "评审中",
+    statusDone: "已完成",
+    statusSuspended: "已暂停",
+    statusRecovering: "恢复中",
+    statusFailed: "失败",
+    promptFailed: "提示词发送失败",
+    promptRetry: "重试",
+    promptErrorRuntimeOwned: "该会话当前由另一个 Routa 实例持有，需等待其租约过期或释放后才能在本实例恢复。",
+    promptErrorRecoveryUnavailable: "数据库不可用，无法验证会话归属，未启动运行时，请重试。",
+    promptErrorSessionNotFound: "该会话在服务端已不存在。",
+    promptErrorMissingTeamMetadata:
+      "Team 恢复失败：缺少必需的 Team 元数据，无法恢复 Team 运行时。历史与输入已保留，会话未降级为普通聊天。",
+    promptErrorTeamBindingsIncomplete:
+      "Team 恢复失败：Team 运行时绑定未能恢复。历史与输入已保留，会话未降级为普通聊天，请重试。",
+  },
 };

@@ -57,6 +57,7 @@ metrics:
 | task | `GET /api/tasks/{id}` | get | 创建/更新后的持久可读性 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_task_flow_with_validation` |
 | task | `PATCH/DELETE /api/tasks/{id}` | update/delete | PATCH 与 DELETE 行为一致 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_task_flow_with_validation` |
 | task | `POST /api/tasks` | create | 创建成功与字段校验 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_task_flow_with_validation` |
+| task | `GET /api/tasks?teamRunId=` | team run filter + workspace isolation | 正向过滤仅返回本 workspace 绑定该 team run 的任务（响应携带 `teamRunId`）；未绑定任务与其他 workspace 任务不出现；未知 teamRunId 返回 200 + 空数组 | VERIFIED | `crates/routa-server/tests/rust_api_tasks_team_run.rs::api_tasks_filter_by_team_run_id_with_workspace_isolation`（store 层 `list_by_team_run_is_workspace_scoped` 见 `crates/routa-core/src/store/task_store.rs` tests） |
 | kanban | `POST /api/kanban/import` | import | YAML 导入成功并返回 applied 明细 | VERIFIED | `crates/routa-server/tests/rust_api_task_artifacts.rs::api_kanban_import_export_roundtrip` |
 | kanban | `GET /api/kanban/export` | export + validation | YAML 导出成功；缺失 `workspaceId` 返回 400 | VERIFIED | `crates/routa-server/tests/rust_api_task_artifacts.rs::api_kanban_import_export_roundtrip` |
 | codebase | `POST /api/workspaces/{workspaceId}/codebases` | create + duplicate handling | bare repo 拒绝、创建返回 201、冲突返回语义一致性 | VERIFIED | `crates/routa-server/tests/rust_api_end_to_end.rs::api_codebase_and_file_search_flow` |

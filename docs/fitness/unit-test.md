@@ -187,6 +187,43 @@ metrics:
 - `src/app/workspace/[workspaceId]/team/__tests__/delete-team-run-dialog.test.tsx`
   - 锁定删除确认对话框：预览统计展示、输入 DELETE/Team 名才可确认、取消、runner 阻断、删除/预览失败的本地化错误。
 
+## Team Task Lifecycle / Kanban Consistency (Web + Rust)
+
+锁定 design doc `docs/design-docs/team-task-lifecycle-consistency.md` 的两个问题：
+Team 子 Agent 已创建 Task/Agent/子 Session 时，Team 任务树与看板卡片必须立即可见且 Session 可读；
+终态 Task（COMPLETED/BLOCKED）无论 `columnId` 为空还是过期，都必须显示在语义终态列且不可再 Run。
+
+### Web
+
+- `src/core/kanban/__tests__/task-status-transition.test.ts`
+  - 锁定共享读写规则 `applyTaskStatusTransition` / `resolveEffectiveColumnIdForRead` / `isTaskTerminalForRead`：终态状态优先于列、终态列解析顺序（语义 stage → 字面 id → 保留合法当前列 → Backlog 兜底，永不写幻影列）、NEEDS_FIX 不自动映射列、历史 `COMPLETED + 空 columnId` 读侧投影到 Done。
+- `src/app/api/tasks/[taskId]/status/__tests__/route.test.ts`
+  - 锁定 `POST /api/tasks/[taskId]/status`：COMPLETED/BLOCKED 一次写入同时落状态与语义终态列；无终态列时保留合法当前列；无 board 上下文回退字面终态 id；非终态状态保留历史 status→column 映射；非法状态与未知任务分别 400/404。
+- `src/app/api/tasks/__tests__/route.test.ts`
+  - 锁定 `GET /api/tasks?teamRunId=` 过滤优先于其他查询参数，且 `teamRunId` 字段序列化 undefined-safe。
+- `src/core/orchestration/__tests__/orchestrator.test.ts`
+  - 锁定 delegation 持久化与幂等：绑定 claim 先于激活/派发持久化；claim 前子会话创建失败任务零变更；重复 delegate 复用活跃绑定而不重复 spawn；非活跃绑定不复用；prompt 派发失败保留会话用于诊断并阻塞任务；claim 版本竞态失败时清理新资源（或返回赢家绑定）；持久化异常绝不返回成功；同一任务的并发 delegation 串行化；`sessionId` 永远是创建者会话，子会话去重追加进 `sessionIds`。
+- `src/core/tools/__tests__/agent-tools-extended.test.ts`
+  - 锁定 AgentTools 终态写入经由统一 transition 落到 board 语义终态列（自定义 done/blocked id、无 board 回退字面 id、NEEDS_FIX 保留列）。
+  - 锁定端到端生命周期链：创建 Team Task → 委托绑定持久化 → `buildTeamTaskTree` 立即出现带子 Session 的卡片 → `getPreferredTaskSessionId` 显示子 Session → `hasActiveTaskSession` 仅在运行时真实存活时阻断 Run → report 成功后同一 Task COMPLETED 且落在自定义 Done 列、创建者 `sessionId` 不变 → 读侧投影终态（含历史空 columnId 变体）不可再 Run。
+- `src/app/workspace/[workspaceId]/kanban/__tests__/kanban-tab-helpers.test.ts`
+  - 锁定 Run 门禁与首选 Session 显示分离：`getPreferredTaskSessionId`（triggerSessionId → laneSession → sessionIds 尾）只服务展示；`hasActiveTaskSession` 覆盖任务拥有的全部 Session；`isTaskSessionLive` 中已完成/错误/缺运行时的 Session 一律不 live。
+- `src/app/workspace/[workspaceId]/kanban/__tests__/kanban-card.test.tsx`
+  - 锁定卡片 Run 门禁矩阵：终态任务（含空/过期 columnId）隐藏 Run；排队任务隐藏 Run；真实存活 Session 隐藏 Run；记录会话已死提供 Rerun；done-stage 列即使 status 滞后也按终态处理。
+- `src/app/workspace/[workspaceId]/team/[sessionId]/__tests__/team-run-page-model.test.ts`
+  - 锁定 Team 任务树以持久化 Task 为主源（不再依赖 task-shaped Note）：`buildTeamTaskTree` 每个持久化 Task 成为节点、重复 Note 去重、legacy Note 保留层级；`delegated` 归一为 in-progress；delegation 结果解析（结构化字段 / JSON envelope / MCP content / 纯文本 / 正则兜底）。
+
+### Rust
+
+- `crates/routa-core/src/kanban.rs`（inline tests）
+  - 锁定与 Web 同名的镜像函数：`apply_task_status_transition` / `resolve_effective_column_id_for_read` / `is_task_terminal_for_read` / `load_task_board` / board-aware `task_to_card`。
+- `crates/routa-core/src/orchestration/mod.rs`（inline tests）
+  - 锁定 delegation 绑定的 `sessionIds` 去重追加；`handle_report_submitted` 成功报告将任务移到 board 语义 Done 列并写 completion_summary、agent 置 Completed；失败报告置 NEEDS_FIX 且保留原列。
+- `crates/routa-core/src/store/task_store.rs`（inline tests）
+  - 锁定 `list_by_team_run_is_workspace_scoped` 的 workspace 隔离。
+- `crates/routa-server/tests/rust_api_end_to_end.rs::api_tasks_filter_by_team_run_id_with_workspace_isolation`
+  - 锁定 `GET /api/tasks?teamRunId=`：正向过滤、响应携带 `teamRunId`、workspace 隔离、未绑定任务不出现、未知 teamRunId 返回空数组。
+
 ## Session Persistence / Recovery Characterization
 
 - `src/core/__tests__/session-history.test.ts`

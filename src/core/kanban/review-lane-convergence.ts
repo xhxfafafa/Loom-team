@@ -1,4 +1,4 @@
-import type { KanbanColumn, KanbanColumnStage } from "../models/kanban";
+import { resolveColumnIdForSemanticStage, type KanbanColumn } from "../models/kanban";
 import type { Task } from "../models/task";
 import { resolveCurrentLaneAutomationState } from "./lane-automation-state";
 
@@ -14,14 +14,6 @@ type ReviewConvergenceTask = Pick<
   | "assignedSpecialistId"
   | "assignedSpecialistName"
 >;
-
-function resolveColumnIdForStage(
-  boardColumns: KanbanColumn[],
-  stage: KanbanColumnStage,
-): string | undefined {
-  const match = boardColumns.find((column) => column.stage === stage);
-  return match?.id;
-}
 
 function isReviewStage(task: ReviewConvergenceTask, boardColumns: KanbanColumn[]): boolean {
   const currentColumn = boardColumns.find((column) => column.id === task.columnId);
@@ -43,11 +35,11 @@ export function resolveReviewLaneConvergenceTarget(
 
   switch (task.verificationVerdict) {
     case "APPROVED":
-      return resolveColumnIdForStage(boardColumns, "done") ?? "done";
+      return resolveColumnIdForSemanticStage(boardColumns, "done") ?? "done";
     case "NOT_APPROVED":
-      return resolveColumnIdForStage(boardColumns, "dev") ?? "dev";
+      return resolveColumnIdForSemanticStage(boardColumns, "dev") ?? "dev";
     case "BLOCKED":
-      return resolveColumnIdForStage(boardColumns, "blocked") ?? "blocked";
+      return resolveColumnIdForSemanticStage(boardColumns, "blocked") ?? "blocked";
     default:
       return undefined;
   }

@@ -36,6 +36,7 @@ import { refreshTaskLaneExperienceMemory } from "./task-lane-experience";
 import { completeRunningSessionsOutsideColumn } from "./task-session-transition";
 import { analyzeFlowForTasks } from "./flow-ledger";
 import { resolveTaskWorktreeTruth } from "./task-worktree-truth";
+import { applyTaskStatusTransition, loadTaskBoardColumns } from "./task-status-transition";
 import { getHttpSessionStore } from "../acp/http-session-store";
 import { getSpecialistById } from "../orchestration/specialist-prompts";
 import { dispatchSessionPrompt } from "@/core/acp/session-prompt";
@@ -191,8 +192,11 @@ async function startKanbanTaskSession(
       nextTask.worktreeId = worktree.id;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      nextTask.status = TaskStatus.BLOCKED;
-      nextTask.columnId = "blocked";
+      applyTaskStatusTransition(
+        nextTask,
+        TaskStatus.BLOCKED,
+        await loadTaskBoardColumns(system, nextTask),
+      );
       nextTask.lastSyncError = `Worktree creation failed: ${message}`;
       await system.taskStore.save(nextTask);
       return { error: nextTask.lastSyncError };

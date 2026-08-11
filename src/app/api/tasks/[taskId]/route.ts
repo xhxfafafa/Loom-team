@@ -13,6 +13,11 @@ import {
   type Task,
 } from "@/core/models/task";
 import { columnIdToTaskStatus, resolveTaskStatusForBoardColumn, taskStatusToColumnId } from "@/core/models/kanban";
+import {
+  applyTaskStatusTransition,
+  isTerminalTaskStatus,
+  loadTaskBoardColumns,
+} from "@/core/kanban/task-status-transition";
 import { getKanbanEventBroadcaster } from "@/core/kanban/kanban-event-broadcaster";
 import { ensureTaskBoardContext } from "@/core/kanban/task-board-context";
 import { buildTaskGitHubIssueBody, updateGitHubIssue } from "@/core/kanban/github-issues";
@@ -345,7 +350,16 @@ export async function PATCH(
   if (body.columnId !== undefined && requestedStatus !== undefined) {
     const expectedStatus = columnIdToTaskStatus(body.columnId);
     const expectedColumnId = taskStatusToColumnId(requestedStatus);
-    if (expectedStatus !== requestedStatus || expectedColumnId !== body.columnId) {
+    // Custom boards name terminal lanes freely, so a column whose semantic
+    // stage matches the terminal status is a valid status/column pair even
+    // when its literal id differs (e.g. column "ship" with stage "done").
+    const requestedColumnStage = board?.columns.find((column) => column.id === body.columnId)?.stage;
+    const semanticStageMatches = requestedStatus === TaskStatus.COMPLETED
+      ? requestedColumnStage === "done"
+      : requestedStatus === TaskStatus.BLOCKED
+        ? requestedColumnStage === "blocked"
+        : false;
+    if ((expectedStatus !== requestedStatus || expectedColumnId !== body.columnId) && !semanticStageMatches) {
       return NextResponse.json(
         { error: "columnId and status must describe the same workflow state" },
         { status: 400 },
@@ -367,7 +381,14 @@ export async function PATCH(
       nextTask.status = columnIdToTaskStatus(body.columnId);
     }
   } else if (requestedStatus !== undefined) {
-    nextTask.columnId = taskStatusToColumnId(requestedStatus);
+    if (isTerminalTaskStatus(requestedStatus)) {
+      // Terminal statuses resolve the board's matching done/blocked stage
+      // column in one shared transition instead of a literal column write.
+      const transitionColumns = await loadTaskBoardColumns(system, nextTask);
+      applyTaskStatusTransition(nextTask, requestedStatus, transitionColumns);
+    } else {
+      nextTask.columnId = taskStatusToColumnId(requestedStatus);
+    }
   }
 
   // Always check review lane convergence when verification verdict is updated.
@@ -595,8 +616,11 @@ export async function PATCH(
         const msg = err instanceof Error ? err.message : String(err);
         console.error("[kanban] Failed to auto-create worktree:", msg);
         // Mark task as blocked if worktree creation fails
-        nextTask.status = TaskStatus.BLOCKED;
-        nextTask.columnId = "blocked";
+        applyTaskStatusTransition(
+          nextTask,
+          TaskStatus.BLOCKED,
+          await loadTaskBoardColumns(system, nextTask),
+        );
         nextTask.lastSyncError = `Worktree creation failed: ${msg}`;
         applyTaskAdaptivePersistenceGuards(nextTask);
         await system.taskStore.save(nextTask);

@@ -8,6 +8,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRoutaSystem } from "@/core/routa-system";
 import { TaskStatus } from "@/core/models/task";
 import { taskStatusToColumnId } from "@/core/models/kanban";
+import {
+  applyTaskStatusTransition,
+  isTerminalTaskStatus,
+  loadTaskBoardColumns,
+} from "@/core/kanban/task-status-transition";
 
 export const dynamic = "force-dynamic";
 
@@ -34,11 +39,19 @@ export async function POST(
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
-  task.status = taskStatus;
-  task.columnId = taskStatusToColumnId(taskStatus);
-  task.updatedAt = new Date();
+  if (isTerminalTaskStatus(taskStatus)) {
+    // Terminal writes must keep status and the Kanban projection consistent
+    // in one write: resolve the board's done/blocked stage column instead of
+    // writing a literal (potentially phantom) column id.
+    const boardColumns = await loadTaskBoardColumns(system, task);
+    applyTaskStatusTransition(task, taskStatus, boardColumns);
+  } else {
+    // Non-terminal statuses keep the historical status-to-column mapping.
+    task.status = taskStatus;
+    task.columnId = taskStatusToColumnId(taskStatus);
+    task.updatedAt = new Date();
+  }
   await system.taskStore.save(task);
 
   return NextResponse.json({ updated: true });
 }
-

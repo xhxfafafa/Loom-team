@@ -357,6 +357,18 @@ export function resolveTaskStatusForBoardColumn(
   return columnIdToTaskStatus(columnId);
 }
 
+/**
+ * Resolve the column of a board that carries a semantic stage (done, blocked, ...).
+ * Shared by review-lane convergence and the terminal status transition so custom
+ * boards are matched by stage instead of literal column ids.
+ */
+export function resolveColumnIdForSemanticStage(
+  columns: Array<{ id: string; stage: string }> = [],
+  stage: KanbanColumnStage,
+): string | undefined {
+  return columns.find((column) => column.stage === stage)?.id;
+}
+
 export function taskStatusToColumnId(status: TaskStatus | string | undefined): string {
   switch ((status ?? TaskStatus.PENDING).toString().toUpperCase()) {
     case TaskStatus.IN_PROGRESS:

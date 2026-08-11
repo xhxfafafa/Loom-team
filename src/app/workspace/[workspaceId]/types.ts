@@ -21,6 +21,12 @@ export interface SessionInfo {
   role?: string;
   acpStatus?: "connecting" | "ready" | "error";
   acpError?: string;
+  /**
+   * Derived runtime continuity: `active` only when a runtime is actually
+   * live. A persisted `acpStatus=ready` from a dead process must surface as
+   * `restorable`, never `active`.
+   */
+  continuityStatus?: "active" | "restorable" | "interrupted" | "stale";
   modeId?: string;
   model?: string;
   parentSessionId?: string;

@@ -12,6 +12,20 @@
 import type { McpServerProfile } from "@/core/mcp/mcp-server-profiles";
 import { resolveApiPath } from "@/client/config/backend";
 
+/**
+ * Generate a durable delivery identity (promptId) for one prompt attempt.
+ * This is an idempotency key for the triggering delivery — it is never a
+ * provider conversation ID and never feeds back into routa_agent_id or
+ * provider_session_id.
+ */
+export function generatePromptDeliveryId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // Fallback for runtimes without crypto.randomUUID.
+  return `prompt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export interface AcpSessionNotification {
   sessionId: string;
   update?: Record<string, unknown>;
@@ -90,6 +104,12 @@ export interface AcpPromptResult {
     inputTokens?: number;
     outputTokens?: number;
   };
+  /** The durable delivery identity this prompt was acknowledged with. */
+  promptId?: string;
+  /** True when the server accepted the delivery of this promptId. */
+  promptAccepted?: boolean;
+  /** True when this promptId was already delivered (retry deduplicated). */
+  duplicate?: boolean;
 }
 
 export interface AcpTerminalMutationResult {
@@ -405,17 +425,24 @@ export class BrowserAcpClient {
    * @param sessionId - The session to send to
    * @param text - The prompt text
    * @param skillContext - Optional skill context (name + content) from UI /skill selection
+   * @param options - Optional delivery options. `promptId` is the durable
+   *   delivery identity for this attempt: it defaults to a client-generated
+   *   UUID that stays with THIS request across network retries, while a new
+   *   user-initiated attempt generates a fresh one. It is an idempotency key
+   *   only — never a provider conversation ID.
    */
   async prompt(
     sessionId: string,
     text: string,
     skillContext?: { skillName: string; skillContent: string },
+    options?: { promptId?: string },
   ): Promise<AcpPromptResult> {
     const id = ++this.requestId;
 
     const params: Record<string, unknown> = {
       sessionId,
       prompt: [{ type: "text", text }],
+      promptId: options?.promptId ?? generatePromptDeliveryId(),
     };
 
     // Pass skill context so the backend can inject it via appendSystemPrompt (SDK)

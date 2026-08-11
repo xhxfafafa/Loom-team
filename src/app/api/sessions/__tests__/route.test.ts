@@ -1,15 +1,22 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { hydrateFromDb, listSessions } = vi.hoisted(() => ({
+const { hydrateFromDb, listSessions, hasActiveSession } = vi.hoisted(() => ({
   hydrateFromDb: vi.fn(),
   listSessions: vi.fn(),
+  hasActiveSession: vi.fn(),
 }));
 
 vi.mock("@/core/acp/http-session-store", () => ({
   getHttpSessionStore: () => ({
     hydrateFromDb,
     listSessions,
+  }),
+}));
+
+vi.mock("@/core/acp/processer", () => ({
+  getAcpProcessManager: () => ({
+    hasActiveSession,
   }),
 }));
 
@@ -20,6 +27,7 @@ describe("/api/sessions GET", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     hydrateFromDb.mockResolvedValue(undefined);
+    hasActiveSession.mockReturnValue(false);
     listSessions.mockReturnValue([
       {
         sessionId: "session-3",
@@ -262,6 +270,88 @@ describe("/api/sessions GET", () => {
       sessionId: "cycle-root",
       directDelegates: 1,
       descendants: 1,
+    });
+  });
+
+  describe("continuityStatus derivation", () => {
+    const freshTimestamp = () => new Date().toISOString();
+
+    it("reports active only for sessions with a live runtime", async () => {
+      hasActiveSession.mockImplementation((sessionId: string) => sessionId === "live-session");
+      listSessions.mockReturnValue([
+        {
+          sessionId: "live-session",
+          workspaceId: "workspace-1",
+          cwd: "/tmp/project",
+          provider: "claude",
+          acpStatus: "ready",
+          createdAt: freshTimestamp(),
+        },
+      ]);
+
+      const response = await GET(
+        new NextRequest("http://localhost/api/sessions?workspaceId=workspace-1"),
+      );
+      const data = await response.json();
+
+      expect(data.sessions[0].continuityStatus).toBe("active");
+    });
+
+    it("does not report a persisted ready status as active after the runtime dies", async () => {
+      // Regression: before the recovery rework, a stale acpStatus=ready from a
+      // dead instance kept the session classified as active.
+      hasActiveSession.mockReturnValue(false);
+      listSessions.mockReturnValue([
+        {
+          sessionId: "dead-but-ready",
+          workspaceId: "workspace-1",
+          cwd: "/tmp/project",
+          provider: "claude",
+          acpStatus: "ready",
+          createdAt: freshTimestamp(),
+        },
+        {
+          sessionId: "dead-connecting",
+          workspaceId: "workspace-1",
+          cwd: "/tmp/project",
+          provider: "codex",
+          acpStatus: "connecting",
+          createdAt: freshTimestamp(),
+        },
+      ]);
+
+      const response = await GET(
+        new NextRequest("http://localhost/api/sessions?workspaceId=workspace-1"),
+      );
+      const data = await response.json();
+
+      const byId = new Map<string, { sessionId: string; continuityStatus?: string }>(
+        data.sessions.map((s: { sessionId: string; continuityStatus?: string }) => [s.sessionId, s]),
+      );
+      expect(byId.get("dead-but-ready")?.continuityStatus).toBe("restorable");
+      expect(byId.get("dead-connecting")?.continuityStatus).toBe("restorable");
+    });
+
+    it("keeps runner-owned sessions active while their last live status is ready", async () => {
+      hasActiveSession.mockReturnValue(false);
+      listSessions.mockReturnValue([
+        {
+          sessionId: "runner-session",
+          workspaceId: "workspace-1",
+          cwd: "/tmp/project",
+          provider: "opencode",
+          acpStatus: "ready",
+          executionMode: "runner",
+          createdAt: freshTimestamp(),
+        },
+      ]);
+
+      const response = await GET(
+        new NextRequest("http://localhost/api/sessions?workspaceId=workspace-1"),
+      );
+      const data = await response.json();
+
+      expect(data.sessions[0].continuityStatus).toBe("active");
     });
   });
 });

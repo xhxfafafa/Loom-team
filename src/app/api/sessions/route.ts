@@ -10,6 +10,10 @@ import { getHttpSessionStore, type RoutaSessionRecord } from "@/core/acp/http-se
 import { getAcpProcessManager } from "@/core/acp/processer";
 import { getPresetById } from "@/core/acp/acp-presets";
 import {
+  deriveSessionContinuityStatus,
+  type SessionContinuityStatus,
+} from "@/core/acp/session-continuity";
+import {
   buildSessionChildMap,
   countDescendantSessions,
   hasExplicitTeamRunMarker,
@@ -17,10 +21,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-/** Stale threshold: sessions older than 7 days without an active process are considered stale */
-const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
-
-export type SessionContinuityStatus = "active" | "interrupted" | "restorable" | "stale";
+export type { SessionContinuityStatus };
 
 interface TeamRunSummary {
   session: RoutaSessionRecord;
@@ -30,24 +31,19 @@ interface TeamRunSummary {
 
 /**
  * Derive the session continuity status for the session picker UI.
+ *
+ * Continuity is computed from the actual process manager plus durable
+ * metadata; a stale persisted `acpStatus=ready` never reports a dead runtime
+ * as active.
  */
 function deriveSessionStatus(session: RoutaSessionRecord, hasActiveProcess: boolean): SessionContinuityStatus {
-  if (hasActiveProcess || session.acpStatus === "ready" || session.acpStatus === "connecting") {
-    return "active";
-  }
-
-  const createdAt = typeof session.createdAt === "string" ? new Date(session.createdAt).getTime() : Date.now();
-  const age = Date.now() - createdAt;
-  if (age > STALE_THRESHOLD_MS) {
-    return "stale";
-  }
-
-  const preset = getPresetById(session.provider ?? "");
-  if (preset?.resume?.supported) {
-    return "restorable";
-  }
-
-  return "interrupted";
+  return deriveSessionContinuityStatus({
+    hasActiveProcess,
+    acpStatus: session.acpStatus,
+    executionMode: session.executionMode,
+    provider: session.provider,
+    createdAt: session.createdAt,
+  });
 }
 
 function toSessionSummary(session: RoutaSessionRecord, hasActiveProcess: boolean) {

@@ -232,6 +232,7 @@ export interface UseAcpActions {
     sessionId: string,
     text: string,
     skillContext?: { skillName: string; skillContent: string },
+    options?: { throwOnError?: boolean },
   ) => Promise<void>;
   respondToUserInput: (toolCallId: string, response: Record<string, unknown>) => Promise<void>;
   respondToUserInputForSession: (
@@ -734,6 +735,7 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
     sessionId: string,
     text: string,
     skillContext?: { skillName: string; skillContent: string },
+    options?: { throwOnError?: boolean },
   ): Promise<void> => {
     const client = clientRef.current;
     if (!client || !sessionId) return;
@@ -755,6 +757,13 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
         loading: false,
         error: toErrorMessage(err) || "Prompt failed",
       }));
+      if (options?.throwOnError) {
+        // Ownership and recovery errors must stay visible to the caller
+        // (e.g. the Team composer) so they can preserve input and offer a
+        // Retry/Resume action. Only teardown-era interruptions are suppressed
+        // above.
+        throw err;
+      }
     }
   }, [shouldSuppressPromptError]);
 

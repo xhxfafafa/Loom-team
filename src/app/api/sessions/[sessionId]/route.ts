@@ -9,7 +9,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getHttpSessionStore } from "@/core/acp/http-session-store";
+import { getAcpProcessManager } from "@/core/acp/processer";
 import { getPresetById } from "@/core/acp/acp-presets";
+import { deriveSessionContinuityStatus } from "@/core/acp/session-continuity";
 import { loadSessionFromDb, loadSessionFromLocalStorage, renameSessionInDb, deleteSessionFromDb } from "@/core/acp/session-db-persister";
 import { finalizeSessionRuntime } from "@/core/acp/session-runtime-finalizer";
 import {
@@ -76,6 +78,14 @@ export async function GET(
     );
   }
 
+  const continuityStatus = deriveSessionContinuityStatus({
+    hasActiveProcess: getAcpProcessManager().hasActiveSession(sessionId),
+    acpStatus: resolvedSession.acpStatus,
+    executionMode: resolvedSession.executionMode,
+    provider: resolvedSession.provider,
+    createdAt: resolvedSession.createdAt,
+  });
+
   return NextResponse.json({
     session: {
       sessionId: resolvedSession.sessionId,
@@ -100,6 +110,7 @@ export async function GET(
       executionMode: resolvedSession.executionMode,
       ownerInstanceId: resolvedSession.ownerInstanceId,
       leaseExpiresAt: resolvedSession.leaseExpiresAt,
+      continuityStatus,
       resumeCapabilities: resolvedSession.provider
         ? getPresetById(resolvedSession.provider)?.resume ?? null
         : null,

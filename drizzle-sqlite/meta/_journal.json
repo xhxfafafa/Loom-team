@@ -113,6 +113,13 @@
       "when": 1786406400000,
       "tag": "0015_add_acp_session_team_chain_id",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786410000000,
+      "tag": "0016_add_acp_session_provider_session_id",
+      "breakpoints": true
     }
   ]
 }

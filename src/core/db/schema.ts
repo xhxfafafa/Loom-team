@@ -235,7 +235,10 @@ export const acpSessions = pgTable("acp_sessions", {
   /** Git branch the session is scoped to (optional) */
   branch: text("branch"),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  /** Durable Routa logical agent ID. Never overwritten by provider/ACP session IDs. */
   routaAgentId: text("routa_agent_id"),
+  /** Provider-native session ID (ACP/Claude/Codex). Used only for native resume. */
+  providerSessionId: text("provider_session_id"),
   provider: text("provider"),
   role: text("role"),
   modeId: text("mode_id"),

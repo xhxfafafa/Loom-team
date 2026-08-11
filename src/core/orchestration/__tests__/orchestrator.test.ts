@@ -23,6 +23,25 @@ const AgentMemoryWriterMock = vi.hoisted(() =>
     };
   }),
 );
+const appendSessionNotificationEventOnceMock = vi.hoisted(() =>
+  vi.fn(async (): Promise<
+    | { status: "appended" }
+    | { status: "duplicate" }
+    | { status: "session_not_found" }
+    | { status: "unavailable"; error: string }
+  > => ({ status: "appended" })));
+const loadHistorySinceEventIdFromDbMock = vi.hoisted(() =>
+  vi.fn(async (): Promise<Array<{ eventId?: string }>> => []),
+);
+const finalizeSessionRuntimeMock = vi.hoisted(() =>
+  vi.fn(async (sessionId: string) => ({
+    sessionId,
+    reason: "completed" as const,
+    released: true,
+    skipReason: undefined as string | undefined,
+    errors: [] as string[],
+  })),
+);
 
 vi.mock("../specialist-prompts", () => ({
   getSpecialistByRole: specialistByRoleMock,
@@ -48,6 +67,15 @@ vi.mock("@/core/acp/http-session-store", () => ({
 
 vi.mock("@/core/storage/agent-memory-writer", () => ({
   AgentMemoryWriter: AgentMemoryWriterMock,
+}));
+
+vi.mock("@/core/acp/session-db-persister", () => ({
+  appendSessionNotificationEventOnce: appendSessionNotificationEventOnceMock,
+  loadHistorySinceEventIdFromDb: loadHistorySinceEventIdFromDbMock,
+}));
+
+vi.mock("@/core/acp/session-runtime-finalizer", () => ({
+  finalizeSessionRuntime: finalizeSessionRuntimeMock,
 }));
 
 const { RoutaOrchestrator } = await import("../orchestrator");
@@ -782,5 +810,220 @@ describe("RoutaOrchestrator", () => {
         status: TaskStatus.BLOCKED,
       }),
     );
+  });
+
+  it("delivers completion reports with a deterministic team-report deliveryId", async () => {
+    const { orchestrator, task } = createOrchestratorFixture();
+    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
+      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    const sendPromptToSessionMock = vi.fn(async () => {});
+    (orchestrator as unknown as { sendPromptToSession: typeof sendPromptToSessionMock }).sendPromptToSession =
+      sendPromptToSessionMock;
+
+    await orchestrator.delegateTaskWithSpawn({
+      taskId: task.id,
+      callerAgentId: "caller-agent",
+      callerSessionId: "caller-session",
+      workspaceId: task.workspaceId,
+      specialist: "crafter",
+    });
+
+    const record = orchestrator.getChildAgents("caller-agent")[0];
+    await (
+      orchestrator as unknown as {
+        finalizeChildCompletion: (childAgentId: string, record: unknown, source: "reported") => Promise<void>;
+      }
+    ).finalizeChildCompletion("child-agent-1", record, "reported");
+
+    // The wake goes through the recover-aware dispatch with a deterministic
+    // deliveryId built from durable IDs only (never provider session IDs).
+    expect(sendPromptToSessionMock).toHaveBeenCalledWith(
+      "caller-session",
+      expect.stringContaining("Agent Completion Report"),
+      `team-report:caller-session:${record.sessionId}:${task.id}:0`,
+    );
+
+    // After provider acceptance, the durable `:delivered` receipt is appended.
+    expect(appendSessionNotificationEventOnceMock).toHaveBeenCalledWith(
+      "caller-session",
+      expect.objectContaining({
+        eventId: `team-report:caller-session:${record.sessionId}:${task.id}:0:delivered`,
+        update: expect.objectContaining({ sessionUpdate: "delivery_receipt" }),
+      }),
+    );
+
+    // Durable report acceptance triggers the completed-child release through
+    // the shared runtime finalizer (which re-checks every safety gate).
+    expect(finalizeSessionRuntimeMock).toHaveBeenCalledWith(record.sessionId, "completed");
+  });
+
+  it("increments the report revision from previously delivered receipts", async () => {
+    const { orchestrator, task } = createOrchestratorFixture();
+    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
+      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    const sendPromptToSessionMock = vi.fn(async () => {});
+    (orchestrator as unknown as { sendPromptToSession: typeof sendPromptToSessionMock }).sendPromptToSession =
+      sendPromptToSessionMock;
+
+    await orchestrator.delegateTaskWithSpawn({
+      taskId: task.id,
+      callerAgentId: "caller-agent",
+      callerSessionId: "caller-session",
+      workspaceId: task.workspaceId,
+      specialist: "crafter",
+    });
+
+    const record = orchestrator.getChildAgents("caller-agent")[0];
+    // A previous report for the same triple was already delivered.
+    loadHistorySinceEventIdFromDbMock.mockResolvedValueOnce([
+      { eventId: `team-report:caller-session:${record.sessionId}:${task.id}:0:delivered` },
+    ]);
+
+    await (
+      orchestrator as unknown as {
+        finalizeChildCompletion: (childAgentId: string, record: unknown, source: "reported") => Promise<void>;
+      }
+    ).finalizeChildCompletion("child-agent-1", record, "reported");
+
+    expect(sendPromptToSessionMock).toHaveBeenCalledWith(
+      "caller-session",
+      expect.any(String),
+      `team-report:caller-session:${record.sessionId}:${task.id}:1`,
+    );
+  });
+
+  it("keeps the delivery retryable (no receipt) when the wake dispatch fails", async () => {
+    const { orchestrator, task } = createOrchestratorFixture();
+    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
+      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    const sendPromptToSessionMock = vi.fn().mockRejectedValueOnce(new Error("runtime unavailable"));
+    (orchestrator as unknown as { sendPromptToSession: typeof sendPromptToSessionMock }).sendPromptToSession =
+      sendPromptToSessionMock;
+
+    await orchestrator.delegateTaskWithSpawn({
+      taskId: task.id,
+      callerAgentId: "caller-agent",
+      callerSessionId: "caller-session",
+      workspaceId: task.workspaceId,
+      specialist: "crafter",
+    });
+
+    const record = orchestrator.getChildAgents("caller-agent")[0];
+    await expect(
+      (
+        orchestrator as unknown as {
+          finalizeChildCompletion: (childAgentId: string, record: unknown, source: "reported") => Promise<void>;
+        }
+      ).finalizeChildCompletion("child-agent-1", record, "reported"),
+    ).rejects.toThrow("runtime unavailable");
+
+    // No receipt: the recorded delivery stays re-dispatchable on retry.
+    expect(appendSessionNotificationEventOnceMock).not.toHaveBeenCalled();
+    // Without durable acceptance there is no completed-child release attempt.
+    expect(finalizeSessionRuntimeMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the wake successful when the completed-child release is skipped or fails", async () => {
+    const { orchestrator, task } = createOrchestratorFixture();
+    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
+      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    const sendPromptToSessionMock = vi.fn(async () => {});
+    (orchestrator as unknown as { sendPromptToSession: typeof sendPromptToSessionMock }).sendPromptToSession =
+      sendPromptToSessionMock;
+    // First completion: the finalizer skips the release (gate not satisfied).
+    finalizeSessionRuntimeMock.mockResolvedValueOnce({
+      sessionId: "child-session",
+      reason: "completed",
+      released: false,
+      skipReason: "report-not-delivered",
+      errors: [],
+    });
+
+    await orchestrator.delegateTaskWithSpawn({
+      taskId: task.id,
+      callerAgentId: "caller-agent",
+      callerSessionId: "caller-session",
+      workspaceId: task.workspaceId,
+      specialist: "crafter",
+    });
+
+    const record = orchestrator.getChildAgents("caller-agent")[0];
+    await expect(
+      (
+        orchestrator as unknown as {
+          finalizeChildCompletion: (childAgentId: string, record: unknown, source: "reported") => Promise<void>;
+        }
+      ).finalizeChildCompletion("child-agent-1", record, "reported"),
+    ).resolves.toBeUndefined();
+
+    const deliveryId = `team-report:caller-session:${record.sessionId}:${task.id}:0`;
+    expect(sendPromptToSessionMock).toHaveBeenCalledWith(
+      "caller-session",
+      expect.any(String),
+      deliveryId,
+    );
+    expect(appendSessionNotificationEventOnceMock).toHaveBeenCalledWith(
+      "caller-session",
+      expect.objectContaining({ eventId: `${deliveryId}:delivered` }),
+    );
+    expect(finalizeSessionRuntimeMock).toHaveBeenCalledWith(record.sessionId, "completed");
+
+    // Second completion (retry path): the finalizer itself throws. The wake
+    // must still succeed — release failures retain the session for retry.
+    finalizeSessionRuntimeMock.mockRejectedValueOnce(new Error("release exploded"));
+    (record as { completionHandled?: boolean }).completionHandled = false;
+    await expect(
+      (
+        orchestrator as unknown as {
+          finalizeChildCompletion: (childAgentId: string, record: unknown, source: "session_end") => Promise<void>;
+        }
+      ).finalizeChildCompletion("child-agent-1", record, "session_end"),
+    ).resolves.toBeUndefined();
+    expect(finalizeSessionRuntimeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not release the child runtime when the delivery receipt write fails", async () => {
+    const { orchestrator, task } = createOrchestratorFixture();
+    (orchestrator as unknown as { spawnChildAgent: () => Promise<{ sandboxId?: string }> }).spawnChildAgent =
+      vi.fn(async () => ({ sandboxId: "sandbox-1" }));
+    const sendPromptToSessionMock = vi.fn(async () => {});
+    (orchestrator as unknown as { sendPromptToSession: typeof sendPromptToSessionMock }).sendPromptToSession =
+      sendPromptToSessionMock;
+    // The provider accepted the report, but the durable receipt could not be
+    // written (DB unavailable). Releasing the child runtime now would destroy
+    // the only retry handle for an unproven hand-off.
+    appendSessionNotificationEventOnceMock.mockResolvedValueOnce({
+      status: "unavailable",
+      error: "database is locked",
+    });
+
+    await orchestrator.delegateTaskWithSpawn({
+      taskId: task.id,
+      callerAgentId: "caller-agent",
+      callerSessionId: "caller-session",
+      workspaceId: task.workspaceId,
+      specialist: "crafter",
+    });
+
+    const record = orchestrator.getChildAgents("caller-agent")[0];
+    await expect(
+      (
+        orchestrator as unknown as {
+          finalizeChildCompletion: (childAgentId: string, record: unknown, source: "reported") => Promise<void>;
+        }
+      ).finalizeChildCompletion("child-agent-1", record, "reported"),
+    ).resolves.toBeUndefined();
+
+    // The wake itself succeeded (provider accepted the report)…
+    expect(sendPromptToSessionMock).toHaveBeenCalledTimes(1);
+    expect(appendSessionNotificationEventOnceMock).toHaveBeenCalledWith(
+      "caller-session",
+      expect.objectContaining({
+        eventId: expect.stringContaining(":delivered"),
+        update: expect.objectContaining({ sessionUpdate: "delivery_receipt" }),
+      }),
+    );
+    // …but without a durable receipt the child runtime must NOT be released.
+    expect(finalizeSessionRuntimeMock).not.toHaveBeenCalled();
   });
 });

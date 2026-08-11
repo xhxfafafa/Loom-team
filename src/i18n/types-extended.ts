@@ -1543,10 +1543,6 @@ export interface ExtendedTranslationDictionarySections extends TailTranslationDi
     events: string;
     noMatchingEvents: string;
     noTracesSession: string;
-    protocolView: string;
-    rawEvents: string;
-    noAGUIEvents: string;
-    selectSessionAGUI: string;
     selectSessionEventBridge: string;
     unknownLane: string;
     step: string;

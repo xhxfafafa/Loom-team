@@ -9,7 +9,6 @@ const shellFiles = [
   "src/client/components/desktop-app-shell.tsx",
   "src/client/components/desktop-layout.tsx",
   "src/client/components/desktop-sidebar.tsx",
-  "src/client/components/desktop-nav-rail.tsx",
 ];
 
 const tokenPresenceFiles = [

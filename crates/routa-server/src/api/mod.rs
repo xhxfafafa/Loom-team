@@ -1,9 +1,7 @@
-pub mod a2a;
 pub mod a2ui;
 pub mod acp_docker;
 pub mod acp_registry;
 pub mod acp_routes;
-pub mod ag_ui;
 pub mod agents;
 pub mod background_tasks;
 pub mod canvas;
@@ -41,7 +39,6 @@ pub mod rpc;
 pub mod sandbox;
 pub mod schedules;
 pub mod sessions;
-pub mod shared_sessions;
 pub mod skills;
 pub mod skills_catalog;
 pub mod skills_clone;
@@ -77,7 +74,6 @@ pub fn api_router(state: AppState) -> Router<AppState> {
         .nest("/api/skills/clone", skills_clone::router())
         .nest("/api/skills/upload", skills_upload::router())
         .nest("/api/sessions", sessions::router())
-        .nest("/api/shared-sessions", shared_sessions::router())
         .nest("/api/providers", providers::router())
         .nest("/api/providers", provider_models::router())
         .nest("/api/review", review::router())
@@ -104,8 +100,6 @@ pub fn api_router(state: AppState) -> Router<AppState> {
         .nest("/api/files", files::router())
         .nest("/api/fitness", fitness::router())
         .nest("/api/rpc", rpc::router())
-        .nest("/api/a2a", a2a::router())
-        .nest("/api/ag-ui", ag_ui::router())
         .nest("/api/a2ui", a2ui::router())
         .nest("/api/traces", traces::router())
         .nest("/api/schedules", schedules::router())
@@ -113,7 +107,6 @@ pub fn api_router(state: AppState) -> Router<AppState> {
         .nest("/api/specialists", specialists::router())
         .nest("/api/spec", spec::router())
         .nest("/api/system/memory", memory::router())
-        .nest("/api/memory", memory::legacy_router())
         .nest("/api/debug", debug::router())
         .nest("/api/polling", polling::router())
         .nest("/api/workflows", workflows::router())

@@ -6,14 +6,14 @@ It intentionally does not vendor the extracted Codex `Walnut` assets. Those file
 
 ## Current POC
 
-The working local proof-of-concept is:
+The local proof-of-concept page and its supporting scripts were removed in the 2026-08-11 round-2 product slimming:
 
-- `src/app/debug/office-wasm-poc/page-client.tsx`
-- `src/app/debug/office-wasm-poc/office-wasm-config.ts`
-- `src/app/api/debug/office-wasm-poc/assets/[...slug]/route.ts`
-- `scripts/debug/check-office-wasm-poc-consistency.ts`
+- `src/app/debug/office-wasm-poc/page-client.tsx` (deleted)
+- `src/app/debug/office-wasm-poc/office-wasm-config.ts` (deleted)
+- `src/app/api/debug/office-wasm-poc/assets/[...slug]/route.ts` (deleted)
+- `scripts/debug/check-office-wasm-poc-consistency.ts` (deleted)
 
-The debug route validates the core reader path:
+The production reader now lives in `src/client/office-document-viewer/` (asset base `/office-wasm-reader`). The POC previously validated the core reader path:
 
 ```text
 file input
@@ -113,6 +113,8 @@ export interface OfficeArtifactReader {
 This keeps the UI independent from the first reader implementation. A JS-only reader, a Routa-owned .NET reader, or a server-backed reader can all implement the same contract.
 
 ## Migration Steps
+
+These steps are complete; the production module exists under `src/client/office-document-viewer/`. They are kept here as the historical record of how the POC (`page-client.tsx`, since deleted) was extracted:
 
 1. Move file-kind detection and parse result types out of `page-client.tsx`.
 2. Move CSV/TSV parsing into `readers/csv-reader.ts`.

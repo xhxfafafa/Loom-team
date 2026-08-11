@@ -504,56 +504,6 @@ async fn test_rust_backend_api() {
     assert!(body["repos"].as_array().is_some());
     println!("  PASS: clone list endpoint works");
 
-    // ── Test 28: A2A Sessions ────────────────────────────────────
-    println!("=== Test 28: /api/a2a/sessions ===");
-    let (status, body) = get_json(&app, "/api/a2a/sessions").await;
-    assert_eq!(status, 200);
-    assert!(body["sessions"].as_array().is_some());
-    println!("  PASS: A2A sessions");
-
-    // ── Test 29: A2A Agent Card ──────────────────────────────────
-    println!("=== Test 29: /api/a2a/card ===");
-    let (status, body) = get_json(&app, "/api/a2a/card").await;
-    assert_eq!(status, 200);
-    assert_eq!(body["name"], "Routa Multi-Agent Coordinator");
-    assert_eq!(body["protocolVersion"], "0.3.0");
-    println!("  PASS: A2A agent card");
-
-    // ── Test 30: A2A RPC ─────────────────────────────────────────
-    println!("=== Test 30: /api/a2a/rpc POST ===");
-    let (status, body) = post_json(
-        &app,
-        "/api/a2a/rpc",
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {}
-        }),
-    )
-    .await;
-    assert_eq!(status, 200);
-    assert_eq!(body["result"]["agentInfo"]["name"], "routa-a2a-bridge");
-    println!("  PASS: A2A RPC initialize");
-
-    // ── Test 31: A2A RPC method_list ─────────────────────────────
-    println!("=== Test 31: /api/a2a/rpc method_list ===");
-    let (status, body) = post_json(
-        &app,
-        "/api/a2a/rpc",
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "method_list",
-            "params": {}
-        }),
-    )
-    .await;
-    assert_eq!(status, 200);
-    let methods = body["result"]["methods"].as_array().unwrap();
-    assert!(methods.len() >= 5);
-    println!("  PASS: {} A2A methods", methods.len());
-
     // ══════════════════════════════════════════════════════════════════
     // NEW TESTS: EventBus, Orchestration, and Extended MCP Tools
     // ══════════════════════════════════════════════════════════════════

@@ -26,7 +26,7 @@ The project is intentionally not "two separate products". Web and desktop differ
 
 - Workspace-first: workspaces are the top-level coordination boundary for sessions, tasks, notes, boards, codebases, worktrees, and memories.
 - Dual-backend parity: Next.js and Rust expose the same product concepts and should stay aligned with `api-contract.yaml`.
-- Protocol-oriented orchestration: REST, MCP, ACP, A2A, AG-UI, and SSE are all first-class integration surfaces.
+- Protocol-oriented orchestration: REST, MCP, ACP, and SSE are all first-class integration surfaces.
 - Local-first execution: desktop mode favors SQLite, local agent binaries, local worktrees, and trace files.
 - Provider abstraction: different agent CLIs and runtimes are normalized behind adapter layers instead of leaking provider-specific protocol details through the system.
 
@@ -76,11 +76,11 @@ API / Transport
   Next.js route handlers or Axum routers
 
 Protocol Adapters
-  REST, MCP, ACP, A2A, AG-UI, SSE, JSON-RPC normalization
+  REST, MCP, ACP, SSE, JSON-RPC normalization
 
 Domain Services
   orchestration, kanban automation, workflow execution, notes, review, scheduling,
-  trace, harness, shared sessions, worker dispatch
+  trace, harness, worker dispatch
 
 Stores / Registries
   workspace, task, session, note, codebase, worktree, schedule, artifact, skill
@@ -146,10 +146,9 @@ Important invariant:
 ### Note, Memory, Artifact
 
 - Notes support collaborative knowledge capture and use CRDT-based real-time behavior on the TypeScript side.
-- Runtime/process memory monitoring is a system API at `/api/system/memory`; `/api/memory` remains only as a deprecated compatibility alias for that diagnostics surface.
+- Runtime/process memory monitoring is a system API at `/api/system/memory`.
 - Workspace delivery memory is a product domain for evidence-backed contextual records and must use explicit product surfaces such as `/api/workspace-memory`, `/api/agent-memory`, or `/api/memory-pack` when those layers are implemented.
 - Artifacts are structured outputs exchanged between agents, workflows, or coordination tools.
-- Shared sessions enable multi-user or multi-agent coordination with event broadcasting and prompt dispatch (`src/core/shared-session/`).
 
 ## System Factories And Shared State
 
@@ -185,10 +184,8 @@ This keeps desktop/server execution local-first while preserving the same domain
 | REST | `/api/*` | CRUD and product-facing operations |
 | MCP | `/api/mcp`, `/api/mcp/tools` | tool execution and collaborative agent capabilities |
 | ACP | `/api/acp` and related runtime/registry/docker routes | spawn, prompt, stream, install, warm up, and manage agent runtimes |
-| A2A | `/api/a2a/*` | agent-to-agent interoperability |
-| AG-UI | `/api/ag-ui` | UI-facing agent stream protocol |
 | A2UI | `/api/a2ui/*` | dashboard-oriented UI protocol surfaces |
-| SSE | ACP, notes, AG-UI, and related endpoints | incremental updates to the frontend |
+| SSE | ACP, notes, and related endpoints | incremental updates to the frontend |
 
 The product surface changes often. For endpoint inventory, use [docs/product-specs/FEATURE_TREE.md](./product-specs/FEATURE_TREE.md) rather than expanding this document into an API catalog.
 
@@ -296,4 +293,4 @@ Current ADRs:
 - Design intent: [docs/design-docs/](./design-docs/)
 - Coding style: [docs/coding-style.md](./coding-style)
 - Repository operating contract: `AGENTS.md` (repo root)
-- [MCP Spec](https://modelcontextprotocol.io/) · [ACP Spec](https://github.com/agentclientprotocol/typescript-sdk) · [A2A Spec](https://a2aprotocol.ai/)
+- [MCP Spec](https://modelcontextprotocol.io/) · [ACP Spec](https://github.com/agentclientprotocol/typescript-sdk)

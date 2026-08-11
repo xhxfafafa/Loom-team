@@ -3,9 +3,8 @@
  *
  * Verifies that TraceRecords are correctly converted to:
  * 1. NormalizedSessionUpdate (for AgentEventBridge)
- * 2. SessionUpdateNotification (for AG-UI adapter)
+ * 2. SessionUpdateNotification (ACP notification shape)
  * 3. End-to-end replay produces correct WorkspaceAgentEvent[]
- * 4. End-to-end replay produces correct AGUIBaseEvent[]
  */
 
 import { describe, expect, it } from "vitest";
@@ -14,7 +13,6 @@ import {
   traceToNormalizedUpdate,
   traceToACPNotification,
   replayTracesAsEventBridge,
-  replayTracesAsAGUI,
 } from "../trace-replay";
 
 // ─── Test Data Factory ────────────────────────────────────────────────────────
@@ -254,75 +252,5 @@ describe("replayTracesAsEventBridge", () => {
     const events = replayTracesAsEventBridge(traces, "test-session-001");
     const types = events.map((e) => e.type);
     expect(types).toContain("mcp_block");
-  });
-});
-
-// ─── replayTracesAsAGUI ──────────────────────────────────────────────────────
-
-describe("replayTracesAsAGUI", () => {
-  it("replays a conversation into AG-UI events", () => {
-    const traces: TraceRecord[] = [
-      makeTrace("agent_thought", {
-        timestamp: "2025-01-01T00:00:01Z",
-        conversation: { fullContent: "Let me think..." },
-      }),
-      makeTrace("agent_message", {
-        timestamp: "2025-01-01T00:00:02Z",
-        conversation: { fullContent: "Hello!" },
-      }),
-      makeTrace("session_end", { timestamp: "2025-01-01T00:00:03Z" }),
-    ];
-
-    const events = replayTracesAsAGUI(traces, "thread-1", "run-1");
-    const types = events.map((e) => e.type);
-
-    // Should have reasoning events
-    expect(types).toContain("REASONING_START");
-    expect(types).toContain("REASONING_MESSAGE_CONTENT");
-
-    // Should have text message events
-    expect(types).toContain("TEXT_MESSAGE_START");
-    expect(types).toContain("TEXT_MESSAGE_CONTENT");
-    expect(types).toContain("TEXT_MESSAGE_END");
-
-    // Should have run finished
-    expect(types).toContain("RUN_FINISHED");
-  });
-
-  it("replays tool calls into AG-UI tool events", () => {
-    const traces: TraceRecord[] = [
-      makeTrace("tool_call", {
-        timestamp: "2025-01-01T00:00:01Z",
-        tool: { name: "search", toolCallId: "tc-001", status: "running", input: { query: "test" } },
-      }),
-      makeTrace("tool_result", {
-        timestamp: "2025-01-01T00:00:02Z",
-        tool: { name: "search", toolCallId: "tc-001", status: "completed", output: "found it" },
-      }),
-    ];
-
-    const events = replayTracesAsAGUI(traces, "thread-1", "run-1");
-    const types = events.map((e) => e.type);
-
-    expect(types).toContain("TOOL_CALL_START");
-    expect(types).toContain("TOOL_CALL_ARGS");
-    expect(types).toContain("TOOL_CALL_END");
-    expect(types).toContain("TOOL_CALL_RESULT");
-  });
-
-  it("flushes open streams at the end", () => {
-    const traces: TraceRecord[] = [
-      makeTrace("agent_message", {
-        timestamp: "2025-01-01T00:00:01Z",
-        conversation: { fullContent: "Hello" },
-      }),
-      // No session_end — adapter should flush
-    ];
-
-    const events = replayTracesAsAGUI(traces, "thread-1", "run-1");
-    const types = events.map((e) => e.type);
-
-    // The message should end with TEXT_MESSAGE_END from flush
-    expect(types.filter((t) => t === "TEXT_MESSAGE_END").length).toBeGreaterThanOrEqual(1);
   });
 });

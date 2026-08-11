@@ -1,13 +1,10 @@
 /**
  * Trace Replay — Converts stored TraceRecord[] into higher-level event streams.
  *
- * Two replay modes are provided:
+ * One replay mode is provided:
  *
  * 1. **EventBridge Replay** — Feeds TraceRecords through AgentEventBridge
  *    to produce WorkspaceAgentEvent[] (semantic block layer).
- *
- * 2. **AG-UI Replay** — Feeds TraceRecords through RoutaToAGUIAdapter
- *    to produce AGUIBaseEvent[] (AG-UI protocol events).
  *
  * This avoids duplicating the conversion logic that currently lives in
  * trace-panel.tsx (inferToolName, mergeToolTraces, etc.), and instead
@@ -18,7 +15,6 @@ import type { TraceRecord } from "./types";
 import type { NormalizedSessionUpdate, NormalizedToolCall } from "../acp/provider-adapter/types";
 import { AgentEventBridge, makeStartedEvent } from "../acp/agent-event-bridge";
 import type { WorkspaceAgentEvent } from "../acp/agent-event-bridge/types";
-import { RoutaToAGUIAdapter, type AGUIBaseEvent } from "../ag-ui/event-adapter";
 import type { SessionUpdateNotification } from "../acp/http-session-store";
 
 // ─── TraceRecord → NormalizedSessionUpdate ────────────────────────────────────
@@ -120,8 +116,8 @@ export function traceToNormalizedUpdate(trace: TraceRecord): NormalizedSessionUp
 }
 
 /**
- * Map a TraceRecord to the ACP-style notification that RoutaToAGUIAdapter expects.
- * The adapter reads `.update.sessionUpdate` and other flat fields from the update object.
+ * Map a TraceRecord to the ACP-style notification shape.
+ * The notification reads `.update.sessionUpdate` and other flat fields from the update object.
  */
 export function traceToACPNotification(trace: TraceRecord): SessionUpdateNotification | null {
   const sessionId = trace.sessionId;
@@ -224,37 +220,6 @@ export function replayTracesAsEventBridge(
   }
 
   bridge.cleanup();
-  return events;
-}
-
-/**
- * Replay an array of TraceRecords through RoutaToAGUIAdapter.
- * Returns a time-ordered array of AGUIBaseEvent[].
- */
-export function replayTracesAsAGUI(
-  traces: TraceRecord[],
-  threadId: string,
-  runId: string,
-): AGUIBaseEvent[] {
-  const adapter = new RoutaToAGUIAdapter(threadId, runId);
-  const events: AGUIBaseEvent[] = [];
-
-  // Sort by timestamp
-  const sorted = [...traces].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-  );
-
-  for (const trace of sorted) {
-    const notification = traceToACPNotification(trace);
-    if (notification) {
-      // The adapter expects SessionUpdateNotification shape
-      const generated = adapter.convert(notification);
-      events.push(...generated);
-    }
-  }
-
-  // Flush remaining open streams
-  events.push(...adapter.flush());
   return events;
 }
 

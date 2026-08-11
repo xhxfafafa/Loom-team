@@ -1,13 +1,9 @@
 /**
- * A2A Core Module - Exports for A2A integration
+ * A2A Core Module - Exports for A2A integration.
+ *
+ * Only the outbound side is retained (used by kanban automation to call
+ * remote A2A agents). The inbound A2A server surface was removed.
  */
-
-// A2A Session Registry
-export { A2aSessionRegistry, getA2aSessionRegistry } from "./a2a-session-registry";
-export type { A2aSessionInfo } from "./a2a-session-registry";
-
-// A2A Executor
-export { createA2aExecutor } from "./a2a-executor";
 
 // A2A Task Bridge
 export { A2ATaskBridge, getA2ATaskBridge, mapAgentStatusToA2AState, mapAgentRoleToSkillId } from "./a2a-task-bridge";

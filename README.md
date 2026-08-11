@@ -49,7 +49,7 @@ The current implementation is intentionally dual-backend, not two separate produ
 - Web: Next.js pages and route handlers in `src/`
 - Desktop: Tauri shell in `apps/desktop/` backed by the Axum server in `crates/routa-server/`
 - Shared boundary: both runtimes preserve the same workspace, session, task, trace, codebase, worktree, and review semantics defined by `api-contract.yaml`
-- Integration surfaces: ACP, MCP, A2A, AG-UI, A2UI, REST, and SSE
+- Integration surfaces: ACP, MCP, A2UI, REST, and SSE
 
 ### Review Gate Architecture
 

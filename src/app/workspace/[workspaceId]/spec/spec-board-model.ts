@@ -261,7 +261,7 @@ function extractPathMentions(text: string): Set<string> {
 
 function extractRouteMentions(text: string): Set<string> {
   const routes = new Set<string>();
-  const routePattern = /\/(?:workspace|settings|messages|traces|debug|mcp-tools|a2a|ag-ui)[^\s`),]*/g;
+  const routePattern = /\/(?:workspace|settings|traces|mcp-tools)[^\s`),]*/g;
 
   for (const match of extractMatches(routePattern, text)) {
     routes.add(match.replace(/[),.:;]+$/u, ""));

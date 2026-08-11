@@ -47,7 +47,7 @@ metrics:
     description: "Kanban 建卡、列流转、列自动化与 workspace 事件同步回归"
 
   - name: web_settings_protocol_regression
-    command: "playwright test e2e/provider-changes.spec.ts e2e/acp-provider-switching.spec.ts e2e/install-agents-check.spec.ts e2e/install-agents-modal.spec.ts e2e/custom-mcp-servers.spec.ts e2e/a2a-protocol.spec.ts e2e/ag-ui-protocol.spec.ts e2e/mcp-tools.spec.ts e2e/mcp-integration.spec.ts 2>&1"
+    command: "playwright test e2e/provider-changes.spec.ts e2e/acp-provider-switching.spec.ts e2e/install-agents-check.spec.ts e2e/install-agents-modal.spec.ts e2e/custom-mcp-servers.spec.ts e2e/mcp-tools.spec.ts e2e/mcp-integration.spec.ts 2>&1"
     pattern: "\\d+\\s+passed"
     hard_gate: false
     tier: deep
@@ -60,13 +60,11 @@ metrics:
     scope: [web]
     run_when_changed:
       - src/app/settings/**
-      - src/app/a2a/**
-      - src/app/ag-ui/**
       - src/app/mcp-tools/**
       - src/client/components/settings/**
       - e2e/**
       - playwright*.ts
-    description: "Settings、Agent/MCP 安装、自定义 MCP，以及协议测试页的 Web 回归"
+    description: "Settings、Agent/MCP 安装、自定义 MCP，以及 MCP 协议测试页的 Web 回归"
 
   - name: web_accessibility_smoke
     command: npm run test:accessibility 2>&1
@@ -126,7 +124,7 @@ node --import tsx scripts/docs/feature-tree-generator.ts --save
 | ID | 功能 | 手工 QA 场景 | 预期结果 | 自动化映射 |
 |---|---|---|---|---|
 | QA-HOME-001 | 首页加载 | 打开 `/`，确认 workspace、settings、通知、主输入区渲染完成 | 首页可用；存在工作区入口、`HomeInput`、Open Kanban CTA | `e2e/homepage-open-board-tauri.spec.ts` |
-| QA-HOME-002 | 工作区切换 | 在首页切换 workspace，再点击 `Workspace overview` / `Open Kanban` | 跳转到当前激活 workspace 对应页面，不串 workspace | 手工为主 |
+| QA-HOME-002 | 工作区切换 | 在首页切换 workspace，再点击 `Open sessions` / `Open Kanban` | 跳转到当前激活 workspace 对应页面，不串 workspace | 手工为主 |
 | QA-HOME-003 | Provider / Repo 选择 | 在首页选择 repo、分支、provider 后提交问题 | 输入可提交；repo 信息进入 session 上下文；成功跳转到 session 页 | `e2e/repo-picker.spec.ts` |
 | QA-HOME-004 | Specialist 选择 | 在首页选择自定义 specialist，再清除 | specialist pill、模式提示、角色切换器显隐正确 | `e2e/specialist-selection.spec.ts` |
 | QA-SESSION-001 | Session 详情页布局 | 打开 `/workspace/:workspaceId/sessions/:sessionId`，检查桌面端与移动端布局 | 左侧 session/sidebar、任务快照、主聊天区布局稳定；移动端抽屉正常 | `e2e/session-layout-ux.spec.ts` |
@@ -138,20 +136,18 @@ node --import tsx scripts/docs/feature-tree-generator.ts --save
 | QA-KANBAN-004 | 工作区事件同步 | 在 Kanban 内新建或更新卡片，观察同 workspace 数据刷新 | SSE/轮询同步正常，页面无需手刷即可反映变化 | `e2e/kanban-workspace-events.spec.ts` |
 | QA-SETTINGS-001 | Provider 设置 | 打开 `/settings`，切换 provider 或模型配置 | 默认 provider 可保存；首页/会话页可读取更新后的配置 | `e2e/provider-changes.spec.ts`、`e2e/acp-provider-switching.spec.ts` |
 | QA-SETTINGS-002 | Agent 安装与自定义 MCP | 打开 `/settings/agents` 或相关安装入口，执行安装/校验 | 安装结果、错误提示、刷新后状态一致 | `e2e/install-agents-check.spec.ts`、`e2e/install-agents-modal.spec.ts`、`e2e/custom-mcp-servers.spec.ts` |
-| QA-PROTOCOL-001 | 协议测试页 | 打开 `/a2a`、`/ag-ui`、`/mcp-tools` | 页面可加载，核心交互控件存在，协议请求结果可见 | `e2e/a2a-protocol.spec.ts`、`e2e/ag-ui-protocol.spec.ts`、`e2e/mcp-tools.spec.ts`、`e2e/mcp-integration.spec.ts` |
-| QA-MESSAGES-001 | 消息与通知 | 打开 `/messages`，触发一条可见通知或历史记录 | 消息列表、筛选和历史展示可用 | 手工为主 |
+| QA-PROTOCOL-001 | 协议测试页 | 打开 `/mcp-tools` | 页面可加载，核心交互控件存在，协议请求结果可见 | `e2e/mcp-tools.spec.ts`、`e2e/mcp-integration.spec.ts` |
 
 ## 建议提测顺序
 
-1. 跑页面入口与静态能力：`/`、`/settings`、`/messages`、`/traces`
+1. 跑页面入口与静态能力：`/`、`/settings`、`/traces`
 2. 跑主链路：首页选 workspace/repo/provider -> 创建 session -> 进入 session 页
 3. 跑协作链路：Kanban 建卡 -> 列流转 -> 自动化触发 session
-4. 跑协议与扩展能力：A2A、AG-UI、MCP Tools、自定义 MCP、Agents 安装
+4. 跑协议与扩展能力：MCP Tools、自定义 MCP、Agents 安装
 
 ## 缺口与补测建议
 
 - 首页“切换 workspace 后 CTA 跳转保持一致”的场景目前主要靠人工验证，适合补一个轻量级 e2e smoke。
-- `/messages` 目前缺少明确的 Playwright 回归用例，建议后续补页面加载和筛选 smoke。
 - `FEATURE_TREE.md` 是页面/API 面的基线索引，不覆盖页面内部交互细节；交互级变更仍需要更新本矩阵或对应 e2e。
 
 ## 维护规则

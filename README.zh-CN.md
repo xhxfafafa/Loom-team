@@ -42,7 +42,7 @@ Routa 是一个以工作区为核心的多智能体协同平台，面向真实�
 - Web：`src/` 中的 Next.js 页面与路由处理器
 - Desktop：`apps/desktop/` 中的 Tauri 壳，后端由 `crates/routa-server/` 的 Axum 服务提供
 - 共享边界：两端都遵守 `api-contract.yaml` 定义的 workspace、session、task、trace、codebase、worktree 和 review 语义
-- 集成表面：ACP、MCP、A2A、AG-UI、A2UI、REST 与 SSE
+- 集成表面：ACP、MCP、A2UI、REST 与 SSE
 
 ### Review Gate 架构
 

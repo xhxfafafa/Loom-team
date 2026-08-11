@@ -1145,10 +1145,10 @@ export function WorkspaceCards({
                     <Columns2 className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}/>
                   </Link>
                   <Link
-                    href={`/workspace/${workspace.id}/overview`}
+                    href={`/workspace/${workspace.id}/sessions`}
                     onClick={(event) => event.stopPropagation()}
                     className="rounded-full border border-transparent p-1 text-slate-400 opacity-0 transition-opacity hover:border-slate-200 hover:text-slate-600 group-hover:opacity-100 dark:hover:border-[#2a3042] dark:hover:text-slate-300"
-                    title="Open overview"
+                    title="Open sessions"
                   >
                     <SquareArrowOutUpRight className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}/>
                   </Link>

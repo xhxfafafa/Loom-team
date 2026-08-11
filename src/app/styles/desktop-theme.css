@@ -13,7 +13,6 @@
   --color-desktop-accent-text: var(--dt-accent-text);
   --color-desktop-trace-chat: var(--dt-trace-chat);
   --color-desktop-trace-event-bridge: var(--dt-trace-event-bridge);
-  --color-desktop-trace-ag-ui: var(--dt-trace-ag-ui);
   --color-desktop-brand-blue: var(--dt-brand-blue);
   --color-desktop-brand-orange: var(--dt-brand-orange);
   --color-desktop-brand-green: var(--dt-brand-green);
@@ -77,7 +76,6 @@
   --dt-accent-text: var(--surface);
   --dt-trace-chat: var(--dt-brand-blue);
   --dt-trace-event-bridge: var(--dt-brand-orange);
-  --dt-trace-ag-ui: var(--dt-brand-green);
   --dt-scrollbar-thumb: rgb(121 121 121 / 40%);
   --dt-scrollbar-thumb-hover: rgb(121 121 121 / 60%);
   --dt-button-primary: var(--dt-brand-blue);
@@ -108,7 +106,6 @@ html.dark {
     --dt-accent-text: var(--surface);
     --dt-trace-chat: var(--dt-brand-blue-soft);
     --dt-trace-event-bridge: var(--dt-brand-orange);
-    --dt-trace-ag-ui: var(--dt-brand-green);
     --dt-button-primary: var(--dt-brand-blue);
     --dt-button-secondary: var(--brand-slate-800);
     --dt-button-secondary-hover: var(--brand-blue-900);

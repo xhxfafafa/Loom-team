@@ -3,8 +3,14 @@ status: generated
 purpose: Auto-generated route and API surface index for Routa.js.
 sources:
   - src/app/**/page.tsx
+  - app/**/page.tsx
+  - src/pages/**/*
+  - pages/**/*
   - api-contract.yaml
   - src/app/api/**/route.ts
+  - app/api/**/route.ts
+  - src/pages/api/**/*
+  - pages/api/**/*
   - crates/routa-server/src/api/**/*.rs
 update_policy:
   - "Regenerate with `routa feature-tree generate` or via the Feature Explorer UI."
@@ -217,9 +223,9 @@ feature_metadata:
 # Routa.js — Product Feature Specification
 
 Multi-agent coordination platform. This document is auto-generated from:
-- Frontend routes: `src/app/**/page.tsx`
+- Frontend routes: `src/app/**/page.tsx`, `app/**/page.tsx`, `src/pages/**/*`, `pages/**/*`
 - Contract API: `api-contract.yaml`
-- Next.js API routes: `src/app/api/**/route.ts`
+- Next.js API routes: `src/app/api/**/route.ts`, `app/api/**/route.ts`, `src/pages/api/**/*`, `pages/api/**/*`
 - Rust API routes: `crates/routa-server/src/api/**/*.rs`
 - Feature metadata: `feature_metadata` frontmatter in this file (`source_files` regenerated)
 
@@ -230,12 +236,8 @@ Multi-agent coordination platform. This document is auto-generated from:
 | Page | Route | Source File | Description |
 |------|-------|-------------|-------------|
 | Home | `/` | `src/app/page.tsx` | Workspace-first landing page for selecting a workspace, connecting providers, an |
-| A2A Protocol Test Page | `/a2a` | `src/app/a2a/page.tsx` | Interactive testing interface for the Agent-to-Agent (A2A) protocol |
-| AG-UI Protocol Test Page | `/ag-ui` | `src/app/ag-ui/page.tsx` | Standalone page for testing AG-UI protocol integration |
 | Canvas | `/canvas/:id` | `src/app/canvas/[id]/page.tsx` | Viewer page for opening a saved canvas artifact by ID, including static-export p |
-| Debug / Acp Replay | `/debug/acp-replay` | `src/app/debug/acp-replay/page.tsx` | Debug surface for replaying ACP transcripts and inspecting session event sequenc |
 | Mcp Tools | `/mcp-tools` | `src/app/mcp-tools/page.tsx` | Shortcut route that redirects to the MCP tools settings experience for browsing  |
-| Messages Page - Notification & PR Agent Execution History | `/messages` | `src/app/messages/page.tsx` | Shows: - All notifications with filtering - PR Agent execution history from back |
 | Settings Page | `/settings` | `src/app/settings/page.tsx` | Provides a full-page UI for all Routa settings: - Providers (default agent provi |
 | Settings / Agents | `/settings/agents` | `src/app/settings/agents/page.tsx` | Settings page for installing, discovering, and managing ACP-compatible agent run |
 | Settings / Fitness | `/settings/fitness` | `src/app/settings/fitness/page.tsx` | Compatibility route that forwards fitness configuration requests to the fluency  |
@@ -251,7 +253,6 @@ Multi-agent coordination platform. This document is auto-generated from:
 | Codebases / Reposlide | `/workspace/:workspaceId/codebases/:codebaseId/reposlide` | `src/app/workspace/[workspaceId]/codebases/[codebaseId]/reposlide/page.tsx` | Workspace-scoped RepoSlide surface for generating and reviewing presentation out |
 | Workspace / Feature Explorer | `/workspace/:workspaceId/feature-explorer` | `src/app/workspace/[workspaceId]/feature-explorer/page.tsx` |  |
 | Workspace / Kanban | `/workspace/:workspaceId/kanban` | `src/app/workspace/[workspaceId]/kanban/page.tsx` | Main kanban board for workspace-scoped task coordination, lane automation, and g |
-| Workspace / Overview | `/workspace/:workspaceId/overview` | `src/app/workspace/[workspaceId]/overview/page.tsx` | Workspace entry route that currently redirects to the sessions surface while pre |
 | Workspace / Sessions | `/workspace/:workspaceId/sessions` | `src/app/workspace/[workspaceId]/sessions/page.tsx` | Workspace-scoped session index for browsing, filtering, and opening agent execut |
 | Workspace Session Page (Server Component Wrapper) | `/workspace/:workspaceId/sessions/:sessionId` | `src/app/workspace/[workspaceId]/sessions/[sessionId]/page.tsx` | This server component provides generateStaticParams for static export and render |
 | Workspace / Spec | `/workspace/:workspaceId/spec` | `src/app/workspace/[workspaceId]/spec/page.tsx` | Dense issue relationship board for local docs/issues records |
@@ -261,19 +262,6 @@ Multi-agent coordination platform. This document is auto-generated from:
 ---
 
 ## API Contract Endpoints
-
-### A2a (8)
-
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/a2a/card` | A2A agent card | `src/app/api/a2a/card/route.ts` | `crates/routa-server/src/api/a2a.rs` |
-| POST | `/api/a2a/message` | Send a message via the A2A protocol | `src/app/api/a2a/message/route.ts` | `crates/routa-server/src/api/a2a.rs` |
-| GET | `/api/a2a/rpc` | A2A SSE stream | `src/app/api/a2a/rpc/route.ts` | `crates/routa-server/src/api/a2a.rs` |
-| POST | `/api/a2a/rpc` | A2A JSON-RPC | `src/app/api/a2a/rpc/route.ts` | `crates/routa-server/src/api/a2a.rs` |
-| GET | `/api/a2a/sessions` | List A2A sessions | `src/app/api/a2a/sessions/route.ts` | `crates/routa-server/src/api/a2a.rs` |
-| GET | `/api/a2a/tasks` | List A2A tasks | `src/app/api/a2a/tasks/route.ts` | `crates/routa-server/src/api/a2a.rs` |
-| GET | `/api/a2a/tasks/{id}` | Get an A2A task by ID | `src/app/api/a2a/tasks/[id]/route.ts` | `crates/routa-server/src/api/a2a.rs` |
-| POST | `/api/a2a/tasks/{id}` | Update / respond to an A2A task | `src/app/api/a2a/tasks/[id]/route.ts` | `crates/routa-server/src/api/a2a.rs` |
 
 ### A2ui (2)
 
@@ -286,8 +274,8 @@ Multi-agent coordination platform. This document is auto-generated from:
 
 | Method | Endpoint | Details | Next.js | Rust |
 |--------|----------|---------|---------|------|
-| GET | `/api/acp` | ACP SSE stream | `src/app/api/acp/route.ts` | `crates/routa-server/src/api/acp_routes.rs` |
-| POST | `/api/acp` | ACP JSON-RPC endpoint | `src/app/api/acp/route.ts` | `crates/routa-server/src/api/acp_routes.rs` |
+| GET | `/api/acp` | ACP SSE stream | `src/app/api/acp/route.ts` | `crates/routa-server/src/api/acp_routes.rs`, `crates/routa-server/src/api/acp_routes/session_recovery.rs`, `crates/routa-server/src/api/acp_routes/session_support.rs`, `crates/routa-server/src/api/acp_routes/team_chain_support.rs`, `crates/routa-server/src/api/acp_routes/team_chain_tests.rs` |
+| POST | `/api/acp` | ACP JSON-RPC endpoint | `src/app/api/acp/route.ts` | `crates/routa-server/src/api/acp_routes.rs`, `crates/routa-server/src/api/acp_routes/session_recovery.rs`, `crates/routa-server/src/api/acp_routes/session_support.rs`, `crates/routa-server/src/api/acp_routes/team_chain_support.rs`, `crates/routa-server/src/api/acp_routes/team_chain_tests.rs` |
 | POST | `/api/acp/docker/container/start` | Start a Docker container for OpenCode agent | `src/app/api/acp/docker/container/start/route.ts` | `crates/routa-server/src/api/acp_docker.rs` |
 | POST | `/api/acp/docker/container/stop` | Stop a Docker container | `src/app/api/acp/docker/container/stop/route.ts` | `crates/routa-server/src/api/acp_docker.rs` |
 | GET | `/api/acp/docker/containers` | List Docker containers for OpenCode agents | `src/app/api/acp/docker/containers/route.ts` | `crates/routa-server/src/api/acp_docker.rs` |
@@ -301,12 +289,6 @@ Multi-agent coordination platform. This document is auto-generated from:
 | POST | `/api/acp/runtime` | Start ACP runtime | `src/app/api/acp/runtime/route.ts` | `crates/routa-server/src/api/acp_registry.rs` |
 | GET | `/api/acp/warmup` | Get ACP warmup status | `src/app/api/acp/warmup/route.ts` | `crates/routa-server/src/api/acp_registry.rs` |
 | POST | `/api/acp/warmup` | Trigger ACP warmup | `src/app/api/acp/warmup/route.ts` | `crates/routa-server/src/api/acp_registry.rs` |
-
-### Ag-Ui (1)
-
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| POST | `/api/ag-ui` | Process AG-UI protocol request (SSE stream) | `src/app/api/ag-ui/route.ts` | `crates/routa-server/src/api/ag_ui.rs` |
 
 ### Agents (5)
 
@@ -351,7 +333,7 @@ Multi-agent coordination platform. This document is auto-generated from:
 | GET | `/api/clone/branches` | Get branch info | `src/app/api/clone/branches/route.ts` | `crates/routa-server/src/api/clone_branches.rs` |
 | PATCH | `/api/clone/branches` | Checkout branch | `src/app/api/clone/branches/route.ts` | `crates/routa-server/src/api/clone_branches.rs` |
 | POST | `/api/clone/branches` | Fetch remote branches | `src/app/api/clone/branches/route.ts` | `crates/routa-server/src/api/clone_branches.rs` |
-| POST | `/api/clone/local` | Load an existing local git repository | `src/app/api/clone/local/route.ts` | `crates/routa-server/src/api/clone_local.rs` |
+| POST | `/api/clone/local` | Load an existing local folder (git optional) | `src/app/api/clone/local/route.ts` | `crates/routa-server/src/api/clone_local.rs` |
 | POST | `/api/clone/progress` | Clone with SSE progress | `src/app/api/clone/progress/route.ts` | `crates/routa-server/src/api/clone_progress.rs` |
 
 ### Codebases (3)
@@ -440,14 +422,14 @@ Multi-agent coordination platform. This document is auto-generated from:
 
 | Method | Endpoint | Details | Next.js | Rust |
 |--------|----------|---------|---------|------|
-| GET | `/api/kanban/boards` | List Kanban boards for a workspace | `src/app/api/kanban/boards/route.ts` | `crates/routa-server/src/api/kanban.rs` |
-| POST | `/api/kanban/boards` | Create a Kanban board | `src/app/api/kanban/boards/route.ts` | `crates/routa-server/src/api/kanban.rs` |
-| GET | `/api/kanban/boards/{boardId}` | Get a Kanban board by ID | `src/app/api/kanban/boards/[boardId]/route.ts` | `crates/routa-server/src/api/kanban.rs` |
-| PATCH | `/api/kanban/boards/{boardId}` | Update a Kanban board | `src/app/api/kanban/boards/[boardId]/route.ts` | `crates/routa-server/src/api/kanban.rs` |
-| POST | `/api/kanban/decompose` | Decompose natural language input into multiple Kanban tasks | `src/app/api/kanban/decompose/route.ts` | `crates/routa-server/src/api/kanban.rs` |
-| GET | `/api/kanban/events` | Stream kanban workspace events over SSE | `src/app/api/kanban/events/route.ts` | `crates/routa-server/src/api/kanban.rs` |
-| GET | `/api/kanban/export` | Export kanban boards as YAML | `src/app/api/kanban/export/route.ts` | `crates/routa-server/src/api/kanban.rs` |
-| POST | `/api/kanban/import` | Import kanban boards from YAML | `src/app/api/kanban/import/route.ts` | `crates/routa-server/src/api/kanban.rs` |
+| GET | `/api/kanban/boards` | List Kanban boards for a workspace | `src/app/api/kanban/boards/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
+| POST | `/api/kanban/boards` | Create a Kanban board | `src/app/api/kanban/boards/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
+| GET | `/api/kanban/boards/{boardId}` | Get a Kanban board by ID | `src/app/api/kanban/boards/[boardId]/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
+| PATCH | `/api/kanban/boards/{boardId}` | Update a Kanban board | `src/app/api/kanban/boards/[boardId]/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
+| POST | `/api/kanban/decompose` | Decompose natural language input into multiple Kanban tasks | `src/app/api/kanban/decompose/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
+| GET | `/api/kanban/events` | Stream kanban workspace events over SSE | `src/app/api/kanban/events/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
+| GET | `/api/kanban/export` | Export kanban boards as YAML | `src/app/api/kanban/export/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
+| POST | `/api/kanban/import` | Import kanban boards from YAML | `src/app/api/kanban/import/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
 
 ### Mcp (6)
 
@@ -476,17 +458,6 @@ Multi-agent coordination platform. This document is auto-generated from:
 | GET | `/api/mcp-servers` | List custom MCP servers (or get single by id query param) | `src/app/api/mcp-servers/route.ts` | `crates/routa-server/src/api/mcp_servers.rs` |
 | POST | `/api/mcp-servers` | Create a new custom MCP server | `src/app/api/mcp-servers/route.ts` | `crates/routa-server/src/api/mcp_servers.rs` |
 | PUT | `/api/mcp-servers` | Update an existing custom MCP server | `src/app/api/mcp-servers/route.ts` | `crates/routa-server/src/api/mcp_servers.rs` |
-
-### System Memory (6)
-
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| DELETE | `/api/memory` | Deprecated alias for system memory monitoring reset | `src/app/api/memory/route.ts` | `crates/routa-server/src/api/memory.rs` |
-| GET | `/api/memory` | Deprecated alias for runtime memory stats | `src/app/api/memory/route.ts` | `crates/routa-server/src/api/memory.rs` |
-| POST | `/api/memory` | Deprecated alias for runtime memory cleanup | `src/app/api/memory/route.ts` | `crates/routa-server/src/api/memory.rs` |
-| DELETE | `/api/system/memory` | Clear runtime memory monitoring history | `src/app/api/system/memory/route.ts` | `crates/routa-server/src/api/memory.rs` |
-| GET | `/api/system/memory` | Get runtime memory monitoring stats | `src/app/api/system/memory/route.ts` | `crates/routa-server/src/api/memory.rs` |
-| POST | `/api/system/memory` | Trigger runtime memory cleanup | `src/app/api/system/memory/route.ts` | `crates/routa-server/src/api/memory.rs` |
 
 ### Notes (6)
 
@@ -569,23 +540,6 @@ Multi-agent coordination platform. This document is auto-generated from:
 | GET | `/api/sessions/{sessionId}/reposlide-result` | Read the RepoSlide result payload extracted from a session transcript | `src/app/api/sessions/[sessionId]/reposlide-result/route.ts` | `crates/routa-server/src/api/sessions.rs` |
 | GET | `/api/sessions/{sessionId}/reposlide-result/download` | Download the generated RepoSlide PPTX artifact for a completed session | `src/app/api/sessions/[sessionId]/reposlide-result/download/route.ts` | `crates/routa-server/src/api/sessions.rs` |
 
-### Shared-Sessions (12)
-
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/shared-sessions` | List shared sessions | `src/app/api/shared-sessions/route.ts` | `crates/routa-server/src/api/shared_sessions.rs`, `crates/routa-server/src/api/shared_sessions/store.rs` |
-| POST | `/api/shared-sessions` | Create a shared session | `src/app/api/shared-sessions/route.ts` | `crates/routa-server/src/api/shared_sessions.rs`, `crates/routa-server/src/api/shared_sessions/store.rs` |
-| DELETE | `/api/shared-sessions/{sharedSessionId}` | Close a shared session | `src/app/api/shared-sessions/[sharedSessionId]/route.ts` | `crates/routa-server/src/api/shared_sessions.rs`, `crates/routa-server/src/api/shared_sessions/store.rs` |
-| GET | `/api/shared-sessions/{sharedSessionId}` | Get a shared session with participants and approvals | `src/app/api/shared-sessions/[sharedSessionId]/route.ts` | `crates/routa-server/src/api/shared_sessions.rs`, `crates/routa-server/src/api/shared_sessions/store.rs` |
-| POST | `/api/shared-sessions/{sharedSessionId}/approvals/{approvalId}` | Approve or reject a pending shared session prompt | `src/app/api/shared-sessions/[sharedSessionId]/approvals/[approvalId]/route.ts` | `crates/routa-server/src/api/shared_sessions.rs`, `crates/routa-server/src/api/shared_sessions/store.rs` |
-| POST | `/api/shared-sessions/{sharedSessionId}/join` | Join a shared session | `src/app/api/shared-sessions/[sharedSessionId]/join/route.ts` | `crates/routa-server/src/api/shared_sessions.rs`, `crates/routa-server/src/api/shared_sessions/store.rs` |
-| POST | `/api/shared-sessions/{sharedSessionId}/leave` | Leave a shared session | `src/app/api/shared-sessions/[sharedSessionId]/leave/route.ts` | `crates/routa-server/src/api/shared_sessions.rs`, `crates/routa-server/src/api/shared_sessions/store.rs` |
-| GET | `/api/shared-sessions/{sharedSessionId}/messages` | List shared session messages | `src/app/api/shared-sessions/[sharedSessionId]/messages/route.ts` | `crates/routa-server/src/api/shared_sessions.rs`, `crates/routa-server/src/api/shared_sessions/store.rs` |
-| POST | `/api/shared-sessions/{sharedSessionId}/messages` | Send a shared session message | `src/app/api/shared-sessions/[sharedSessionId]/messages/route.ts` | `crates/routa-server/src/api/shared_sessions.rs`, `crates/routa-server/src/api/shared_sessions/store.rs` |
-| GET | `/api/shared-sessions/{sharedSessionId}/participants` | List shared session participants | `src/app/api/shared-sessions/[sharedSessionId]/participants/route.ts` | `crates/routa-server/src/api/shared_sessions.rs`, `crates/routa-server/src/api/shared_sessions/store.rs` |
-| POST | `/api/shared-sessions/{sharedSessionId}/prompts` | Send a shared session prompt | `src/app/api/shared-sessions/[sharedSessionId]/prompts/route.ts` | `crates/routa-server/src/api/shared_sessions.rs`, `crates/routa-server/src/api/shared_sessions/store.rs` |
-| GET | `/api/shared-sessions/{sharedSessionId}/stream` | Stream shared session events over SSE | `src/app/api/shared-sessions/[sharedSessionId]/stream/route.ts` | `crates/routa-server/src/api/shared_sessions.rs`, `crates/routa-server/src/api/shared_sessions/store.rs` |
-
 ### Skills (7)
 
 | Method | Endpoint | Details | Next.js | Rust |
@@ -614,6 +568,14 @@ Multi-agent coordination platform. This document is auto-generated from:
 | GET | `/api/specialists` | List configured specialist agents | `src/app/api/specialists/route.ts` | `crates/routa-server/src/api/specialists.rs` |
 | POST | `/api/specialists` | Create a specialist configuration | `src/app/api/specialists/route.ts` | `crates/routa-server/src/api/specialists.rs` |
 | PUT | `/api/specialists` | Update an existing specialist | `src/app/api/specialists/route.ts` | `crates/routa-server/src/api/specialists.rs` |
+
+### System (3)
+
+| Method | Endpoint | Details | Next.js | Rust |
+|--------|----------|---------|---------|------|
+| DELETE | `/api/system/memory` | Clear runtime memory monitoring history | `src/app/api/system/memory/route.ts` | `crates/routa-server/src/api/memory.rs` |
+| GET | `/api/system/memory` | Get runtime memory monitoring stats | `src/app/api/system/memory/route.ts` | `crates/routa-server/src/api/memory.rs` |
+| POST | `/api/system/memory` | Trigger runtime memory cleanup | `src/app/api/system/memory/route.ts` | `crates/routa-server/src/api/memory.rs` |
 
 ### Tasks (15)
 
@@ -713,7 +675,7 @@ Multi-agent coordination platform. This document is auto-generated from:
 |--------|----------|--------------|
 | POST | `/api/canvas/specialist/materialize` | `src/app/api/canvas/specialist/materialize/route.ts` |
 
-### Feature-Explorer (4)
+### Feature-Explorer (7)
 
 | Method | Endpoint | Source Files |
 |--------|----------|--------------|
@@ -721,6 +683,9 @@ Multi-agent coordination platform. This document is auto-generated from:
 | GET | `/api/feature-explorer/{featureId}` | `src/app/api/feature-explorer/[featureId]/route.ts` |
 | GET | `/api/feature-explorer/{featureId}/apis` | `src/app/api/feature-explorer/[featureId]/apis/route.ts` |
 | GET | `/api/feature-explorer/{featureId}/files` | `src/app/api/feature-explorer/[featureId]/files/route.ts` |
+| GET | `/api/feature-explorer/friction-profiles` | `src/app/api/feature-explorer/friction-profiles/route.ts` |
+| POST | `/api/feature-explorer/friction-profiles` | `src/app/api/feature-explorer/friction-profiles/route.ts` |
+| GET | `/api/feature-explorer/retrospectives` | `src/app/api/feature-explorer/retrospectives/route.ts` |
 
 ### Fitness (1)
 
@@ -734,17 +699,47 @@ Multi-agent coordination platform. This document is auto-generated from:
 |--------|----------|--------------|
 | GET | `/api/github/access` | `src/app/api/github/access/route.ts` |
 
+### Harness (3)
+
+| Method | Endpoint | Source Files |
+|--------|----------|--------------|
+| GET | `/api/harness/spec-sources/file` | `src/app/api/harness/spec-sources/file/route.ts` |
+| POST | `/api/harness/task-adaptive` | `src/app/api/harness/task-adaptive/route.ts` |
+| POST | `/api/harness/task-adaptive/history-summary` | `src/app/api/harness/task-adaptive/history-summary/route.ts` |
+
+### Kanban (1)
+
+| Method | Endpoint | Source Files |
+|--------|----------|--------------|
+| GET | `/api/kanban/flow-diagnostics` | `src/app/api/kanban/flow-diagnostics/route.ts` |
+
 ### Sessions (1)
 
 | Method | Endpoint | Source Files |
 |--------|----------|--------------|
 | POST | `/api/sessions/{sessionId}/fork` | `src/app/api/sessions/[sessionId]/fork/route.ts` |
 
-### Tasks (1)
+### Spec (2)
+
+| Method | Endpoint | Source Files |
+|--------|----------|--------------|
+| POST | `/api/spec/feature-tree/commit` | `src/app/api/spec/feature-tree/commit/route.ts` |
+| GET | `/api/spec/feature-tree/preflight` | `src/app/api/spec/feature-tree/preflight/route.ts` |
+
+### Tasks (3)
 
 | Method | Endpoint | Source Files |
 |--------|----------|--------------|
 | POST | `/api/tasks/{taskId}/pr-run` | `src/app/api/tasks/[taskId]/pr-run/route.ts` |
+| DELETE | `/api/tasks/unassigned` | `src/app/api/tasks/unassigned/route.ts` |
+| GET | `/api/tasks/unassigned` | `src/app/api/tasks/unassigned/route.ts` |
+
+### Team-Runs (2)
+
+| Method | Endpoint | Source Files |
+|--------|----------|--------------|
+| DELETE | `/api/team-runs/{rootSessionId}` | `src/app/api/team-runs/[rootSessionId]/route.ts` |
+| GET | `/api/team-runs/{rootSessionId}/preview` | `src/app/api/team-runs/[rootSessionId]/preview/route.ts` |
 
 ### Workspaces (11)
 
@@ -808,3 +803,10 @@ Multi-agent coordination platform. This document is auto-generated from:
 | Method | Endpoint | Source Files |
 |--------|----------|--------------|
 | POST | `/api/sessions/{session_id}/fork` | `crates/routa-server/src/api/sessions.rs` |
+
+### Spec (2)
+
+| Method | Endpoint | Source Files |
+|--------|----------|--------------|
+| POST | `/api/spec/feature-tree/commit` | `crates/routa-server/src/api/spec.rs` |
+| GET | `/api/spec/feature-tree/preflight` | `crates/routa-server/src/api/spec.rs` |

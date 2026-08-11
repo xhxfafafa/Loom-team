@@ -78,7 +78,6 @@ metrics:
   - `src/client/components/desktop-app-shell.tsx`
   - `src/client/components/desktop-layout.tsx`
   - `src/client/components/desktop-sidebar.tsx`
-  - `src/client/components/desktop-nav-rail.tsx`
   - `src/client/components/workspace-switcher.tsx`
   - `src/app/styles/desktop-theme.css`
   - `src/client/a2ui/types.ts`
@@ -109,7 +108,7 @@ metrics:
   - `npm run storybook:governance`
   - `npm run test:e2e:desktop-shell`
 - 覆盖：
-  - `DesktopAppShell` / `DesktopLayout` / `DesktopSidebar` / `DesktopNavRail` / `WorkspaceTabBar` / `WorkspacePageHeader` / `CompactStat` / `OverviewCard` / `TracesPageHeader` / `TracesViewTabs` / `Button` 的统一 Storybook story contract
+  - `DesktopAppShell` / `DesktopLayout` / `DesktopSidebar` / `WorkspaceTabBar` / `WorkspacePageHeader` / `CompactStat` / `OverviewCard` / `TracesPageHeader` / `TracesViewTabs` / `Button` 的统一 Storybook story contract
   - `desktop-shell-header`
   - `desktop-shell-sidebar`
   - `workspace-tab-bar`

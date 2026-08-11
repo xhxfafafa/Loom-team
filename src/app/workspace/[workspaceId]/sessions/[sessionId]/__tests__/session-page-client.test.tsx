@@ -187,10 +187,6 @@ vi.mock("@/client/components/settings-panel", () => ({
   getModelDefinitionByAlias: () => undefined,
 }));
 
-vi.mock("@/client/components/desktop-nav-rail", () => ({
-  DesktopNavRail: () => <div data-testid="desktop-nav-rail" />,
-}));
-
 vi.mock("@/client/acp-client", () => ({
   AcpClientError: class MockAcpClientError extends Error {
     code: number;

@@ -27,7 +27,6 @@ const TRAY_SHOW_HIDE_ID: &str = "tray:show_hide";
 const TRAY_WORKSPACE_SESSIONS_ID: &str = "tray:workspace:sessions";
 const TRAY_WORKSPACE_KANBAN_ID: &str = "tray:workspace:kanban";
 const TRAY_WORKSPACE_TEAM_ID: &str = "tray:workspace:team";
-const TRAY_MESSAGES_ID: &str = "tray:messages";
 const TRAY_SETTINGS_AGENTS_ID: &str = "tray:settings:agents";
 const TRAY_SETTINGS_WEBHOOKS_ID: &str = "tray:settings:webhooks";
 const TRAY_QUIT_ID: &str = "tray:quit";
@@ -91,7 +90,6 @@ impl GitHubRepo {
 /// Sessions
 /// Kanban Board
 /// Team Runs
-/// Messages
 /// ──────────────────
 /// Settings
 ///   ├─ Agent Settings…
@@ -135,11 +133,9 @@ pub fn build_tray_menu(app: &AppHandle, repos: &[GitHubRepo]) -> tauri::Result<M
     )?;
     let team_runs =
         MenuItem::with_id(app, TRAY_WORKSPACE_TEAM_ID, "Team Runs", true, None::<&str>)?;
-    let messages = MenuItem::with_id(app, TRAY_MESSAGES_ID, "Messages", true, None::<&str>)?;
     menu.append(&sessions)?;
     menu.append(&kanban)?;
     menu.append(&team_runs)?;
-    menu.append(&messages)?;
 
     menu.append(&PredefinedMenuItem::separator(app)?)?;
 
@@ -314,7 +310,6 @@ fn workspace_route_for_menu_id(id: &str) -> Option<&'static str> {
 
 fn absolute_route_for_menu_id(id: &str) -> Option<&'static str> {
     match id {
-        TRAY_MESSAGES_ID => Some("/messages"),
         TRAY_SETTINGS_AGENTS_ID => Some("/settings/agents"),
         TRAY_SETTINGS_WEBHOOKS_ID => Some("/settings/webhooks"),
         _ => None,
@@ -527,15 +522,11 @@ mod tests {
             workspace_route_for_menu_id(TRAY_WORKSPACE_TEAM_ID),
             Some("/team")
         );
-        assert_eq!(workspace_route_for_menu_id(TRAY_MESSAGES_ID), None);
+        assert_eq!(workspace_route_for_menu_id(TRAY_SETTINGS_AGENTS_ID), None);
     }
 
     #[test]
     fn test_absolute_route_for_menu_id() {
-        assert_eq!(
-            absolute_route_for_menu_id(TRAY_MESSAGES_ID),
-            Some("/messages")
-        );
         assert_eq!(
             absolute_route_for_menu_id(TRAY_SETTINGS_AGENTS_ID),
             Some("/settings/agents")

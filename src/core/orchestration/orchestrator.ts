@@ -54,6 +54,19 @@ import {
   normalizeOptionalText,
   type ChildCompletionMemorySnapshot,
 } from "./completion-memory";
+import { appendSessionNotificationEventOnce, persistCapturedProviderSessionId } from "../acp/session-db-persister";
+import {
+  buildPromptDeliveryReceiptNotification,
+  finalizePromptDelivery,
+} from "../acp/prompt-delivery";
+import { deriveNextTeamReportDeliveryId } from "./team-report-delivery";
+import { releaseCompletedChildRuntime } from "./completed-child-release";
+import type {
+  ChildAgentRecord,
+  TeamRuntimeStateRestore,
+  TeamSessionRegistration,
+} from "./team-runtime-state";
+export type { ChildAgentRecord } from "./team-runtime-state";
 
 export interface DelegateWithSpawnParams {
   /** Task ID to delegate */
@@ -91,24 +104,6 @@ export interface OrchestratorConfig {
   defaultCwd: string;
   /** Server port for MCP URL */
   serverPort?: string;
-}
-
-/**
- * Tracks a spawned child agent and its relationship to a parent.
- */
-interface ChildAgentRecord {
-  agentId: string;
-  sessionId: string;
-  parentAgentId: string;
-  parentSessionId: string;
-  taskId: string;
-  role: AgentRole;
-  provider: string;
-  cwd: string;
-  workspaceId: string;
-  completionHandled?: boolean;
-  /** Tool call ID from the parent session's delegate_task_to_agent call (if available) */
-  delegationToolCallId?: string;
 }
 
 /**
@@ -235,18 +230,7 @@ export class RoutaOrchestrator {
   /** SSE notification handler for sending updates to the frontend */
   private notificationHandler?: (sessionId: string, data: unknown) => void;
   /** Session registration handler for adding child sessions to the UI sidebar */
-  private sessionRegistrationHandler?: (session: {
-    sessionId: string;
-    name?: string;
-    cwd: string;
-    workspaceId: string;
-    routaAgentId: string;
-    provider: string;
-    role: string;
-    specialistId?: string;
-    parentSessionId?: string;
-    sandboxId?: string;
-  }) => void;
+  private sessionRegistrationHandler?: (session: TeamSessionRegistration) => void;
   /** Map: agentId → file watcher cleanup function */
   private reportFileWatchers = new Map<string, () => void>();
   /** Map: agentId → AgentEventBridge for semantic event conversion */
@@ -442,6 +426,35 @@ export class RoutaOrchestrator {
   }
 
   /**
+   * Atomically replace the recoverable Team coordination bindings.
+   *
+   * Every map mutation is staged on a copy first. The live orchestrator is
+   * changed only after the complete restore plan has been constructed, so a
+   * failed recovery cannot leave handlers, mappings, or child records half
+   * installed.
+   */
+  restoreTeamRuntimeState(state: TeamRuntimeStateRestore): void {
+    const nextAgentSessionMap = new Map(this.agentSessionMap);
+    const nextChildAgents = new Map(this.childAgents);
+
+    for (const binding of state.agentSessions) {
+      nextAgentSessionMap.set(binding.agentId, binding.sessionId);
+    }
+    for (const record of state.childAgents) {
+      const existing = nextChildAgents.get(record.agentId);
+      if (!existing || existing.sessionId !== record.sessionId) {
+        nextChildAgents.set(record.agentId, record);
+      }
+      nextAgentSessionMap.set(record.agentId, record.sessionId);
+    }
+
+    this.agentSessionMap = nextAgentSessionMap;
+    this.childAgents = nextChildAgents;
+    this.notificationHandler = state.notificationHandler;
+    this.sessionRegistrationHandler = state.sessionRegistrationHandler;
+  }
+
+  /**
    * Set the notification handler for forwarding SSE updates.
    */
   setNotificationHandler(
@@ -471,18 +484,7 @@ export class RoutaOrchestrator {
    * Set the session registration handler for adding child sessions to the UI sidebar.
    */
   setSessionRegistrationHandler(
-    handler: (session: {
-      sessionId: string;
-      name?: string;
-      cwd: string;
-      workspaceId: string;
-      routaAgentId: string;
-      provider: string;
-      role: string;
-      specialistId?: string;
-      parentSessionId?: string;
-      sandboxId?: string;
-    }) => void
+    handler: (session: TeamSessionRegistration) => void
   ): void {
     this.sessionRegistrationHandler = handler;
   }
@@ -951,7 +953,17 @@ export class RoutaOrchestrator {
         sessionId,
         cwd,
         notificationHandler,
-        [mcpConfigJson]
+        [mcpConfigJson],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (captured: string) => {
+          // Persist the provider-native ID reported by system/init so the
+          // child runtime can later resume natively after a release/restart.
+          void persistCapturedProviderSessionId(sessionId, captured);
+        },
       );
 
       // Watch for .report_to_parent_*.json files in the cwd
@@ -986,6 +998,11 @@ export class RoutaOrchestrator {
         notificationHandler,
         { provider: "claude-code-sdk" },
         lifecycleNotifier,
+        (captured: string) => {
+          // Persist the real SDK-native session ID (never the synthetic
+          // adapter handle) once the SDK reports it.
+          void persistCapturedProviderSessionId(sessionId, captured);
+        },
       );
 
       // Send the initial prompt via the SDK adapter
@@ -1404,88 +1421,92 @@ export class RoutaOrchestrator {
       });
     }
 
-    // Send the wake-up message as a new prompt to the parent's session
-    await this.sendPromptToSession(parentSessionId, wakeMessage);
+    // Deliver the report through the unified recover-aware prompt entry. The
+    // deliveryId is deterministic for the (parent, child, task) triple plus
+    // the count of previously DELIVERED reports, so retries after a crash
+    // reuse the same identity and `appendHistoryOnce` never appends the
+    // report twice. This path also recovers a suspended Lead session instead
+    // of silently dropping the report.
+    //
+    // A delivery failure PROPAGATES on purpose: leaving the completion
+    // unhandled is what lets the session-end fallback retry the wake, and the
+    // recorded delivery event stays WITHOUT a receipt so the retry reuses the
+    // same delivery identity (at-least-once, never double-append).
+    const deliveryId = await deriveNextTeamReportDeliveryId({
+      parentSessionId: record.parentSessionId,
+      childSessionId: record.sessionId,
+      taskId: record.taskId,
+    });
+    try {
+      await this.sendPromptToSession(parentSessionId, wakeMessage, deliveryId);
+    } catch (err) {
+      console.error(
+        `[Orchestrator] Failed to deliver completion report ${deliveryId} to parent session ${parentSessionId}; keeping delivery retryable`,
+        err,
+      );
+      throw err;
+    }
+
+    // Provider accepted the report prompt: persist the durable `delivered`
+    // receipt, then clear the in-flight delivery marker. Only a PROVEN
+    // receipt (newly appended, or already present from an earlier attempt)
+    // counts: a failed receipt write must retain the child runtime so the
+    // hand-off stays retryable instead of being released on an unproven
+    // delivery.
+    let receiptPersisted = false;
+    try {
+      const receiptOutcome = await appendSessionNotificationEventOnce(
+        parentSessionId,
+        buildPromptDeliveryReceiptNotification(parentSessionId, deliveryId),
+      );
+      receiptPersisted = receiptOutcome.status === "appended" || receiptOutcome.status === "duplicate";
+      if (!receiptPersisted) {
+        console.error(
+          `[Orchestrator] Delivery receipt for ${deliveryId} is NOT durable (status: ${receiptOutcome.status}${
+            receiptOutcome.status === "unavailable" ? `, error: ${receiptOutcome.error}` : ""
+          }); retaining child runtime for retry`,
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[Orchestrator] Failed to persist delivery receipt for ${deliveryId}; retaining child runtime for retry:`,
+        err,
+      );
+    } finally {
+      finalizePromptDelivery(deliveryId);
+    }
 
     console.log(
-      `[Orchestrator] Woke parent agent ${parentAgentId} with completion report`
+      `[Orchestrator] Woke parent agent ${parentAgentId} with completion report (${deliveryId})`
     );
+
+    // Durable report acceptance is the completed-child release trigger. The
+    // finalizer re-checks every safety gate (streaming, pending interaction,
+    // dependencies, recovery readiness, durable receipt) and retains the
+    // session record for a later retry when any gate fails.
+    if (receiptPersisted) {
+      await releaseCompletedChildRuntime(record.sessionId);
+    }
   }
 
   /**
-   * Send a prompt to an existing ACP session.
+   * Send a prompt to an existing ACP session through the unified
+   * recover-aware entry point (`dispatchSessionPrompt` →
+   * `handleSessionPrompt` → `ensureSessionRuntime`). A dead or suspended
+   * runtime is recovered here instead of dropping the prompt; the optional
+   * `promptId` makes the delivery durably idempotent.
    */
   private async sendPromptToSession(
     sessionId: string,
-    prompt: string
+    prompt: string,
+    promptId?: string
   ): Promise<void> {
-    const manager = this.processManager;
-
-    if (manager.isClaudeSession(sessionId)) {
-      const claudeProc = manager.getClaudeProcess(sessionId);
-      if (claudeProc && claudeProc.alive) {
-        await claudeProc.prompt(sessionId, prompt);
-      } else {
-        console.error(
-          `[Orchestrator] Claude process not available for session ${sessionId}`
-        );
-      }
-    } else if (manager.isClaudeCodeSdkSession(sessionId)) {
-      const sdkAdapter = manager.getClaudeCodeSdkAdapter(sessionId);
-      if (sdkAdapter && sdkAdapter.alive) {
-        for await (const _ of sdkAdapter.promptStream(prompt, sessionId)) {
-          // notifications are forwarded by the adapter
-        }
-      } else {
-        console.error(
-          `[Orchestrator] Claude Code SDK adapter not available for session ${sessionId}`
-        );
-      }
-    } else if (manager.isOpencodeAdapterSession(sessionId)) {
-      const adapter = manager.getOpencodeAdapter(sessionId);
-      if (adapter && adapter.alive) {
-        const acpSessionId = manager.getAcpSessionId(sessionId);
-        if (acpSessionId) {
-          // Use the adapter's prompt method
-          await (adapter as unknown as { prompt: (s: string, t: string) => Promise<unknown> }).prompt(
-            acpSessionId,
-            prompt
-          );
-        }
-      }
-    } else if (manager.isDockerAdapterSession(sessionId)) {
-      const adapter = manager.getDockerAdapter(sessionId);
-      if (adapter && adapter.alive) {
-        for await (const _ of adapter.promptStream(prompt, sessionId)) {
-          // notifications are forwarded by the adapter
-        }
-      } else {
-        console.error(
-          `[Orchestrator] Docker adapter not available for session ${sessionId}`
-        );
-      }
-    } else if (manager.getWorkspaceAgent(sessionId)) {
-      const workspaceAgent = manager.getWorkspaceAgent(sessionId);
-      if (workspaceAgent) {
-        for await (const _ of workspaceAgent.promptStream(prompt, sessionId)) {
-          // notifications are forwarded by the adapter
-        }
-      } else {
-        console.error(
-          `[Orchestrator] Workspace agent not available for session ${sessionId}`
-        );
-      }
-    } else {
-      const proc = manager.getProcess(sessionId);
-      const acpSessionId = manager.getAcpSessionId(sessionId);
-      if (proc && acpSessionId && proc.alive) {
-        await proc.prompt(acpSessionId, prompt);
-      } else {
-        console.error(
-          `[Orchestrator] ACP process not available for session ${sessionId}`
-        );
-      }
-    }
+    const { dispatchSessionPrompt } = await import("@/core/acp/session-prompt");
+    await dispatchSessionPrompt({
+      sessionId,
+      prompt: [{ type: "text", text: prompt }],
+      ...(promptId ? { promptId } : {}),
+    });
   }
 
   /**

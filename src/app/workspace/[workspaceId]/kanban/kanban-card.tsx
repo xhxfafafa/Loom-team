@@ -8,6 +8,7 @@ import type { CodebaseData } from "@/client/hooks/use-workspaces";
 import { resolveEffectiveTaskAutomation } from "@/core/kanban/effective-task-automation";
 import { parseCanonicalStory } from "@/core/kanban/canonical-story";
 import { formatArtifactLabel, resolveKanbanTransitionArtifacts } from "@/core/kanban/transition-artifacts";
+import { isTaskTerminalForRead, resolveEffectiveColumnIdForRead } from "@/core/kanban/task-status-transition";
 import type { KanbanColumnInfo, SessionInfo, TaskInfo, WorktreeInfo } from "../types";
 import { type KanbanSpecialistLanguage } from "./kanban-specialist-language";
 import { createKanbanSpecialistResolver } from "./kanban-card-session-utils";
@@ -35,6 +36,8 @@ export interface KanbanCardProps {
   worktreeCache: Record<string, WorktreeInfo>;
   autoProviderId?: string;
   queuePosition?: number;
+  /** Runtime-state gate: the task currently has an actually-live session. */
+  hasActiveSession?: boolean;
   onOpenDetail: () => void;
   onDelete: () => void;
   onPatchTask: (taskId: string, payload: Record<string, unknown>) => Promise<TaskInfo>;
@@ -217,6 +220,7 @@ function KanbanCardSurface({
   worktreeCache,
   autoProviderId,
   queuePosition,
+  hasActiveSession = false,
   onOpenDetail,
   onDelete,
   onPatchTask,
@@ -230,15 +234,25 @@ function KanbanCardSurface({
 }: KanbanCardSurfaceProps) {
   const { t } = useTranslation();
   const sessionStatus = linkedSession?.acpStatus;
-  const isTerminalCard = task.columnId === "done" || task.columnId === "blocked";
+  const isTerminalCard = isTaskTerminalForRead(task, boardColumns);
   const resolveSpecialist = createKanbanSpecialistResolver(specialists);
   const effectiveAutomation = resolveEffectiveTaskAutomation(task, boardColumns, resolveSpecialist, {
     autoProviderId,
   });
-  const canRetry = effectiveAutomation.canRun && (
-    sessionStatus === "error" || (!task.triggerSessionId && task.columnId === "dev")
-  ) && !queuePosition;
-  const canRun = effectiveAutomation.canRun && !task.triggerSessionId && task.columnId !== "done" && !queuePosition;
+  // Run eligibility: disabled ONLY for a terminal task, a queued task, or a
+  // task whose session is actually live right now. Completed or failed
+  // historical sessions must not permanently disable retry — a dead
+  // triggerSessionId alone no longer hides the button.
+  const hasRecordedRun = Boolean(task.triggerSessionId)
+    || Boolean(linkedSession)
+    || (task.sessionIds?.length ?? 0) > 0
+    || (task.laneSessions?.length ?? 0) > 0;
+  const canStartRun = effectiveAutomation.canRun
+    && !isTerminalCard
+    && !queuePosition
+    && !hasActiveSession;
+  const canRetry = canStartRun && (sessionStatus === "error" || hasRecordedRun);
+  const canRun = canStartRun && !canRetry;
   const priorityTone = getPriorityTone(task.priority);
   const prioritySizeLabel = getPrioritySizeLabel(task.priority);
   const sessionTone = isTerminalCard
@@ -263,7 +277,7 @@ function KanbanCardSurface({
     : (t.kanban as Record<string, string>)[syncLabelKey] ?? syncLabelKey;
   const syncTone = getSyncTone(sessionStatus, queuePosition, Boolean(task.lastSyncError), task.githubSyncedAt);
   const objectiveText = buildCardSummary(task, task.objective?.trim() || t.kanban.noObjective);
-  const transitionArtifacts = resolveKanbanTransitionArtifacts(boardColumns, task.columnId);
+  const transitionArtifacts = resolveKanbanTransitionArtifacts(boardColumns, resolveEffectiveColumnIdForRead(task, boardColumns));
   const missingNextArtifacts = transitionArtifacts.nextRequiredArtifacts.filter(
     (artifactType) => (task.artifactSummary?.byType?.[artifactType] ?? 0) === 0,
   );
@@ -516,7 +530,7 @@ export function KanbanCard({
     id: props.task.id,
     data: {
       taskId: props.task.id,
-      columnId: props.task.columnId,
+      columnId: resolveEffectiveColumnIdForRead(props.task, props.boardColumns),
     },
   });
 

@@ -316,3 +316,86 @@ story:
     expect(screen.queryByText(/```yaml/i)).toBeNull();
   });
 });
+
+const automatedDevColumns: KanbanColumnInfo[] = [
+  { id: "backlog", name: "Backlog", position: 0, stage: "backlog" },
+  {
+    id: "dev",
+    name: "Dev",
+    position: 1,
+    stage: "dev",
+    automation: { enabled: true, role: "DEVELOPER" },
+  },
+  { id: "ship", name: "Ship", position: 2, stage: "done" },
+  { id: "stuck", name: "Stuck", position: 3, stage: "blocked" },
+];
+
+function renderCard(taskOverrides?: Partial<TaskInfo>, cardProps?: Partial<Parameters<typeof KanbanCard>[0]>) {
+  render(
+    <KanbanCard
+      task={buildTask(taskOverrides)}
+      boardColumns={automatedDevColumns}
+      specialistLanguage="en"
+      availableProviders={[{ id: "codex", name: "Codex", description: "Codex provider", command: "codex" }]}
+      specialists={[]}
+      codebases={[]}
+      allCodebaseIds={[]}
+      worktreeCache={{}}
+      autoProviderId="codex"
+      onOpenDetail={vi.fn()}
+      onDelete={vi.fn()}
+      onPatchTask={vi.fn()}
+      onRetryTrigger={vi.fn()}
+      onRefresh={vi.fn()}
+      {...cardProps}
+    />,
+  );
+}
+
+describe("KanbanCard run gate", () => {
+  it("offers Rerun when the recorded session is dead — historical sessions never permanently disable retry", () => {
+    renderCard({ triggerSessionId: "session-dead", columnId: "dev" });
+
+    expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Rerun" })).toBeTruthy();
+  });
+
+  it("offers Run for a task with no recorded session", () => {
+    renderCard({ columnId: "dev" });
+
+    expect(screen.getByRole("button", { name: "Run" })).toBeTruthy();
+  });
+
+  it("hides Run for a terminal task even when columnId is empty", () => {
+    renderCard({ status: "COMPLETED", columnId: "" });
+    expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rerun" })).toBeNull();
+  });
+
+  it("hides Run for a terminal task whose stale columnId points at an active lane", () => {
+    renderCard({ status: "COMPLETED", columnId: "dev" });
+    expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rerun" })).toBeNull();
+  });
+
+  it("hides Run while the task has an actually-active session", () => {
+    renderCard({ columnId: "dev" }, { hasActiveSession: true });
+
+    expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rerun" })).toBeNull();
+  });
+
+  it("hides Run for a queued task", () => {
+    renderCard({ columnId: "dev" }, { queuePosition: 2 });
+
+    expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rerun" })).toBeNull();
+  });
+
+  it("treats a done-stage column as terminal even when status lags behind", () => {
+    renderCard({ status: "IN_PROGRESS", columnId: "ship" });
+
+    expect(screen.queryByRole("button", { name: "Run" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Rerun" })).toBeNull();
+  });
+});

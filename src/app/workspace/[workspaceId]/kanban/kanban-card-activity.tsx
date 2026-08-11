@@ -15,6 +15,7 @@ import {
 import { useTranslation } from "@/i18n";
 import type { AcpProviderInfo } from "@/client/acp-client";
 import { resolveEffectiveTaskAutomation } from "@/core/kanban/effective-task-automation";
+import { resolveEffectiveColumnIdForRead } from "@/core/kanban/task-status-transition";
 import type { KanbanColumnInfo } from "../types";
 import type { SessionInfo, TaskInfo, TaskRunInfo } from "../types";
 import {
@@ -320,6 +321,7 @@ export function KanbanCardActivityPanel({
   onSelectSession,
   refreshSignal,
   compact = false,
+  boardColumns = [],
 }: {
   task: TaskInfo;
   sessions: SessionInfo[];
@@ -330,6 +332,7 @@ export function KanbanCardActivityPanel({
   onSelectSession?: (sessionId: string) => void;
   refreshSignal?: number;
   compact?: boolean;
+  boardColumns?: KanbanColumnInfo[];
 }) {
   const copy = getKanbanSessionCopy(specialistLanguage);
   const { runs, error } = useTaskRuns(
@@ -391,6 +394,7 @@ export function KanbanCardActivityPanel({
               currentSessionId={currentSessionId}
               onSelectSession={onSelectSession}
               compact={compact}
+              boardColumns={boardColumns}
             />
           )}
           {visibleTab === "handoffs" && (
@@ -571,6 +575,7 @@ function SessionHistoryPanel({
   currentSessionId,
   onSelectSession,
   compact = false,
+  boardColumns = [],
 }: {
   task: TaskInfo;
   runs?: TaskRunInfo[];
@@ -580,11 +585,13 @@ function SessionHistoryPanel({
   currentSessionId?: string;
   onSelectSession?: (sessionId: string) => void;
   compact?: boolean;
+  boardColumns?: KanbanColumnInfo[];
 }) {
   const { t } = useTranslation();
   const copy = getKanbanSessionCopy(specialistLanguage);
   const laneSessions = task.laneSessions ?? [];
   const orderedSessionIds = getStableOrderedSessionIds(task, runs);
+  const effectiveColumnId = resolveEffectiveColumnIdForRead(task, boardColumns);
 
   if (orderedSessionIds.length === 0) {
     return (
@@ -609,7 +616,7 @@ function SessionHistoryPanel({
           </div>
         </div>
         <div className="border border-slate-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:text-slate-300">
-          {t.kanban.currentLane}: {task.columnId ?? t.kanban.backlog}
+          {t.kanban.currentLane}: {effectiveColumnId === "backlog" ? t.kanban.backlog : effectiveColumnId}
         </div>
       </div>
       <div className={`overflow-y-auto pr-1 ${compact ? "mt-3 max-h-80 space-y-1.5" : "mt-4 max-h-[34rem] space-y-2"}`}>

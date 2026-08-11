@@ -11,6 +11,10 @@ import {
   resolveKanbanAutomationStep,
 } from "@/core/kanban/effective-task-automation";
 import { formatArtifactSummary, resolveKanbanTransitionArtifacts } from "@/core/kanban/transition-artifacts";
+import {
+  isTaskTerminalForRead,
+  resolveEffectiveColumnIdForRead,
+} from "@/core/kanban/task-status-transition";
 import { getKanbanAutomationSteps, type KanbanAutomationStep } from "@/core/models/kanban";
 import type { KanbanColumnInfo, SessionInfo, TaskInfo, WorktreeInfo } from "../types";
 import { KanbanCardActivityPanel } from "./kanban-card-activity";
@@ -25,6 +29,7 @@ import {
   getSpecialistName,
   type KanbanSpecialistOption as SpecialistOption,
 } from "./kanban-card-session-utils";
+import { getPreferredTaskSessionId, hasActiveTaskSession } from "./kanban-tab-helpers";
 export { KanbanCardActivityBar } from "./kanban-card-activity";
 import { KanbanCardArtifacts } from "./kanban-card-artifacts";
 import { KanbanCardProviderOverrideDropdown } from "./kanban-card-provider-override-dropdown";
@@ -296,17 +301,30 @@ export function KanbanCardDetail({
     return primaryCodebase?.repoPath ?? getTaskRepositoryPath();
   };
 
+  // Resolve the lane through the shared read-side helper so historical rows
+  // with a terminal status but empty/stale columnId still land on the right
+  // lane (e.g. COMPLETED + empty columnId renders as Done).
+  const effectiveLaneColumnId = useMemo(
+    () => resolveEffectiveColumnIdForRead(task, boardColumns),
+    [task, boardColumns],
+  );
   const currentLane = useMemo(
-    () => boardColumns?.find((column) => column.id === (task.columnId ?? "backlog")),
-    [boardColumns, task.columnId],
+    () => boardColumns?.find((column) => column.id === effectiveLaneColumnId),
+    [boardColumns, effectiveLaneColumnId],
   );
   const nextTransitionArtifacts = useMemo(
-    () => resolveKanbanTransitionArtifacts(boardColumns ?? [], task.columnId),
-    [boardColumns, task.columnId],
+    () => resolveKanbanTransitionArtifacts(boardColumns ?? [], effectiveLaneColumnId),
+    [boardColumns, effectiveLaneColumnId],
   );
   const orderedSessionIds = useMemo(() => getOrderedSessionIds(task), [task]);
-  const activeRunSessionId = task.triggerSessionId
-    ?? (orderedSessionIds.length > 0 ? orderedSessionIds[orderedSessionIds.length - 1] : undefined);
+  const activeRunSessionId = getPreferredTaskSessionId(task) ?? undefined;
+  const hasActiveTaskSessionNow = useMemo(() => {
+    const map = new Map<string, SessionInfo>();
+    for (const session of sessions ?? []) {
+      map.set(session.sessionId, session);
+    }
+    return hasActiveTaskSession(task, map);
+  }, [task, sessions]);
   const sessionCwdMismatch = sessionInfo && activeRunSessionId ? (() => {
     const taskRepoPath = getTaskRepositoryPath();
     if (!taskRepoPath) return false;
@@ -463,7 +481,7 @@ export function KanbanCardDetail({
                 onRefresh();
               }}
             />
-            <MetaBadge label="Column" value={task.columnId ?? "backlog"} compact={compactMode} />
+            <MetaBadge label="Column" value={effectiveLaneColumnId || "backlog"} compact={compactMode} />
             {orderedSessionIds.length > 0 && (
               <MetaBadge label="Runs" value={String(orderedSessionIds.length)} compact={compactMode} />
             )}
@@ -756,6 +774,7 @@ export function KanbanCardDetail({
                 specialists={specialists}
                 specialistLanguage={specialistLanguage}
                 selectedProvider={selectedProvider}
+                hasActiveSession={hasActiveTaskSessionNow}
                 onPatchTask={onPatchTask}
                 onRetryTrigger={onRetryTrigger}
                 onProviderChange={onProviderChange}
@@ -804,6 +823,7 @@ export function KanbanCardDetail({
               currentSessionId={activeRunSessionId}
               onSelectSession={onSelectSession}
               compact={compactMode}
+              boardColumns={boardColumns}
             />
           )}
         </div>
@@ -907,6 +927,7 @@ function ExecutionSection({
   specialists,
   specialistLanguage,
   selectedProvider,
+  hasActiveSession = false,
   onPatchTask,
   onRetryTrigger,
   onProviderChange,
@@ -920,6 +941,8 @@ function ExecutionSection({
   specialists: SpecialistOption[];
   specialistLanguage: KanbanSpecialistLanguage;
   selectedProvider?: string | null;
+  /** Runtime-state gate: the task currently has an actually-live session. */
+  hasActiveSession?: boolean;
   onPatchTask: (taskId: string, payload: Record<string, unknown>) => Promise<TaskInfo>;
   onRetryTrigger: (taskId: string) => Promise<void>;
   onProviderChange?: (providerId: string | null) => void;
@@ -934,7 +957,12 @@ function ExecutionSection({
   const effectiveAutomation = resolveEffectiveTaskAutomation(task, boardColumns, resolveSpecialist, {
     autoProviderId: selectedProvider ?? undefined,
   });
-  const canRunTask = effectiveAutomation.canRun && task.columnId !== "done";
+  // Run eligibility mirrors the card gate: disabled ONLY for a terminal task
+  // or a task whose session is actually live right now. A completed/failed
+  // historical session must not permanently disable retry.
+  const canRunTask = effectiveAutomation.canRun
+    && !isTaskTerminalForRead(task, boardColumns)
+    && !hasActiveSession;
   const hasCardOverride = effectiveAutomation.source === "card";
   const overrideProviderValue = hasCardOverride ? task.assignedProvider ?? "" : "";
   const overrideRoleValue = hasCardOverride ? task.assignedRole ?? "DEVELOPER" : "DEVELOPER";
@@ -964,12 +992,11 @@ function ExecutionSection({
     : usesSelectedProvider
       ? "the current ACP provider with this lane's role and specialist"
       : "the current lane default";
-  const laneName = lane?.name ?? task.columnId ?? "backlog";
+  const laneName = lane?.name ?? resolveEffectiveColumnIdForRead(task, boardColumns);
   const laneSteps = lane?.automation ? getKanbanAutomationSteps(lane.automation) : [];
   const cardSpecialist = getSpecialistName(task.assignedSpecialistId, task.assignedSpecialistName, specialists);
   const failureMessage = getPromptFailureMessage(task, sessionInfo);
-  const activeRunSessionId = task.triggerSessionId
-    ?? (task.laneSessions && task.laneSessions.length > 0 ? task.laneSessions[task.laneSessions.length - 1]?.sessionId : undefined);
+  const activeRunSessionId = getPreferredTaskSessionId(task) ?? undefined;
   const activeLaneSession = activeRunSessionId
     ? task.laneSessions?.find((entry) => entry.sessionId === activeRunSessionId)
     : undefined;
@@ -1007,7 +1034,10 @@ function ExecutionSection({
     )).join(" -> ")
     : t.kanbanDetail.noLaneAutomation;
   const hasRecordedRuns = getOrderedSessionIds(task).length > 0;
-  const transitionArtifacts = resolveKanbanTransitionArtifacts(boardColumns, task.columnId);
+  const transitionArtifacts = resolveKanbanTransitionArtifacts(
+    boardColumns,
+    resolveEffectiveColumnIdForRead(task, boardColumns),
+  );
   const overrideKey = `${task.id}:${task.assignedProvider ?? ""}:${task.assignedRole ?? ""}:${task.assignedSpecialistId ?? ""}:${task.assignedSpecialistName ?? ""}`;
   const needsLiveRunRecovery = isExpiredEmbeddedSessionFailure(failureMessage);
   const runActionLabel = needsLiveRunRecovery

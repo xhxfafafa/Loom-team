@@ -34,12 +34,15 @@ import {
   canSelectTaskSessionInAcp,
   formatLaneAutomationCompactLabel,
   formatLaneAutomationSummary,
+  getPreferredTaskSessionId,
   getTaskLaneSession,
+  hasActiveTaskSession,
   isA2ATaskSession,
   resolveKanbanBoardAutoProviderId,
 } from "./kanban-tab-helpers";
+import { isTaskTerminalForRead, resolveEffectiveColumnIdForRead } from "@/core/kanban/task-status-transition";
 import type { ColumnAutomationConfig } from "./kanban-settings-modal";
-import type { KanbanBoardInfo, SessionInfo, TaskInfo, WorktreeInfo } from "../types";
+import type { KanbanBoardInfo, KanbanColumnInfo, SessionInfo, TaskInfo, WorktreeInfo } from "../types";
 import type { KanbanRepoChanges } from "./kanban-file-changes-types";
 import { buildKanbanTaskAdaptiveHarnessOptions } from "./kanban-task-adaptive";
 import { ChevronRight as _ChevronRight, GitBranch as _GitBranch } from "lucide-react";
@@ -435,6 +438,9 @@ export function KanbanBoardSurface({
     () => activeDragTaskId ? boardTasks.find((task) => task.id === activeDragTaskId) ?? null : null,
     [activeDragTaskId, boardTasks],
   );
+  const activeDragPreferredSessionId = activeDragTask
+    ? getPreferredTaskSessionId(activeDragTask)
+    : null;
 
   const handleDragStart = ({ active }: DragStartEvent) => {
     setActiveDragTaskId(String(active.id));
@@ -515,7 +521,9 @@ export function KanbanBoardSurface({
                   .sort((left, right) => left.position - right.position)
                   .filter((column) => visibleColumns.includes(column.id))
                   .map((column) => {
-                    const columnTasks = boardTasks.filter((task) => (task.columnId ?? "backlog") === column.id);
+                    const columnTasks = boardTasks.filter(
+                      (task) => resolveEffectiveColumnIdForRead(task, board.columns) === column.id,
+                    );
                     const laneAutomation = columnAutomation[column.id] ?? column.automation;
                     const widthClass = column.width === "compact" ? "w-[14rem]" : column.width === "wide" ? "w-[24rem]" : "w-[18rem]";
 
@@ -553,13 +561,15 @@ export function KanbanBoardSurface({
                         </div>
 
                         <div className="flex-1 min-h-0 space-y-2 overflow-y-auto pr-1">
-                          {columnTasks.map((task) => (
+                          {columnTasks.map((task) => {
+                            const preferredSessionId = getPreferredTaskSessionId(task);
+                            return (
                             <KanbanCard
                               key={task.id}
                               task={task}
                               boardColumns={board.columns}
-                              linkedSession={task.triggerSessionId ? sessionMap.get(task.triggerSessionId) : undefined}
-                              liveMessageTail={task.triggerSessionId ? liveSessionTails[task.triggerSessionId] : undefined}
+                              linkedSession={preferredSessionId ? sessionMap.get(preferredSessionId) : undefined}
+                              liveMessageTail={preferredSessionId ? liveSessionTails[preferredSessionId] : undefined}
                               availableProviders={availableProviders}
                               specialists={specialists}
                               specialistLanguage={specialistLanguage}
@@ -568,13 +578,15 @@ export function KanbanBoardSurface({
                               worktreeCache={worktreeCache}
                               autoProviderId={resolveKanbanBoardAutoProviderId(board, boardAutoProviderId)}
                               queuePosition={queuedPositions[task.id]}
+                              hasActiveSession={hasActiveTaskSession(task, sessionMap)}
                               onOpenDetail={() => openTaskDetail(task)}
                               onDelete={() => confirmDeleteTask(task)}
                               onPatchTask={patchTask}
                               onRetryTrigger={retryTaskTrigger}
                               onRefresh={onRefresh}
                             />
-                          ))}
+                            );
+                          })}
                         </div>
                       </KanbanDropColumn>
                     );
@@ -586,8 +598,8 @@ export function KanbanBoardSurface({
                     <KanbanCardOverlay
                       task={activeDragTask}
                       boardColumns={board.columns}
-                      linkedSession={activeDragTask.triggerSessionId ? sessionMap.get(activeDragTask.triggerSessionId) : undefined}
-                      liveMessageTail={activeDragTask.triggerSessionId ? liveSessionTails[activeDragTask.triggerSessionId] : undefined}
+                      linkedSession={activeDragPreferredSessionId ? sessionMap.get(activeDragPreferredSessionId) : undefined}
+                      liveMessageTail={activeDragPreferredSessionId ? liveSessionTails[activeDragPreferredSessionId] : undefined}
                       availableProviders={availableProviders}
                       specialists={specialists}
                       specialistLanguage={specialistLanguage}
@@ -596,6 +608,7 @@ export function KanbanBoardSurface({
                       worktreeCache={worktreeCache}
                       autoProviderId={resolveKanbanBoardAutoProviderId(board, boardAutoProviderId)}
                       queuePosition={queuedPositions[activeDragTask.id]}
+                      hasActiveSession={hasActiveTaskSession(activeDragTask, sessionMap)}
                       onOpenDetail={() => {}}
                       onDelete={() => {}}
                       onPatchTask={patchTask}
@@ -708,6 +721,7 @@ function A2ASessionPane({
   currentSessionId,
   onSelectSession,
   onCloseSession,
+  boardColumns = [],
 }: {
   task: TaskInfo;
   laneSession?: NonNullable<TaskInfo["laneSessions"]>[number];
@@ -718,6 +732,7 @@ function A2ASessionPane({
   currentSessionId?: string;
   onSelectSession: (sessionId: string) => void;
   onCloseSession: () => void;
+  boardColumns?: KanbanColumnInfo[];
 }) {
   const metadata = [
     { label: "Transport", value: (laneSession?.transport ?? "a2a").toUpperCase() },
@@ -778,6 +793,7 @@ function A2ASessionPane({
             currentSessionId={currentSessionId}
             onSelectSession={onSelectSession}
             compact
+            boardColumns={boardColumns}
           />
         </div>
       </div>
@@ -856,7 +872,7 @@ export function KanbanTaskDetailOverlay({
     resolveEffectiveTaskAutomation(activeTask, board?.columns ?? [], resolveSpecialist, {
       autoProviderId: resolveKanbanBoardAutoProviderId(board, boardAutoProviderId),
     }).canRun &&
-    activeTask.columnId !== "done",
+    !isTaskTerminalForRead(activeTask, board?.columns ?? []),
   );
   const selectedLaneSession = getTaskLaneSession(activeTask, activeSessionId);
   const isA2ASessionPane = Boolean(activeTask && isA2ATaskSession(activeTask, activeSessionId));
@@ -1121,6 +1137,7 @@ export function KanbanTaskDetailOverlay({
                     currentSessionId={activeSessionId ?? undefined}
                     onSelectSession={(sessionId) => selectTaskSession(activeTask, sessionId)}
                     onCloseSession={() => setHiddenSessionPaneTaskId(activeTask.id)}
+                    boardColumns={board?.columns ?? []}
                   />
                 ) : acp && (
                   <div className="min-h-0 flex-1">

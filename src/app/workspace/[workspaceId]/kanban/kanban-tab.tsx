@@ -6,6 +6,7 @@ import type { CodebaseData } from "@/client/hooks/use-workspaces";
 import type { UseAcpState, UseAcpActions } from "@/client/hooks/use-acp";
 import { desktopAwareFetch } from "@/client/utils/diagnostics";
 import { resolveEffectiveTaskAutomation } from "@/core/kanban/effective-task-automation";
+import { isTaskTerminalForRead } from "@/core/kanban/task-status-transition";
 import type {
   GitHubIssueListItemInfo,
   GitHubPRListItemInfo,
@@ -720,7 +721,6 @@ export function KanbanTab({
     if (acp.sessionId === activeSessionId) return;
     acp.selectSession(activeSessionId);
   }, [acp, activeSessionId, activeTask, sessionMap]);
-
   useEffect(() => {
     if (!activeTask) {
       emptySessionRecoveryRef.current = null;
@@ -735,7 +735,7 @@ export function KanbanTab({
       board?.columns ?? [],
       resolveSpecialist,
       { autoProviderId: boardAutoProviderId },
-    ).canRun || activeTask.columnId === "done") {
+    ).canRun || isTaskTerminalForRead(activeTask, board?.columns ?? [])) {
       emptySessionRecoveryRef.current = null;
       return;
     }

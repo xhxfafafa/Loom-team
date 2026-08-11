@@ -108,6 +108,42 @@ export function taskOwnsSession(task: TaskInfo | null | undefined, sessionId: st
   return task.laneSessions?.some((entry) => entry.sessionId === sessionId) ?? false;
 }
 
+/**
+ * True when a session's runtime is actually alive right now.
+ *
+ * A persisted `acpStatus=ready` from a dead process (continuityStatus
+ * restorable/interrupted/stale) is NOT live. Completed or failed historical
+ * sessions are never live either — they must not permanently disable retry.
+ */
+export function isTaskSessionLive(session: SessionInfo | undefined): boolean {
+  if (!session) return false;
+  if (session.acpStatus === "error") return false;
+  if (session.continuityStatus) return session.continuityStatus === "active";
+  return session.acpStatus === "ready" || session.acpStatus === "connecting";
+}
+
+/**
+ * Runtime-state check: does the task currently have an actually-active
+ * session? This is deliberately separate from `getPreferredTaskSessionId`
+ * (display): the preferred session is what the panels show, while this gate
+ * covers every session the task owns so a live lane/child session blocks a
+ * duplicate Run even when it is not the preferred one.
+ */
+export function hasActiveTaskSession(
+  task: TaskInfo | null | undefined,
+  sessionMap: Map<string, SessionInfo>,
+): boolean {
+  if (!task) return false;
+  const candidateIds = new Set<string>();
+  if (task.triggerSessionId) candidateIds.add(task.triggerSessionId);
+  for (const sessionId of task.sessionIds ?? []) candidateIds.add(sessionId);
+  for (const entry of task.laneSessions ?? []) candidateIds.add(entry.sessionId);
+  for (const sessionId of candidateIds) {
+    if (isTaskSessionLive(sessionMap.get(sessionId))) return true;
+  }
+  return false;
+}
+
 export function resolveKanbanBoardAutoProviderId(
   board: Pick<KanbanBoardInfo, "autoProviderId"> | null | undefined,
   fallbackProviderId?: string | null,

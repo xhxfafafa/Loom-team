@@ -102,6 +102,53 @@ describe("ClaudeCodeProcess", () => {
     vi.useRealTimers();
   });
 
+  it("forwards an appended system prompt via --append-system-prompt", async () => {
+    vi.useFakeTimers();
+    const fakeProcess = new FakeProcess();
+    spawnMock.mockReturnValue(fakeProcess);
+
+    const process = new ClaudeCodeProcess({
+      preset: {
+        id: "claude-code",
+        name: "Claude Code",
+        provider: "claude-code",
+        command: "claude",
+        args: [],
+      } as never,
+      command: "claude",
+      cwd: "/tmp",
+      displayName: "Claude Code",
+      appendSystemPrompt: "RECOVERY ENVELOPE CONTEXT",
+    }, vi.fn());
+    const startPromise = process.start();
+    await vi.advanceTimersByTimeAsync(500);
+    await startPromise;
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      "claude",
+      expect.arrayContaining(["--append-system-prompt", "RECOVERY ENVELOPE CONTEXT"]),
+      expect.objectContaining({ cwd: "/tmp" }),
+    );
+
+    vi.useRealTimers();
+  });
+
+  it("omits --append-system-prompt when no appended system prompt is configured", async () => {
+    vi.useFakeTimers();
+    const fakeProcess = new FakeProcess();
+    spawnMock.mockReturnValue(fakeProcess);
+
+    const process = createProcess();
+    const startPromise = process.start();
+    await vi.advanceTimersByTimeAsync(500);
+    await startPromise;
+
+    const spawnArgs = spawnMock.mock.calls[0][1] as string[];
+    expect(spawnArgs).not.toContain("--append-system-prompt");
+
+    vi.useRealTimers();
+  });
+
   it("fails startup when the spawned process has no pid", async () => {
     const fakeProcess = new FakeProcess();
     fakeProcess.pid = undefined;

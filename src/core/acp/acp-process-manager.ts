@@ -26,6 +26,7 @@ import {getHttpSessionStore} from "@/core/acp/http-session-store";
 import {AgentInstanceFactory, getAgentInstanceManager, type AgentInstanceConfig} from "@/core/acp/agent-instance-factory";
 import {getDatabaseDriver, getPostgresDatabase} from "@/core/db/index";
 import {PgAcpSessionStore} from "@/core/db/pg-acp-session-store";
+import {updateSessionRuntimeBindingInDb} from "@/core/acp/session-db-persister";
 import type { LifecycleNotifier } from "@/core/acp/lifecycle-notifier";
 import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 
@@ -237,6 +238,22 @@ export class AcpProcessManager {
             this.claudeCodeSdkAdapters.get(sessionId)?.adapter.alive ||
             this.workspaceAgents.get(sessionId)?.adapter.alive
         );
+    }
+
+    /**
+     * True when the session's runtime is waiting on an interactive request
+     * (a pending ACP permission prompt or an SDK user-input request). Other
+     * runtime kinds resolve interactions inline during the prompt, so an
+     * idle or completed turn has nothing pending there. Completed releases
+     * use this to avoid reclaiming a process that still owes the user an
+     * interaction.
+     */
+    hasPendingInteraction(sessionId: string): boolean {
+        const acpProcess = this.processes.get(sessionId)?.process;
+        if (acpProcess?.hasPendingInteractiveRequests()) return true;
+        const sdkAdapter = this.claudeCodeSdkAdapters.get(sessionId)?.adapter;
+        if (sdkAdapter?.hasPendingUserInputRequests()) return true;
+        return false;
     }
 
     /**
@@ -573,6 +590,9 @@ export class AcpProcessManager {
      * @param modeId - Claude mode (acceptEdits, plan, etc.)
      * @param role - Agent role (ROUTA, CRAFTER, GATE). ROUTA forces bypassPermissions.
      * @param extraEnv - Additional environment variables
+     * @param appendSystemPrompt - Extra text appended to the Claude system prompt
+     *   (`--append-system-prompt`); used to inject the bounded recovery envelope
+     *   on context rebuilds.
      * @returns A synthetic session ID for Claude Code
      */
     async createClaudeSession(
@@ -584,6 +604,9 @@ export class AcpProcessManager {
         role?: string,
         extraEnv?: Record<string, string>,
         allowedNativeTools?: string[],
+        resumeSessionId?: string,
+        onSessionId?: (providerSessionId: string) => void,
+        appendSystemPrompt?: string,
     ): Promise<string> {
         // In serverless environments, use Claude Code SDK adapter
         if (shouldUseClaudeCodeSdkAdapter()) {
@@ -594,7 +617,11 @@ export class AcpProcessManager {
                 {
                     allowedNativeTools,
                     mcpServers: parseMcpServersFromConfigs(mcpConfigs),
+                    sdkSessionId: resumeSessionId,
+                    systemPromptAppend: appendSystemPrompt,
                 },
+                undefined,
+                onSessionId,
             );
         }
 
@@ -605,8 +632,8 @@ export class AcpProcessManager {
         const permissionMode = role === "ROUTA"
             ? "bypassPermissions"
             : mapClaudeModeToPermissionMode(modeId);
-        const config = buildClaudeCodeConfig(cwd, mcpConfigs, permissionMode, extraEnv, allowedNativeTools);
-        const proc = new ClaudeCodeProcess(config, onNotification);
+        const config = buildClaudeCodeConfig(cwd, mcpConfigs, permissionMode, extraEnv, allowedNativeTools, resumeSessionId, appendSystemPrompt);
+        const proc = new ClaudeCodeProcess(config, onNotification, onSessionId);
 
         await proc.start();
 
@@ -639,6 +666,7 @@ export class AcpProcessManager {
         onNotification: NotificationHandler,
         instanceConfig?: AgentInstanceConfig,
         lifecycleNotifier?: LifecycleNotifier,
+        onSdkSessionId?: (sdkSessionId: string) => void,
     ): Promise<string> {
         logAcpDebug(`[AcpProcessManager] Using Claude Code SDK adapter for serverless environment`);
 
@@ -647,6 +675,7 @@ export class AcpProcessManager {
             onNotification,
             instanceConfig,
             lifecycleNotifier,
+            onSdkSessionId,
         );
         await adapter.connect();
         const acpSessionId = await adapter.createSession(`Routa Session ${sessionId}`);
@@ -825,17 +854,29 @@ export class AcpProcessManager {
                     provider = dbSession.provider;
                     logAcpDebug(`[AcpProcessManager] Found session in database: provider=${provider}, cwd=${cwd}`);
 
-                    // Restore to HTTP session store for future requests in this instance
+                    // Restore to HTTP session store for future requests in this instance.
+                    // Carry the durable fields (including providerSessionId and
+                    // routaAgentId) so native resume and team recovery keep working.
                     store.upsertSession({
                         sessionId,
+                        name: dbSession.name,
                         cwd: dbSession.cwd,
+                        branch: dbSession.branch,
                         workspaceId: dbSession.workspaceId,
                         routaAgentId: dbSession.routaAgentId,
+                        providerSessionId: dbSession.providerSessionId,
                         provider: dbSession.provider,
                         role: dbSession.role,
                         modeId: dbSession.modeId,
+                        model: dbSession.model,
+                        parentSessionId: dbSession.parentSessionId,
+                        specialistId: dbSession.specialistId,
+                        teamChainId: dbSession.teamChainId,
                         createdAt: dbSession.createdAt.toISOString(),
                         firstPromptSent: dbSession.firstPromptSent,
+                        executionMode: dbSession.executionMode,
+                        ownerInstanceId: dbSession.ownerInstanceId,
+                        leaseExpiresAt: dbSession.leaseExpiresAt,
                     });
                 }
             } catch (err) {
@@ -850,15 +891,20 @@ export class AcpProcessManager {
         // Session exists but adapter not in memory - recreate it
         logAcpDebug(`[AcpProcessManager] Recreating Claude Code SDK adapter for session: ${sessionId}`);
 
+        // Re-read the store: the DB recovery above may have hydrated durable
+        // fields (providerSessionId, specialist prompt, tools) after the first
+        // lookup.
+        const recoveredRecord = store.getSession(sessionId) ?? sessionRecord;
+
         let mcpServers: Record<string, McpServerConfig> | undefined;
         try {
             const mcpResult = await ensureMcpForProvider(
                 "claude",
                 getDefaultRoutaMcpConfig(
-                    sessionRecord?.workspaceId,
+                    recoveredRecord?.workspaceId,
                     sessionId,
-                    sessionRecord?.toolMode,
-                    sessionRecord?.mcpProfile,
+                    recoveredRecord?.toolMode,
+                    recoveredRecord?.mcpProfile,
                 ),
             );
             mcpServers = parseMcpServersFromConfigs(mcpResult.mcpConfigs);
@@ -867,9 +913,20 @@ export class AcpProcessManager {
         }
 
         const adapter = new ClaudeCodeSdkAdapter(cwd, onNotification, {
-            allowedNativeTools: sessionRecord?.allowedNativeTools,
+            allowedNativeTools: recoveredRecord?.allowedNativeTools,
             mcpServers,
-            systemPromptAppend: sessionRecord?.specialistSystemPrompt,
+            systemPromptAppend: recoveredRecord?.specialistSystemPrompt,
+            model: recoveredRecord?.model,
+            // Native resume: seed the persisted provider-native session ID
+            // (captured from system/init before the restart). Never derived
+            // from routa_agent_id.
+            sdkSessionId: recoveredRecord?.providerSessionId,
+            onSdkSessionId: (capturedSdkSessionId) => {
+                store.setProviderSessionId(sessionId, capturedSdkSessionId);
+                void updateSessionRuntimeBindingInDb(sessionId, {
+                    providerSessionId: capturedSdkSessionId,
+                });
+            },
         });
         await adapter.connect();
         // Use existing session ID instead of creating new one

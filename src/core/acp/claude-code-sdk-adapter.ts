@@ -102,6 +102,12 @@ export class ClaudeCodeSdkAdapter {
   private sessionId: string | null = null;
   /** Internal SDK session ID for multi-turn continuity */
   private sdkSessionId: string | null = null;
+  /**
+   * Fired when the SDK session ID is first captured or changes (system/init
+   * message or stream handle). Callers persist it as the Routa session's
+   * `provider_session_id` so future recoveries can resume natively.
+   */
+  private onSdkSessionId?: (sdkSessionId: string) => void;
   private onNotification: NotificationHandler;
   private cwd: string;
   private _alive = false;
@@ -214,6 +220,14 @@ export class ClaudeCodeSdkAdapter {
       mcpServers?: Record<string, McpServerConfig>;
       systemPromptAppend?: string;
       lifecycleNotifier?: LifecycleNotifier;
+      /**
+       * Persisted provider-native session ID (captured from a previous
+       * `system/init` message). Seeding it makes the recovered session resume
+       * the original Claude conversation instead of starting a new one.
+       */
+      sdkSessionId?: string;
+      /** Fired when the SDK session ID is captured/changes (see field docs). */
+      onSdkSessionId?: (sdkSessionId: string) => void;
     }
   ) {
     this.cwd = cwd;
@@ -226,6 +240,26 @@ export class ClaudeCodeSdkAdapter {
     this._mcpServers = options?.mcpServers;
     this._systemPromptAppend = options?.systemPromptAppend;
     this.lifecycleNotifier = options?.lifecycleNotifier;
+    if (options?.sdkSessionId) {
+      this.sdkSessionId = options.sdkSessionId;
+    }
+    this.onSdkSessionId = options?.onSdkSessionId;
+  }
+
+  /**
+   * Track the provider-native SDK session ID and notify the persistence hook.
+   * The captured ID is stored as `provider_session_id` on the Routa session;
+   * it must never be written to `routa_agent_id`.
+   */
+  private updateSdkSessionId(captured: string | null | undefined) {
+    if (!captured || captured === this.sdkSessionId) return;
+    console.info(`[ClaudeCodeSdkAdapter] Captured SDK session ID: ${captured}`);
+    this.sdkSessionId = captured;
+    try {
+      this.onSdkSessionId?.(captured);
+    } catch (err) {
+      console.warn("[ClaudeCodeSdkAdapter] onSdkSessionId hook failed:", err);
+    }
   }
 
   private buildSystemPromptOption(skillContent?: string):
@@ -284,6 +318,15 @@ export class ClaudeCodeSdkAdapter {
 
   get acpSessionId(): string | null {
     return this.sessionId;
+  }
+
+  /**
+   * True while the adapter is waiting on a user-input request (e.g. an
+   * AskUserQuestion tool call). A completed release must not reclaim the
+   * adapter while such a request is still pending.
+   */
+  hasPendingUserInputRequests(): boolean {
+    return this.pendingUserInputRequests.size > 0;
   }
 
   /**
@@ -360,7 +403,11 @@ export class ClaudeCodeSdkAdapter {
       : "undefined";
     const cliPath = resolveCliPath();
     const promptCwd = this.cwd || process.cwd();
-    const shouldContinue = !this._isFirstPrompt && this.sdkSessionId !== null;
+    // Resume exactly when a provider-native session ID is known — either
+    // captured from a previous turn or seeded from the persisted
+    // provider_session_id during recovery. Fresh sessions keep sdkSessionId
+    // null until their first system/init message.
+    const shouldContinue = this.sdkSessionId !== null;
 
     console.log(
       `[ClaudeCodeSdkAdapter] promptStream: model=${config.model}, apiKey=${maskedKey}, ` +
@@ -427,10 +474,7 @@ export class ClaudeCodeSdkAdapter {
       });
 
       if ("sessionId" in stream) {
-        const streamSessionId = (stream as { sessionId?: string }).sessionId;
-        if (streamSessionId && streamSessionId !== this.sdkSessionId) {
-          this.sdkSessionId = streamSessionId;
-        }
+        this.updateSdkSessionId((stream as { sessionId?: string }).sessionId);
       }
 
       for await (const msg of stream) {
@@ -439,12 +483,9 @@ export class ClaudeCodeSdkAdapter {
           break;
         }
 
-        // Capture SDK session ID from system message
+        // Capture SDK session ID from system message (system/init)
         if (msg.type === "system" && "session_id" in msg) {
-          const systemSessionId = (msg as Record<string, unknown>).session_id as string | undefined;
-          if (systemSessionId && systemSessionId !== this.sdkSessionId) {
-            this.sdkSessionId = systemSessionId;
-          }
+          this.updateSdkSessionId((msg as Record<string, unknown>).session_id as string | undefined);
         }
 
         // Some SDK/provider combinations do not emit `stream_event` deltas even with
@@ -591,7 +632,11 @@ export class ClaudeCodeSdkAdapter {
       : "undefined";
     const cliPath = resolveCliPath();
     const promptCwd = this.cwd || process.cwd();
-    const shouldContinue = !this._isFirstPrompt && this.sdkSessionId !== null;
+    // Resume exactly when a provider-native session ID is known — either
+    // captured from a previous turn or seeded from the persisted
+    // provider_session_id during recovery. Fresh sessions keep sdkSessionId
+    // null until their first system/init message.
+    const shouldContinue = this.sdkSessionId !== null;
 
     console.log(
       `[ClaudeCodeSdkAdapter] Sending prompt: model=${config.model}, apiKey=${maskedKey}, ` +
@@ -670,11 +715,7 @@ export class ClaudeCodeSdkAdapter {
       // Capture SDK session ID from the stream for future continuity
       // The stream object has a sessionId property after initialization
       if ("sessionId" in stream) {
-        const streamSessionId = (stream as { sessionId?: string }).sessionId;
-        if (streamSessionId && streamSessionId !== this.sdkSessionId) {
-          console.log(`[ClaudeCodeSdkAdapter] Captured SDK session ID: ${streamSessionId}`);
-          this.sdkSessionId = streamSessionId;
-        }
+        this.updateSdkSessionId((stream as { sessionId?: string }).sessionId);
       }
 
       for await (const msg of stream) {
@@ -684,13 +725,9 @@ export class ClaudeCodeSdkAdapter {
           break;
         }
 
-        // Try to capture SDK session ID from system message
+        // Try to capture SDK session ID from system message (system/init)
         if (msg.type === "system" && "session_id" in msg) {
-          const systemSessionId = (msg as Record<string, unknown>).session_id as string | undefined;
-          if (systemSessionId && systemSessionId !== this.sdkSessionId) {
-            console.log(`[ClaudeCodeSdkAdapter] Captured SDK session ID from system message: ${systemSessionId}`);
-            this.sdkSessionId = systemSessionId;
-          }
+          this.updateSdkSessionId((msg as Record<string, unknown>).session_id as string | undefined);
         }
 
         this.dispatchMessage(msg, sessionId);

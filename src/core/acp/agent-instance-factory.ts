@@ -55,6 +55,12 @@ export interface AgentInstanceConfig {
   mcpServers?: Record<string, McpServerConfig>;
   /** Optional system prompt append content passed through to the provider SDK */
   systemPromptAppend?: string;
+  /**
+   * Persisted provider-native session ID (Claude SDK `system/init` session_id).
+   * Seeding it lets a recovered adapter resume the original provider
+   * conversation. Never derived from routa_agent_id.
+   */
+  sdkSessionId?: string;
 }
 
 /**
@@ -168,12 +174,17 @@ export class AgentInstanceFactory {
 
   /**
    * Create a Claude Code SDK adapter with the resolved config.
+   *
+   * `onSdkSessionId` is invoked when the adapter captures the provider-native
+   * SDK session ID (from the `system/init` message), so callers can persist it
+   * as the Routa session's `provider_session_id` for native resume.
    */
   static createClaudeCodeSdkAdapter(
     cwd: string,
     onNotification: NotificationHandler,
     config?: AgentInstanceConfig,
     lifecycleNotifier?: LifecycleNotifier,
+    onSdkSessionId?: (sdkSessionId: string) => void,
   ): { adapter: ClaudeCodeSdkAdapter; resolved: ResolvedAgentConfig } {
     const resolved = config
       ? AgentInstanceFactory.resolveConfig(config)
@@ -188,6 +199,8 @@ export class AgentInstanceFactory {
       mcpServers: resolved.mcpServers,
       systemPromptAppend: resolved.systemPromptAppend,
       lifecycleNotifier,
+      sdkSessionId: resolved.sdkSessionId,
+      onSdkSessionId,
     });
 
     console.log(

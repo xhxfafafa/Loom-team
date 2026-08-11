@@ -128,6 +128,19 @@ export interface ClaudeCodeProcessConfig {
     allowedTools?: string[];
     /** MCP config JSON strings (passed via --mcp-config) */
     mcpConfigs?: string[];
+    /**
+     * Provider-native Claude session ID for native resume (`--resume`).
+     * Sourced from a previously captured `system/init` session_id; must never
+     * be a routa_agent_id.
+     */
+    resumeSessionId?: string;
+    /**
+     * Extra text appended to the Claude system prompt via
+     * `--append-system-prompt`. Used to inject the bounded recovery envelope
+     * when a provider conversation had to be rebuilt (Rust parity:
+     * `claude_code_process.rs` already emits this flag).
+     */
+    appendSystemPrompt?: string;
 }
 
 /**
@@ -171,9 +184,21 @@ export class ClaudeCodeProcess {
     private promptReject: ((reason: Error) => void) | null = null;
     private promptTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    constructor(config: ClaudeCodeProcessConfig, onNotification: NotificationHandler) {
+    /**
+     * Fired when the Claude CLI reports its provider-native session ID via the
+     * `system/init` message. Callers persist it as the Routa session's
+     * `provider_session_id` so future recoveries can `--resume` natively.
+     */
+    private onSessionId?: (sessionId: string) => void;
+
+    constructor(
+        config: ClaudeCodeProcessConfig,
+        onNotification: NotificationHandler,
+        onSessionId?: (sessionId: string) => void,
+    ) {
         this._config = config;
         this.onNotification = onNotification;
+        this.onSessionId = onSessionId;
     }
 
     get sessionId(): string | null {
@@ -255,6 +280,17 @@ export class ClaudeCodeProcess {
                     cmd.push("--mcp-config", mcpConfig);
                 }
             }
+        }
+
+        // Native resume of a previously captured Claude session
+        // (provider_session_id). Never a routa_agent_id.
+        if (this._config.resumeSessionId) {
+            cmd.push("--resume", this._config.resumeSessionId);
+        }
+
+        // Recovery envelope / extra system context (Rust parity)
+        if (this._config.appendSystemPrompt) {
+            cmd.push("--append-system-prompt", this._config.appendSystemPrompt);
         }
 
         console.log(`[ClaudeCode:${displayName}] Spawning: ${cmd.join(" ")} (cwd: ${cwd})`);
@@ -513,7 +549,9 @@ export class ClaudeCodeProcess {
         switch (msg.type) {
             case "system": {
                 if (msg.subtype === "init" && msg.session_id) {
+                    const previous = this._sessionId;
                     this._sessionId = msg.session_id;
+                    this.emitCapturedSessionIdIfChanged(previous, msg.session_id);
                 }
                 break;
             }
@@ -652,6 +690,15 @@ export class ClaudeCodeProcess {
             default:
                 // Unknown message type - ignore silently
                 break;
+        }
+    }
+
+    private emitCapturedSessionIdIfChanged(previous: string | null | undefined, sessionId: string): void {
+        if (previous === sessionId) return;
+        try {
+            this.onSessionId?.(sessionId);
+        } catch (err) {
+            console.warn(`[ClaudeCode:${this._config.displayName}] onSessionId hook failed:`, err);
         }
     }
 
@@ -1081,6 +1128,8 @@ export function buildClaudeCodeConfig(
     permissionMode?: string,
     extraEnv?: Record<string, string>,
     allowedTools?: string[],
+    resumeSessionId?: string,
+    appendSystemPrompt?: string,
 ): ClaudeCodeProcessConfig {
     const preset: AcpAgentPreset = {
         id: "claude",
@@ -1104,6 +1153,8 @@ export function buildClaudeCodeConfig(
         // from .claude/skills/ and ~/.claude/skills/ directories
         allowedTools: allowedTools ?? ["Skill", "Read", "Write", "Edit", "Bash", "Glob", "Grep"],
         mcpConfigs: mcpConfigs ?? [],
+        resumeSessionId,
+        appendSystemPrompt,
     };
 }
 

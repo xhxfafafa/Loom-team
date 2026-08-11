@@ -114,17 +114,36 @@ export class LocalWorker implements Worker {
 
       let acpSessionId: string;
 
+      // Persist the provider-native ID only when the provider itself reports
+      // it (Claude system/init callback) — never the Routa Session ID.
+      const persistCapturedNativeSessionId = (captured: string) => {
+        void (async () => {
+          const { persistCapturedProviderSessionId } = await import("@/core/acp/session-db-persister");
+          await persistCapturedProviderSessionId(sessionId, captured);
+        })();
+      };
+
       if (task.agentId === "claude") {
         acpSessionId = await manager.createClaudeSession(
           sessionId,
           cwd,
           noopNotification,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          persistCapturedNativeSessionId,
         );
       } else if (task.agentId === "claude-code-sdk") {
         acpSessionId = await manager.createClaudeCodeSdkSession(
           sessionId,
           cwd,
           noopNotification,
+          undefined,
+          undefined,
+          persistCapturedNativeSessionId,
         );
       } else if (isWorkspaceProvider(task.agentId)) {
         const sandboxId = task.sandboxId ?? (await createWorkspaceSessionSandbox({

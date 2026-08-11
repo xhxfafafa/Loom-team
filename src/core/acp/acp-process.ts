@@ -106,6 +106,15 @@ export class AcpProcess {
         return this._config.preset?.id;
     }
 
+    /**
+     * True while the provider is waiting on an interactive permission/user
+     * input request. A completed release must not reclaim the process while
+     * such a request is still pending.
+     */
+    hasPendingInteractiveRequests(): boolean {
+        return this.pendingInteractiveRequests.size > 0;
+    }
+
     setSessionContext(context: AcpSessionContext): void {
         this._sessionContext = context;
     }

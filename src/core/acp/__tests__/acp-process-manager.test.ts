@@ -34,6 +34,7 @@ const claudeInstances: Array<Record<string, unknown>> = [];
 const opencodeInstances: Array<Record<string, unknown>> = [];
 const directInstances: Array<Record<string, unknown>> = [];
 const claudeSdkInstances: Array<Record<string, unknown>> = [];
+const factorySdkAdapters: Array<Record<string, unknown>> = [];
 const workspaceInstances: Array<Record<string, unknown>> = [];
 
 vi.mock("@/core/acp/process-config", () => ({
@@ -54,6 +55,8 @@ vi.mock("@/core/acp/acp-process", () => ({
     setSessionContext = vi.fn();
     sendRequest = vi.fn(async () => {});
     respondToUserInput = vi.fn(() => false);
+    pendingInteractive = false;
+    hasPendingInteractiveRequests = vi.fn(() => this.pendingInteractive);
     kill = vi.fn(() => {
       this.alive = false;
     });
@@ -144,6 +147,8 @@ vi.mock("@/core/acp/claude-code-sdk-adapter", () => ({
     connect = claudeSdkConnectMock;
     createSession = claudeSdkCreateSessionMock;
     respondToUserInput = vi.fn(() => false);
+    pendingUserInput = false;
+    hasPendingUserInputRequests = vi.fn(() => this.pendingUserInput);
     kill = vi.fn(() => {
       this.alive = false;
     });
@@ -200,16 +205,21 @@ vi.mock("@/core/acp/http-session-store", () => ({
 
 vi.mock("@/core/acp/agent-instance-factory", () => ({
   AgentInstanceFactory: {
-    createClaudeCodeSdkAdapter: vi.fn(() => ({
-      adapter: {
+    createClaudeCodeSdkAdapter: vi.fn(() => {
+      const adapter = {
         alive: true,
         connect: claudeSdkConnectMock,
         createSession: claudeSdkCreateSessionMock,
         respondToUserInput: vi.fn(() => false),
+        pendingUserInput: false,
+        hasPendingUserInputRequests: vi.fn(function (this: { pendingUserInput: boolean }) {
+          return this.pendingUserInput;
+        }),
         kill: vi.fn(),
-      },
-      resolved: {},
-    })),
+      };
+      factorySdkAdapters.push(adapter);
+      return { adapter, resolved: {} };
+    }),
   },
   getAgentInstanceManager: vi.fn(() => ({
     register: vi.fn(),
@@ -237,6 +247,7 @@ describe("AcpProcessManager", () => {
     opencodeInstances.length = 0;
     directInstances.length = 0;
     claudeSdkInstances.length = 0;
+    factorySdkAdapters.length = 0;
     workspaceInstances.length = 0;
     providerSupportsMcpMock.mockReturnValue(true);
     ensureMcpForProviderMock.mockResolvedValue({
@@ -345,9 +356,39 @@ describe("AcpProcessManager", () => {
       "bypassPermissions",
       { BAR: "baz" },
       ["Bash"],
+      undefined,
+      undefined,
     );
     expect(manager.getClaudeProcess("claude-session")).toBeDefined();
     expect(manager.isClaudeSession("claude-session")).toBe(true);
+  });
+
+  it("forwards appendSystemPrompt to the Claude Code config", async () => {
+    const manager = new AcpProcessManager();
+
+    await manager.createClaudeSession(
+      "claude-session",
+      "/repo",
+      vi.fn(),
+      ["mcp-json"],
+      undefined,
+      "CRAFTER",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "RECOVERY ENVELOPE",
+    );
+
+    expect(buildClaudeCodeConfigMock).toHaveBeenCalledWith(
+      "/repo",
+      ["mcp-json"],
+      "acceptEdits",
+      undefined,
+      undefined,
+      undefined,
+      "RECOVERY ENVELOPE",
+    );
   });
 
   it("lists and kills sessions across all managed transport types", async () => {
@@ -608,5 +649,41 @@ describe("AcpProcessManager", () => {
 
     expect(manager.respondToUserInput("session-1", "tool-1", { approved: true })).toBe(true);
     expect(manager.respondToUserInput("missing", "tool-1", { approved: true })).toBe(false);
+  });
+
+  it("reports pending interactions from ACP processes", async () => {
+    const manager = new AcpProcessManager();
+    await manager.createSession(
+      "session-1",
+      "/workspace",
+      vi.fn(),
+      "opencode",
+    );
+
+    expect(manager.hasPendingInteraction("session-1")).toBe(false);
+
+    acpInstances[0].pendingInteractive = true;
+    expect(manager.hasPendingInteraction("session-1")).toBe(true);
+    expect(manager.hasPendingInteraction("missing")).toBe(false);
+  });
+
+  it("reports pending interactions from Claude Code SDK adapters", async () => {
+    const manager = new AcpProcessManager();
+    shouldUseClaudeCodeSdkAdapterMock.mockReturnValue(true);
+    await manager.createClaudeSession(
+      "session-claude-sdk",
+      "/workspace",
+      vi.fn(),
+      ["mcp-config"],
+      "plan",
+      "CRAFTER",
+      undefined,
+      ["Read"],
+    );
+
+    expect(manager.hasPendingInteraction("session-claude-sdk")).toBe(false);
+
+    factorySdkAdapters[0].pendingUserInput = true;
+    expect(manager.hasPendingInteraction("session-claude-sdk")).toBe(true);
   });
 });

@@ -125,6 +125,7 @@ pub struct ListTasksQuery {
     pub session_id: Option<String>,
     pub status: Option<String>,
     pub assigned_to: Option<String>,
+    pub team_run_id: Option<String>,
 }
 
 /// Query params for task file change

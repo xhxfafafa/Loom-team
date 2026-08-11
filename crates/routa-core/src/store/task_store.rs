@@ -42,10 +42,10 @@ impl TaskStore {
                                          trigger_session_id, github_id, github_number, github_url, github_repo, github_state,
                                          github_synced_at, last_sync_error, dependencies, parallel_group, workspace_id, session_id,
                                          creation_source, session_ids, lane_sessions, lane_handoffs, completion_summary, verification_verdict,
-                                         verification_report, codebase_ids, context_search_spec, worktree_id, version, created_at, updated_at)
+                                         verification_report, codebase_ids, context_search_spec, worktree_id, team_run_id, created_at, updated_at)
                                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
                                          ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36,
-                                         ?37, ?38, ?39, ?40, ?41, ?42, 1, ?43, ?44)
+                                         ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45)
                      ON CONFLICT(id) DO UPDATE SET
                        title = excluded.title,
                        objective = excluded.objective,
@@ -88,6 +88,7 @@ impl TaskStore {
                        codebase_ids = excluded.codebase_ids,
                        context_search_spec = excluded.context_search_spec,
                        worktree_id = excluded.worktree_id,
+                       team_run_id = excluded.team_run_id,
                        updated_at = excluded.updated_at",
                     rusqlite::params![
                         t.id,
@@ -134,6 +135,7 @@ impl TaskStore {
                             .as_ref()
                             .map(|value| serde_json::to_string(value).unwrap_or_default()),
                         t.worktree_id,
+                        t.team_run_id,
                         t.created_at.timestamp_millis(),
                         t.updated_at.timestamp_millis(),
                     ],
@@ -154,7 +156,7 @@ impl TaskStore {
                      trigger_session_id, github_id, github_number, github_url, github_repo, github_state,
                      github_synced_at, last_sync_error, dependencies, parallel_group, workspace_id, session_id, creation_source,
                      session_ids, lane_sessions, lane_handoffs, completion_summary, verification_verdict,
-                     verification_report, codebase_ids, context_search_spec, worktree_id, created_at, updated_at
+                     verification_report, codebase_ids, context_search_spec, worktree_id, created_at, updated_at, team_run_id
                      FROM tasks WHERE id = ?1",
                 )?;
                 stmt.query_row(rusqlite::params![id], |row| Ok(row_to_task(row)))
@@ -174,7 +176,7 @@ impl TaskStore {
                      trigger_session_id, github_id, github_number, github_url, github_repo, github_state,
                      github_synced_at, last_sync_error, dependencies, parallel_group, workspace_id, session_id, creation_source,
                      session_ids, lane_sessions, lane_handoffs, completion_summary, verification_verdict,
-                     verification_report, codebase_ids, context_search_spec, worktree_id, created_at, updated_at
+                     verification_report, codebase_ids, context_search_spec, worktree_id, created_at, updated_at, team_run_id
                      FROM tasks WHERE workspace_id = ?1 ORDER BY created_at DESC",
                 )?;
                 let rows = stmt
@@ -196,7 +198,7 @@ impl TaskStore {
                      trigger_session_id, github_id, github_number, github_url, github_repo, github_state,
                      github_synced_at, last_sync_error, dependencies, parallel_group, workspace_id, session_id, creation_source,
                      session_ids, lane_sessions, lane_handoffs, completion_summary, verification_verdict,
-                     verification_report, codebase_ids, context_search_spec, worktree_id, created_at, updated_at
+                     verification_report, codebase_ids, context_search_spec, worktree_id, created_at, updated_at, team_run_id
                      FROM tasks WHERE session_id = ?1 ORDER BY created_at DESC",
                 )?;
                 let rows = stmt
@@ -223,7 +225,7 @@ impl TaskStore {
                      trigger_session_id, github_id, github_number, github_url, github_repo, github_state,
                      github_synced_at, last_sync_error, dependencies, parallel_group, workspace_id, session_id, creation_source,
                      session_ids, lane_sessions, lane_handoffs, completion_summary, verification_verdict,
-                     verification_report, codebase_ids, context_search_spec, worktree_id, created_at, updated_at
+                     verification_report, codebase_ids, context_search_spec, worktree_id, created_at, updated_at, team_run_id
                      FROM tasks WHERE workspace_id = ?1 AND status = ?2 ORDER BY created_at DESC",
                 )?;
                 let rows = stmt
@@ -247,7 +249,7 @@ impl TaskStore {
                      trigger_session_id, github_id, github_number, github_url, github_repo, github_state,
                      github_synced_at, last_sync_error, dependencies, parallel_group, workspace_id, session_id, creation_source,
                      session_ids, lane_sessions, lane_handoffs, completion_summary, verification_verdict,
-                     verification_report, codebase_ids, context_search_spec, worktree_id, created_at, updated_at
+                     verification_report, codebase_ids, context_search_spec, worktree_id, created_at, updated_at, team_run_id
                      FROM tasks WHERE assigned_to = ?1 ORDER BY created_at DESC",
                 )?;
                 let rows = stmt
@@ -290,6 +292,36 @@ impl TaskStore {
                     rusqlite::params![status_str, now, id],
                 )?;
                 Ok(())
+            })
+            .await
+    }
+
+    /// List tasks owned by a Team run (root Team session), scoped to a workspace.
+    pub async fn list_by_team_run(
+        &self,
+        workspace_id: &str,
+        team_run_id: &str,
+    ) -> Result<Vec<Task>, ServerError> {
+        let ws_id = workspace_id.to_string();
+        let run_id = team_run_id.to_string();
+        self.db
+            .with_conn_async(move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT id, title, objective, comment, scope, acceptance_criteria, verification_commands, test_cases,
+                     assigned_to, status, board_id, column_id, position, priority, labels, assignee,
+                     assigned_provider, assigned_role, assigned_specialist_id, assigned_specialist_name,
+                     trigger_session_id, github_id, github_number, github_url, github_repo, github_state,
+                     github_synced_at, last_sync_error, dependencies, parallel_group, workspace_id, session_id, creation_source,
+                     session_ids, lane_sessions, lane_handoffs, completion_summary, verification_verdict,
+                     verification_report, codebase_ids, context_search_spec, worktree_id, created_at, updated_at, team_run_id
+                     FROM tasks WHERE workspace_id = ?1 AND team_run_id = ?2 ORDER BY created_at DESC",
+                )?;
+                let rows = stmt
+                    .query_map(rusqlite::params![ws_id, run_id], |row| {
+                        Ok(row_to_task(row))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
             })
             .await
     }
@@ -404,6 +436,7 @@ fn row_to_task(row: &Row<'_>) -> Task {
             .unwrap_or(None)
             .and_then(|s| serde_json::from_str::<TaskContextSearchSpec>(&s).ok()),
         worktree_id: row.get(41).unwrap_or(None),
+        team_run_id: row.get(44).unwrap_or(None),
         created_at: chrono::DateTime::from_timestamp_millis(created_ms).unwrap_or_else(Utc::now),
         updated_at: chrono::DateTime::from_timestamp_millis(updated_ms).unwrap_or_else(Utc::now),
     }
@@ -462,6 +495,7 @@ mod tests {
             None,
         );
         task.creation_source = Some(TaskCreationSource::Session);
+        task.team_run_id = Some("team-run-1".to_string());
         task.session_ids = vec!["origin-session".to_string(), "a2a-run-1".to_string()];
         task.lane_sessions = vec![TaskLaneSession {
             session_id: "a2a-run-1".to_string(),
@@ -513,7 +547,77 @@ mod tests {
 
         assert_eq!(loaded.session_ids, task.session_ids);
         assert_eq!(loaded.creation_source, Some(TaskCreationSource::Session));
+        assert_eq!(loaded.team_run_id, Some("team-run-1".to_string()));
         assert_eq!(loaded.lane_sessions, task.lane_sessions);
         assert_eq!(loaded.lane_handoffs, task.lane_handoffs);
+    }
+
+    #[tokio::test]
+    async fn list_by_team_run_is_workspace_scoped() {
+        let store = setup().await;
+        let workspace_store = WorkspaceStore::new(store.db.clone());
+        workspace_store
+            .save(&Workspace::new(
+                "other".to_string(),
+                "Other".to_string(),
+                None,
+            ))
+            .await
+            .expect("workspace save should succeed");
+
+        let mut owned = Task::new(
+            "task-owned".to_string(),
+            "Owned".to_string(),
+            "Owned by team run".to_string(),
+            "default".to_string(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        owned.team_run_id = Some("team-run-1".to_string());
+        store.save(&owned).await.expect("save should succeed");
+
+        let mut foreign = Task::new(
+            "task-foreign".to_string(),
+            "Foreign".to_string(),
+            "Same run id, other workspace".to_string(),
+            "other".to_string(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        foreign.team_run_id = Some("team-run-1".to_string());
+        store.save(&foreign).await.expect("save should succeed");
+
+        let mut unrelated = Task::new(
+            "task-unrelated".to_string(),
+            "Unrelated".to_string(),
+            "No team run".to_string(),
+            "default".to_string(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        unrelated.team_run_id = Some("team-run-2".to_string());
+        store.save(&unrelated).await.expect("save should succeed");
+
+        let listed = store
+            .list_by_team_run("default", "team-run-1")
+            .await
+            .expect("list should succeed");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, "task-owned");
     }
 }

@@ -407,6 +407,24 @@ components:
           type: string
         triggerSessionId:
           type: string
+        sessionId:
+          type: string
+          description: Session that created this task; never overwritten by delegation.
+        sessionIds:
+          type: array
+          description: >-
+            Deduplicated history of sessions bound to this task, including Team
+            delegation child sessions.
+          items:
+            type: string
+        teamRunId:
+          type: string
+          description: Root Team session that owns this task, when created in a Team run.
+        laneSessions:
+          type: array
+          description: Kanban lane automation execution ledger; not the Team delegation binding.
+          items:
+            $ref: "#/components/schemas/TaskLaneSession"
         githubId:
           type: string
         githubNumber:
@@ -441,6 +459,64 @@ components:
         verificationVerdict:
           $ref: "#/components/schemas/VerificationVerdict"
         verificationReport:
+          type: string
+
+    TaskLaneSession:
+      type: object
+      required: [sessionId, status, startedAt]
+      properties:
+        sessionId:
+          type: string
+        routaAgentId:
+          type: string
+        worktreeId:
+          type: string
+        cwd:
+          type: string
+        columnId:
+          type: string
+        columnName:
+          type: string
+        stepId:
+          type: string
+        stepIndex:
+          type: integer
+        stepName:
+          type: string
+        provider:
+          type: string
+        role:
+          type: string
+        specialistId:
+          type: string
+        specialistName:
+          type: string
+        transport:
+          type: string
+        externalTaskId:
+          type: string
+        contextId:
+          type: string
+        attempt:
+          type: integer
+        loopMode:
+          type: string
+        completionRequirement:
+          type: string
+        objective:
+          type: string
+        lastActivityAt:
+          type: string
+        recoveredFromSessionId:
+          type: string
+        recoveryReason:
+          type: string
+        status:
+          type: string
+          enum: [running, completed, failed, timed_out, transitioned]
+        startedAt:
+          type: string
+        completedAt:
           type: string
 
     Artifact:
@@ -1354,6 +1430,15 @@ paths:
             $ref: "#/components/schemas/TaskStatus"
         - name: assignedTo
           in: query
+          schema:
+            type: string
+        - name: sessionId
+          in: query
+          schema:
+            type: string
+        - name: teamRunId
+          in: query
+          description: Filter tasks owned by a Team run (root Team session id).
           schema:
             type: string
       responses:

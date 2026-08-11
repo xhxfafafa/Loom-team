@@ -213,6 +213,7 @@ impl Database {
                     parallel_group          TEXT,
                     workspace_id            TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
                     session_id              TEXT,
+                    team_run_id             TEXT,
                     creation_source         TEXT,
                     session_ids             TEXT NOT NULL DEFAULT '[]',
                     lane_sessions           TEXT NOT NULL DEFAULT '[]',
@@ -385,6 +386,7 @@ impl Database {
             Self::ignore_duplicate_column(conn.execute("ALTER TABLE tasks ADD COLUMN context_search_spec TEXT", []))?;
             Self::ignore_duplicate_column(conn.execute("ALTER TABLE tasks ADD COLUMN worktree_id TEXT", []))?;
             Self::ignore_duplicate_column(conn.execute("ALTER TABLE tasks ADD COLUMN creation_source TEXT", []))?;
+            Self::ignore_duplicate_column(conn.execute("ALTER TABLE tasks ADD COLUMN team_run_id TEXT", []))?;
             Self::ignore_duplicate_column(conn.execute("ALTER TABLE tasks ADD COLUMN session_ids TEXT NOT NULL DEFAULT '[]'", []))?;
             Self::ignore_duplicate_column(conn.execute("ALTER TABLE tasks ADD COLUMN lane_sessions TEXT NOT NULL DEFAULT '[]'", []))?;
             Self::ignore_duplicate_column(conn.execute("ALTER TABLE tasks ADD COLUMN lane_handoffs TEXT NOT NULL DEFAULT '[]'", []))?;

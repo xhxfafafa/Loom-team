@@ -489,6 +489,9 @@ pub struct Task {
     /// Session ID that created this task (for session-scoped filtering)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    /// Root Team session that owns this task (Team delegation ownership)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_run_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub creation_source: Option<TaskCreationSource>,
     /// Codebase IDs linked to this task
@@ -568,6 +571,7 @@ impl Task {
             parallel_group,
             workspace_id,
             session_id,
+            team_run_id: None,
             creation_source,
             codebase_ids: Vec::new(),
             context_search_spec: None,

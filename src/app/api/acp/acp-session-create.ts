@@ -9,6 +9,7 @@ import { isClaudeCodeSdkConfigured } from "@/core/acp/claude-code-sdk-adapter";
 import type { AgentInstanceConfig } from "@/core/acp/agent-instance-factory";
 import type { WorkspaceAgentConfig, WorkspaceAgentProvider } from "@/core/acp/workspace-agent/workspace-agent-config";
 import { initRoutaOrchestrator } from "@/core/orchestration/orchestrator-singleton";
+import { installTeamOrchestrationHandlers } from "@/core/orchestration/team-runtime-bindings";
 import {
   buildTeamChainPolicyPrompt,
   TEAM_CHAIN_IDS,
@@ -25,7 +26,7 @@ import {
   withMetadata,
   recordTrace,
 } from "@/core/trace";
-import { persistSessionToDb } from "@/core/acp/session-db-persister";
+import { persistCapturedProviderSessionId, persistSessionToDb } from "@/core/acp/session-db-persister";
 import { createWorkspaceSessionSandbox } from "@/core/sandbox/permissions";
 import {
   buildExecutionBinding,
@@ -232,12 +233,6 @@ type ClaudeMcpConfigBuilder = (
 
 type WorkspaceIdResolver = (value: unknown) => string | null;
 
-type ForwardedNotificationWriter = (
-  store: ReturnType<typeof getHttpSessionStore>,
-  sessionId: string,
-  data: unknown,
-) => void;
-
 interface HandleSessionNewArgs {
   id: string | number | null;
   params: Record<string, unknown>;
@@ -245,7 +240,6 @@ interface HandleSessionNewArgs {
   createSessionUpdateForwarder: SessionUpdateForwarderFactory;
   buildMcpConfigForClaude: ClaudeMcpConfigBuilder;
   requireWorkspaceId: WorkspaceIdResolver;
-  pushAndPersistForwardedNotification: ForwardedNotificationWriter;
   serverUrlOverride?: string;
 }
 
@@ -279,7 +273,6 @@ export async function handleSessionNew({
   createSessionUpdateForwarder,
   buildMcpConfigForClaude,
   requireWorkspaceId,
-  pushAndPersistForwardedNotification,
   serverUrlOverride,
 }: HandleSessionNewArgs): Promise<Response> {
   const p = params;
@@ -647,6 +640,17 @@ export async function handleSessionNew({
       let acpSessionId: string;
       let workspaceSessionAgentId: string | undefined;
 
+      // Capture hook for the provider-native session ID (Claude system/init,
+      // SDK resume/init). Persisted as `provider_session_id` so the session is
+      // natively resumable after restart; never written to routa_agent_id.
+      const recordCapturedCreationProviderSessionId = (captured: string) => {
+        // Stage synchronously so the full session insert below cannot race the
+        // provider's init callback. The targeted persister still writes an
+        // already-existing row when startup order is reversed.
+        store.setProviderSessionId(sessionId, captured);
+        void persistCapturedProviderSessionId(sessionId, captured);
+      };
+
       if (isWorkspaceAgent) {
         const system = getRoutaSystem();
         const effectiveRole = (role ?? "DEVELOPER") as AgentRole;
@@ -719,6 +723,8 @@ export async function handleSessionNew({
           cwd,
           forwardSessionUpdate,
           instanceConfig,
+          undefined,
+          recordCapturedCreationProviderSessionId,
         );
       } else if (isClaudeCode) {
         const mcpConfigs = await buildMcpConfigForClaude(workspaceId, sessionId, resolvedToolMode, resolvedMcpProfile);
@@ -731,6 +737,8 @@ export async function handleSessionNew({
           role,
           undefined,
           resolvedAllowedNativeTools,
+          undefined,
+          recordCapturedCreationProviderSessionId,
         );
       } else if (customCommand) {
         console.log(`[ACP Route] Using custom provider: ${provider}`);
@@ -809,41 +817,9 @@ export async function handleSessionNew({
         if (routaAgentId) {
           orchestrator.registerAgentSession(routaAgentId, sessionId);
 
-          orchestrator.setNotificationHandler((targetSessionId, data) => {
-            pushAndPersistForwardedNotification(store, targetSessionId, data);
-          });
-
-          orchestrator.setSessionRegistrationHandler((childSession) => {
-            const childExecutionBinding = buildExecutionBinding("embedded");
-            store.upsertSession({
-              sessionId: childSession.sessionId,
-              name: childSession.name,
-              cwd: childSession.cwd,
-              workspaceId: childSession.workspaceId,
-              routaAgentId: childSession.routaAgentId,
-              provider: childSession.provider,
-              role: childSession.role,
-              specialistId: childSession.specialistId,
-              parentSessionId: childSession.parentSessionId,
-              sandboxId: childSession.sandboxId,
-              createdAt: new Date().toISOString(),
-              ...childExecutionBinding,
-            });
-            persistSessionToDb({
-              id: childSession.sessionId,
-              name: childSession.name,
-              cwd: childSession.cwd,
-              workspaceId: childSession.workspaceId,
-              routaAgentId: childSession.routaAgentId ?? "",
-              provider: childSession.provider ?? "",
-              role: childSession.role ?? "CRAFTER",
-              parentSessionId: childSession.parentSessionId,
-              specialistId: childSession.specialistId,
-              ...childExecutionBinding,
-            }).catch((err: unknown) =>
-              console.error(`[ACP Route] Failed to persist child session ${childSession.sessionId}:`, err),
-            );
-          });
+          // Shared with the recovery path: notification forwarding +
+          // child-session registration handlers (see team-runtime-bindings).
+          installTeamOrchestrationHandlers(orchestrator, store);
 
           console.log(`[ACP Route] ROUTA coordinator agent created: ${routaAgentId}`);
         }
@@ -887,6 +863,7 @@ export async function handleSessionNew({
         branch,
         workspaceId,
         routaAgentId: routaAgentId ?? workspaceSessionAgentId ?? acpSessionId,
+        providerSessionId: store.getSession(sessionId)?.providerSessionId,
         provider,
         role: role ?? "CRAFTER",
         parentSessionId,

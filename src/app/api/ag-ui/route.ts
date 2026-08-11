@@ -25,7 +25,7 @@ import type { SessionUpdateNotification } from "@/core/acp/http-session-store";
 import { isServerlessEnvironment } from "@/core/acp/api-based-providers";
 import { isClaudeCodeSdkConfigured } from "@/core/acp/claude-code-sdk-adapter";
 import { isOpencodeServerConfigured } from "@/core/acp/opencode-sdk-adapter";
-import { persistSessionToDb, saveHistoryToDb } from "@/core/acp/session-db-persister";
+import { persistCapturedProviderSessionId, persistSessionToDb, saveHistoryToDb } from "@/core/acp/session-db-persister";
 import { SessionWriteBuffer } from "@/core/acp/session-write-buffer";
 
 export const dynamic = "force-dynamic";
@@ -191,6 +191,7 @@ export async function POST(request: NextRequest) {
   // Create new session if needed
   if (!sessionId) {
     sessionId = uuidv4();
+    const createdSessionId = sessionId;
     threadSessionMap.set(threadId, sessionId);
 
     const forwardSessionUpdate = createSessionUpdateForwarder(store, sessionId);
@@ -202,6 +203,10 @@ export async function POST(request: NextRequest) {
         await manager.createClaudeCodeSdkSession(sessionId, cwd, forwardSessionUpdate, {
           provider: "claude-code-sdk",
           role: "CRAFTER",
+        }, undefined, (captured: string) => {
+          // Persist the real SDK-native session ID once reported; the synthetic
+          // adapter handle is filtered by the guarded helper.
+          void persistCapturedProviderSessionId(createdSessionId, captured);
         });
       } else {
         // Standard ACP session (opencode CLI)

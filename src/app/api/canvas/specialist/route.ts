@@ -84,22 +84,6 @@ async function buildMcpConfigForClaude(
   return result.mcpConfigs;
 }
 
-function pushForwardedNotification(
-  store: ReturnType<typeof getHttpSessionStore>,
-  sessionId: string,
-  data: unknown,
-): void {
-  if (!data || typeof data !== "object") return;
-  const record = data as Record<string, unknown>;
-  const params = record.params;
-  if (!params || typeof params !== "object") return;
-
-  store.pushNotification({
-    ...(params as Record<string, unknown>),
-    sessionId,
-  } as SessionUpdateNotification);
-}
-
 function decodeJsonRpcResult<T>(payload: unknown): T {
   if (!payload || typeof payload !== "object") {
     throw new Error("Invalid JSON-RPC response");
@@ -168,7 +152,6 @@ export async function POST(request: NextRequest) {
     createSessionUpdateForwarder,
     buildMcpConfigForClaude,
     requireWorkspaceId,
-    pushAndPersistForwardedNotification: pushForwardedNotification,
   });
 
   let sessionId: string | undefined;

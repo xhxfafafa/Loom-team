@@ -14,7 +14,7 @@ Archived plans are **not active instructions**. They are preserved as context fo
 
 | Plan | Reason for Archival |
 |---|---|
-| [harness-monitor-run-centric-priorities.md](./harness-monitor-run-centric-priorities.md) | Harness operator console is platform infrastructure, not part of Loom v1 delivery workbench scope. See [loom-v1-scope.md](../../design-docs/loom-v1-scope.md#explicit-exclusions-deferred-beyond-v1). |
+| [harness-monitor-run-centric-priorities.md](./harness-monitor-run-centric-priorities.md) | Preserved as an archived implementation plan for the harness operator console. |
 
 ## Related
 

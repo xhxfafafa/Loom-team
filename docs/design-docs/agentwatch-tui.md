@@ -2,8 +2,6 @@
 title: AgentWatch TUI
 ---
 
-> **Status: frozen** — not part of Loom v1 scope; see [loom-v1-scope.md](./loom-v1-scope.md).
-
 # AgentWatch TUI
 
 AgentWatch is a TUI-first local runtime for multi-agent coding attribution inside one repository.

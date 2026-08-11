@@ -2,8 +2,6 @@
 title: Architecture Rule DSL
 ---
 
-> **Status: frozen** — not part of Loom v1 scope; see [loom-v1-scope.md](./loom-v1-scope.md).
-
 # Architecture Rule DSL
 
 ## Purpose

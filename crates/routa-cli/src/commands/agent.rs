@@ -739,13 +739,13 @@ async fn execute_specialist_run(
     if let Err(err) = update_agent_status(router, &agent_id, "ACTIVE").await {
         eprintln!("Failed to mark agent {agent_id} ACTIVE: {err}");
     }
-
     let acp = Arc::new(state.acp_manager.clone());
     let orchestrator = RoutaOrchestrator::new(
         OrchestratorConfig::default(),
         acp,
         state.agent_store.clone(),
         state.task_store.clone(),
+        state.kanban_store.clone(),
         state.event_bus.clone(),
     );
     orchestrator

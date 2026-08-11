@@ -158,6 +158,7 @@ pub async fn run(
         acp,
         state.agent_store.clone(),
         state.task_store.clone(),
+        state.kanban_store.clone(),
         state.event_bus.clone(),
     );
     orchestrator

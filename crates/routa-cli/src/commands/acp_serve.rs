@@ -232,6 +232,7 @@ async fn handle_session_new(
         acp,
         server.state.agent_store.clone(),
         server.state.task_store.clone(),
+        server.state.kanban_store.clone(),
         server.state.event_bus.clone(),
     );
     orchestrator

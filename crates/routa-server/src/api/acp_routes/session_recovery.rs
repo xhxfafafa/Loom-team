@@ -207,6 +207,7 @@ pub(super) async fn ensure_routa_agent_registration(
         acp,
         state.agent_store.clone(),
         state.task_store.clone(),
+        state.kanban_store.clone(),
         state.event_bus.clone(),
     );
     let routa_agent_id = routa_agent_id.expect("routa agent id must exist for ROUTA session");

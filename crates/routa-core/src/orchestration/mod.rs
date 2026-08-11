@@ -10,12 +10,14 @@
 //!   5. When the child reports back, wakes the parent agent
 
 pub mod team_chain;
+pub mod team_run_ownership;
 
 pub use team_chain::{
     build_team_chain_policy_prompt, is_team_chain_id, parse_team_chain_id,
     resolve_effective_team_chain_id, validate_team_chain_assignment, TeamChainValidationError,
     DEFAULT_TEAM_CHAIN_ID, TEAM_CHAIN_IDS, TEAM_LEAD_SPECIALIST_ID,
 };
+pub use team_run_ownership::{resolve_owning_team_run_id, OwnershipSessionShape};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -27,10 +29,11 @@ use tokio::sync::RwLock;
 use crate::acp::AcpManager;
 use crate::error::ServerError;
 use crate::events::{AgentEvent, AgentEventType, EventBus};
+use crate::kanban::{apply_task_status_transition, load_task_board};
 use crate::models::agent::{AgentRole, AgentStatus, ModelTier};
 use crate::models::build_feature_tree_spec_prompt_section;
 use crate::models::task::TaskStatus;
-use crate::store::{AgentStore, TaskStore};
+use crate::store::{AgentStore, KanbanStore, TaskStore};
 use crate::tools::{CompletionReport, ToolResult};
 use crate::workflow::specialist::{SpecialistDef, SpecialistLoader};
 
@@ -378,6 +381,77 @@ struct OrchestratorInner {
     delegation_groups: HashMap<String, DelegationGroup>,
     /// Map: callerAgentId → current groupId (for after_all mode)
     active_group_by_agent: HashMap<String, String>,
+    /// Per-task delegation guards: concurrent delegation requests for the same
+    /// task are serialized through this mutex instead of racing for the binding.
+    task_delegation_guards: HashMap<String, Arc<tokio::sync::Mutex<()>>>,
+}
+
+/// An active delegation binding that can be reused instead of spawning a
+/// duplicate agent/session for the same task.
+struct ActiveDelegationBinding {
+    agent_id: String,
+    session_id: String,
+    agent_name: Option<String>,
+    specialist_id: Option<String>,
+    specialist_name: Option<String>,
+    provider: Option<String>,
+}
+
+/// Append a delegation child session id to the task's session history, deduped.
+fn append_delegation_session_id(session_ids: &[String], session_id: &str) -> Vec<String> {
+    let mut next = session_ids.to_vec();
+    if !next.iter().any(|existing| existing == session_id) {
+        next.push(session_id.to_string());
+    }
+    next
+}
+
+/// Build the canonical delegation tool result. Kept field-compatible with the
+/// Web orchestrator's `buildDelegatedResult`: `taskId`/`agentId`/`sessionId`
+/// plus the additive `status: "delegated"` marker.
+#[allow(clippy::too_many_arguments)]
+fn build_delegated_result(
+    task_title: &str,
+    task_id: &str,
+    agent_id: &str,
+    agent_name: Option<&str>,
+    specialist_id: &str,
+    specialist_name: Option<&str>,
+    provider: Option<&str>,
+    session_id: &str,
+    wait_mode: &str,
+    reused: bool,
+) -> ToolResult {
+    let wait_message = if wait_mode == "after_all" {
+        "You will be notified when ALL delegated agents in this group complete."
+    } else {
+        "You will be notified when this agent completes."
+    };
+    let specialist_label = specialist_name.unwrap_or(specialist_id);
+    let message = if reused {
+        format!(
+            "Task \"{task_title}\" is already delegated to an active {specialist_label} agent. {wait_message}"
+        )
+    } else {
+        format!("Task \"{task_title}\" delegated to {specialist_label} agent. {wait_message}")
+    };
+
+    let mut data = serde_json::json!({
+        "agentId": agent_id,
+        "taskId": task_id,
+        "specialist": specialist_id,
+        "sessionId": session_id,
+        "waitMode": wait_mode,
+        "status": "delegated",
+        "message": message,
+    });
+    if let Some(name) = agent_name {
+        data["agentName"] = serde_json::json!(name);
+    }
+    if let Some(provider) = provider {
+        data["provider"] = serde_json::json!(provider);
+    }
+    ToolResult::success(data)
 }
 
 // ─── Routa Orchestrator ───────────────────────────────────────────────────
@@ -389,6 +463,7 @@ pub struct RoutaOrchestrator {
     acp_manager: Arc<AcpManager>,
     agent_store: AgentStore,
     task_store: TaskStore,
+    kanban_store: KanbanStore,
     event_bus: EventBus,
 }
 
@@ -398,6 +473,7 @@ impl RoutaOrchestrator {
         acp_manager: Arc<AcpManager>,
         agent_store: AgentStore,
         task_store: TaskStore,
+        kanban_store: KanbanStore,
         event_bus: EventBus,
     ) -> Self {
         Self {
@@ -406,11 +482,13 @@ impl RoutaOrchestrator {
                 agent_session_map: HashMap::new(),
                 delegation_groups: HashMap::new(),
                 active_group_by_agent: HashMap::new(),
+                task_delegation_guards: HashMap::new(),
             })),
             config,
             acp_manager,
             agent_store,
             task_store,
+            kanban_store,
             event_bus,
         }
     }
@@ -435,14 +513,24 @@ impl RoutaOrchestrator {
     }
 
     /// Delegate a task to a new agent by spawning a real ACP process.
+    ///
+    /// Concurrency and persistence contract (mirrors the Web orchestrator):
+    /// 1. per-task in-flight guard serializes concurrent requests;
+    /// 2. the task is re-read inside the guard;
+    /// 3. an existing active binding is reused without duplicates;
+    /// 4. the pending agent and child session are created BEFORE the binding
+    ///    persists, but the initial prompt is NOT sent yet;
+    /// 5. the binding save writes `assigned_to`, deduped `session_ids`,
+    ///    `team_run_id` and `IN_PROGRESS` without touching `session_id`;
+    /// 6. only after the save succeeds the agent is activated and prompted;
+    /// 7. a failed binding save never returns success.
     pub async fn delegate_task_with_spawn(
         &self,
         params: DelegateWithSpawnParams,
     ) -> Result<ToolResult, ServerError> {
         // 1. Resolve specialist config
-        let specialist_config = self.resolve_specialist(&params.specialist);
-        let specialist_config = match specialist_config {
-            Some(s) => s,
+        let specialist_config = match self.resolve_specialist(&params.specialist) {
+            Some(config) => config,
             None => {
                 return Ok(ToolResult::error(format!(
                     "Unknown specialist: {}. Use CRAFTER, GATE, or DEVELOPER.",
@@ -451,31 +539,90 @@ impl RoutaOrchestrator {
             }
         };
 
-        // 2. Get the task
-        let task = match self.task_store.get(&params.task_id).await? {
-            Some(t) => t,
+        // 2. Serialize concurrent delegation attempts for the same task.
+        let guard = {
+            let mut inner = self.inner.write().await;
+            inner
+                .task_delegation_guards
+                .entry(params.task_id.clone())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone()
+        };
+
+        let result = {
+            let _permit = guard.lock().await;
+            self.execute_task_delegation(&params, &specialist_config)
+                .await
+        };
+
+        // Drop the guard entry once no other request is queued on it (a
+        // waiter always holds its own Arc clone, keeping strong_count > 2).
+        {
+            let mut inner = self.inner.write().await;
+            let removable = inner
+                .task_delegation_guards
+                .get(&params.task_id)
+                .is_some_and(|existing| Arc::ptr_eq(existing, &guard))
+                && Arc::strong_count(&guard) == 2;
+            if removable {
+                inner.task_delegation_guards.remove(&params.task_id);
+            }
+        }
+
+        result
+    }
+
+    /// Delegation body executed under the per-task guard.
+    async fn execute_task_delegation(
+        &self,
+        params: &DelegateWithSpawnParams,
+        specialist_config: &SpecialistConfig,
+    ) -> Result<ToolResult, ServerError> {
+        let task_id = params.task_id.as_str();
+
+        // 1. Re-read the task inside the guard: its state may have changed
+        //    between the caller's last read and this serialized section.
+        let task = match self.task_store.get(task_id).await? {
+            Some(task) => task,
             None => {
-                return Ok(ToolResult::error(format!(
-                    "Task not found: {}",
-                    params.task_id
-                )));
+                return Ok(ToolResult::error(format!("Task not found: {task_id}")));
             }
         };
 
-        // 3. Determine provider
-        let provider = params.provider.unwrap_or_else(|| {
+        // 2. Reuse an existing active delegation binding instead of spawning
+        //    a duplicate agent/session for the same task.
+        if let Some(existing) = self.resolve_active_delegation_binding(&task).await? {
+            return Ok(build_delegated_result(
+                &task.title,
+                task_id,
+                &existing.agent_id,
+                existing.agent_name.as_deref(),
+                existing
+                    .specialist_id
+                    .as_deref()
+                    .unwrap_or(&specialist_config.id),
+                existing.specialist_name.as_deref(),
+                existing.provider.as_deref(),
+                &existing.session_id,
+                &params.wait_mode,
+                true,
+            ));
+        }
+
+        // 3. Determine provider and working directory
+        let provider = params.provider.clone().unwrap_or_else(|| {
             if specialist_config.role == AgentRole::Crafter {
                 self.config.default_crafter_provider.clone()
             } else {
                 self.config.default_gate_provider.clone()
             }
         });
-
         let cwd = params
             .cwd
+            .clone()
             .unwrap_or_else(|| self.config.default_cwd.clone());
 
-        // 4. Create agent record
+        // 4. Create agent record (PENDING until the binding is saved)
         let agent_id = uuid::Uuid::new_v4().to_string();
         let agent_name = format!(
             "{}-{}",
@@ -487,7 +634,8 @@ impl RoutaOrchestrator {
                 .replace(' ', "-")
                 .to_lowercase()
         );
-
+        let mut agent_metadata = HashMap::new();
+        agent_metadata.insert("specialist".to_string(), specialist_config.id.clone());
         let agent = crate::models::agent::Agent::new(
             agent_id.clone(),
             agent_name.clone(),
@@ -495,15 +643,15 @@ impl RoutaOrchestrator {
             params.workspace_id.clone(),
             Some(params.caller_agent_id.clone()),
             Some(specialist_config.default_model_tier.clone()),
-            None,
+            Some(agent_metadata),
         );
         self.agent_store.save(&agent).await?;
 
         // 5. Build the delegation prompt
         let delegation_prompt = build_delegation_prompt(
-            &specialist_config,
+            specialist_config,
             &agent_id,
-            &params.task_id,
+            task_id,
             &task.title,
             &task.objective,
             task.scope.as_deref(),
@@ -514,23 +662,15 @@ impl RoutaOrchestrator {
             params.additional_instructions.as_deref(),
         );
 
-        // 6. Assign task to agent and update status
-        let mut task = task;
-        task.assigned_to = Some(agent_id.clone());
-        task.status = TaskStatus::InProgress;
-        task.updated_at = Utc::now();
-        self.task_store.save(&task).await?;
-        self.agent_store
-            .update_status(&agent_id, &AgentStatus::Active)
-            .await?;
-
-        // 7. Spawn the ACP process
+        // 6. Create the child session BEFORE persisting the binding, but do
+        //    not dispatch the initial prompt yet: the prompt may only be sent
+        //    after the binding is durable.
         let child_session_id = uuid::Uuid::new_v4().to_string();
-        let spawn_result = self
+        if let Err(error) = self
             .acp_manager
             .create_session(
                 child_session_id.clone(),
-                cwd.clone(),
+                cwd,
                 params.workspace_id.clone(),
                 Some(provider.clone()),
                 Some(specialist_config.role.as_str().to_string()),
@@ -539,23 +679,69 @@ impl RoutaOrchestrator {
                 None,
                 None,
             )
-            .await;
+            .await
+        {
+            // The binding was never persisted: fail the fresh agent and leave
+            // the task in its previous state.
+            self.agent_store
+                .update_status(&agent_id, &AgentStatus::Error)
+                .await?;
+            return Ok(ToolResult::error(format!(
+                "Failed to spawn agent process: {error}"
+            )));
+        }
 
-        let (_, _acp_session_id) = match spawn_result {
-            Ok(ids) => ids,
-            Err(e) => {
-                // Clean up on spawn failure
-                self.agent_store
-                    .update_status(&agent_id, &AgentStatus::Error)
-                    .await?;
-                task.status = TaskStatus::Blocked;
-                task.updated_at = Utc::now();
-                self.task_store.save(&task).await?;
-                return Ok(ToolResult::error(format!(
-                    "Failed to spawn agent process: {e}"
-                )));
+        // 7. Persist the binding before activating the child. The per-task
+        // guard serializes delegates inside this orchestrator instance.
+        let team_run_id = match task.team_run_id.clone() {
+            Some(run_id) => Some(run_id),
+            None => {
+                self.resolve_team_run_id_for_caller(&params.caller_session_id)
+                    .await
             }
         };
+        let session_ids = append_delegation_session_id(&task.session_ids, &child_session_id);
+        let mut task = task;
+        task.assigned_to = Some(agent_id.clone());
+        task.status = TaskStatus::InProgress;
+        task.session_ids = session_ids;
+        if team_run_id.is_some() {
+            task.team_run_id = team_run_id;
+        }
+        task.updated_at = Utc::now();
+        if let Err(error) = self.task_store.save(&task).await {
+            self.release_unbound_child_resources(&agent_id, &child_session_id)
+                .await;
+            return Ok(ToolResult::error(format!(
+                "Failed to persist delegation binding for task {task_id}: {error}"
+            )));
+        }
+
+        // 8. Activate + dispatch ONLY after the binding persists.
+        self.agent_store
+            .update_status(&agent_id, &AgentStatus::Active)
+            .await?;
+
+        if !self.acp_manager.is_alive(&child_session_id).await {
+            // Keep the session for diagnostics: block the task through the
+            // unified status transition and mark the agent failed.
+            self.agent_store
+                .update_status(&agent_id, &AgentStatus::Error)
+                .await?;
+            if let Some(mut current) = self.task_store.get(task_id).await? {
+                if current.assigned_to.as_deref() == Some(agent_id.as_str())
+                    && current.session_ids.contains(&child_session_id)
+                    && current.status == TaskStatus::InProgress
+                {
+                    let board = load_task_board(&self.kanban_store, &current).await;
+                    apply_task_status_transition(&mut current, TaskStatus::Blocked, board.as_ref());
+                    self.task_store.save(&current).await?;
+                }
+            }
+            return Ok(ToolResult::error(format!(
+                "Failed to start agent process: child session {child_session_id} is not available"
+            )));
+        }
 
         // Kick off the child prompt in the background. Waiting for the entire
         // child turn here blocks the parent MCP tool call long enough for
@@ -564,18 +750,47 @@ impl RoutaOrchestrator {
             .mark_first_prompt_sent(&child_session_id)
             .await;
         let child_prompt_manager = Arc::clone(&self.acp_manager);
+        let child_prompt_agent_store = self.agent_store.clone();
+        let child_prompt_task_store = self.task_store.clone();
+        let child_prompt_kanban_store = self.kanban_store.clone();
         let child_prompt_session_id = child_session_id.clone();
         let child_prompt_agent_id = agent_id.clone();
+        let child_prompt_task_id = task.id.clone();
         tokio::spawn(async move {
-            if let Err(e) = child_prompt_manager
+            if let Err(error) = child_prompt_manager
                 .prompt(&child_prompt_session_id, &delegation_prompt)
                 .await
             {
                 tracing::error!(
                     "[Orchestrator] Failed to send initial prompt to agent {}: {}",
                     child_prompt_agent_id,
-                    e
+                    error
                 );
+                // Compensate while the delegation is still in its initial
+                // state: keep the session for diagnostics, mark the agent
+                // failed, and block the task via the unified transition.
+                if let Ok(Some(agent)) = child_prompt_agent_store.get(&child_prompt_agent_id).await
+                {
+                    if agent.status == AgentStatus::Active {
+                        let _ = child_prompt_agent_store
+                            .update_status(&child_prompt_agent_id, &AgentStatus::Error)
+                            .await;
+                    }
+                }
+                if let Ok(Some(mut blocked_task)) =
+                    child_prompt_task_store.get(&child_prompt_task_id).await
+                {
+                    if blocked_task.status == TaskStatus::InProgress {
+                        let board =
+                            load_task_board(&child_prompt_kanban_store, &blocked_task).await;
+                        apply_task_status_transition(
+                            &mut blocked_task,
+                            TaskStatus::Blocked,
+                            board.as_ref(),
+                        );
+                        let _ = child_prompt_task_store.save(&blocked_task).await;
+                    }
+                }
             }
         });
 
@@ -598,7 +813,7 @@ impl RoutaOrchestrator {
             )
             .await;
 
-        // 8. Track the child agent
+        // 9. Track the child agent
         {
             let mut inner = self.inner.write().await;
             let record = ChildAgentRecord {
@@ -615,7 +830,7 @@ impl RoutaOrchestrator {
                 .agent_session_map
                 .insert(agent_id.clone(), child_session_id.clone());
 
-            // 9. Handle wait mode
+            // 10. Handle wait mode
             if params.wait_mode == "after_all" {
                 let group_id = inner
                     .active_group_by_agent
@@ -649,7 +864,7 @@ impl RoutaOrchestrator {
             }
         }
 
-        // 10. Emit event
+        // 11. Emit event
         self.event_bus
             .emit(AgentEvent {
                 event_type: AgentEventType::TaskAssigned,
@@ -666,12 +881,6 @@ impl RoutaOrchestrator {
             })
             .await;
 
-        let wait_message = if params.wait_mode == "after_all" {
-            "You will be notified when ALL delegated agents in this group complete."
-        } else {
-            "You will be notified when this agent completes."
-        };
-
         tracing::info!(
             "[Orchestrator] Delegated task \"{}\" to {} agent {} (provider: {})",
             task.title,
@@ -680,16 +889,112 @@ impl RoutaOrchestrator {
             provider
         );
 
-        Ok(ToolResult::success(serde_json::json!({
-            "agentId": agent_id,
-            "taskId": params.task_id,
-            "agentName": agent_name,
-            "specialist": specialist_config.id,
-            "provider": provider,
-            "sessionId": child_session_id,
-            "waitMode": params.wait_mode,
-            "message": format!("Task \"{}\" delegated to {} agent. {}", task.title, specialist_config.name, wait_message),
-        })))
+        Ok(build_delegated_result(
+            &task.title,
+            task_id,
+            &agent_id,
+            Some(&agent_name),
+            &specialist_config.id,
+            Some(&specialist_config.name),
+            Some(provider.as_str()),
+            &child_session_id,
+            &params.wait_mode,
+            false,
+        ))
+    }
+
+    /// Resolve a still-active delegation binding for a task, when one exists:
+    /// assigned agent ACTIVE plus either a live runtime child record or a live
+    /// delegated session from the task's session history.
+    async fn resolve_active_delegation_binding(
+        &self,
+        task: &crate::models::task::Task,
+    ) -> Result<Option<ActiveDelegationBinding>, ServerError> {
+        let Some(agent_id) = task.assigned_to.clone() else {
+            return Ok(None);
+        };
+        if task.status != TaskStatus::InProgress {
+            return Ok(None);
+        }
+        let Some(agent) = self.agent_store.get(&agent_id).await? else {
+            return Ok(None);
+        };
+        if agent.status != AgentStatus::Active {
+            return Ok(None);
+        }
+
+        let specialist_id = agent.metadata.get("specialist").cloned();
+        let specialist_name = specialist_id
+            .as_deref()
+            .and_then(SpecialistConfig::resolve)
+            .map(|config| config.name);
+
+        // A live runtime record wins: it tracks the session this orchestrator
+        // actually spawned for the binding.
+        {
+            let inner = self.inner.read().await;
+            if let Some(record) = inner.child_agents.get(&agent_id) {
+                return Ok(Some(ActiveDelegationBinding {
+                    agent_id,
+                    agent_name: Some(agent.name.clone()),
+                    specialist_id,
+                    specialist_name,
+                    session_id: record.session_id.clone(),
+                    provider: Some(record.provider.clone()),
+                }));
+            }
+        }
+
+        // Otherwise fall back to the most recent delegated session that is
+        // still alive, walking the session history newest-first.
+        for session_id in task.session_ids.iter().rev() {
+            if !self.acp_manager.is_alive(session_id).await {
+                continue;
+            }
+            let provider = self
+                .acp_manager
+                .get_session(session_id)
+                .await
+                .and_then(|record| record.provider);
+            return Ok(Some(ActiveDelegationBinding {
+                agent_id,
+                agent_name: Some(agent.name.clone()),
+                specialist_id,
+                specialist_name,
+                session_id: session_id.clone(),
+                provider,
+            }));
+        }
+
+        Ok(None)
+    }
+
+    /// Best-effort resolution of the owning Team Run for the caller session.
+    /// Never blocks delegation: failures resolve to `None`.
+    async fn resolve_team_run_id_for_caller(&self, caller_session_id: &str) -> Option<String> {
+        if caller_session_id.is_empty() {
+            return None;
+        }
+        let records = self.acp_manager.list_sessions().await;
+        let sessions: Vec<OwnershipSessionShape> =
+            records.iter().map(OwnershipSessionShape::from).collect();
+        resolve_owning_team_run_id(Some(caller_session_id), &sessions)
+    }
+
+    /// Clean up resources created before the task binding was persisted.
+    async fn release_unbound_child_resources(&self, agent_id: &str, session_id: &str) {
+        self.acp_manager.kill_session(session_id).await;
+        if let Err(error) = self
+            .agent_store
+            .update_status(agent_id, &AgentStatus::Error)
+            .await
+        {
+            tracing::warn!(
+                "[Orchestrator] Failed to mark unbound agent {} as ERROR: {}",
+                agent_id,
+                error
+            );
+        }
     }
 
     /// Handle a report submitted by a child agent.
@@ -714,16 +1019,19 @@ impl RoutaOrchestrator {
             }
         };
 
-        // Update task status
+        // Update task status through the unified terminal transition so a
+        // completed report lands Task.status and its Kanban column in one
+        // write (parity with Web AgentTools.reportToParent).
         if let Some(task_id) = &report.task_id {
             if let Some(mut task) = self.task_store.get(task_id).await? {
-                task.status = if report.success {
+                let next_status = if report.success {
                     TaskStatus::Completed
                 } else {
                     TaskStatus::NeedsFix
                 };
                 task.completion_summary = Some(report.summary.clone());
-                task.updated_at = Utc::now();
+                let board = load_task_board(&self.kanban_store, &task).await;
+                apply_task_status_transition(&mut task, next_status, board.as_ref());
                 self.task_store.save(&task).await?;
             }
         }
@@ -961,3 +1269,9 @@ fn build_delegation_prompt(
 
     prompt
 }
+
+// ─── Tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[path = "mod_tests.rs"]
+mod tests;

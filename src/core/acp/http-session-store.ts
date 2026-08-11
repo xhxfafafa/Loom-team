@@ -34,7 +34,13 @@ export interface RoutaSessionRecord {
   /** Git branch the session is scoped to (optional) */
   branch?: string;
   workspaceId: string;
+  /**
+   * Durable Routa logical agent ID. Recovery must never overwrite this with
+   * a provider/ACP session ID.
+   */
   routaAgentId?: string;
+  /** Provider-native session ID (ACP/Claude/Codex); used for native resume. */
+  providerSessionId?: string;
   provider?: string;
   role?: string;
   toolMode?: "essential" | "full";
@@ -456,6 +462,21 @@ class HttpSessionStore {
     });
   }
 
+  /**
+   * Record the provider-native session ID (e.g. captured from a Claude
+   * `system/init` message). This is a targeted patch: durable fields such as
+   * `routaAgentId` and history are never touched. The provider session ID is
+   * used only for native resume and must never replace `routaAgentId`.
+   */
+  setProviderSessionId(sessionId: string, providerSessionId: string | undefined) {
+    const existing = this.sessions.get(sessionId);
+    if (!existing) return;
+    this.sessions.set(sessionId, {
+      ...existing,
+      providerSessionId,
+    });
+  }
+
   updateSessionMode(sessionId: string, modeId: string) {
     const existing = this.sessions.get(sessionId);
     if (!existing) return;
@@ -510,16 +531,24 @@ class HttpSessionStore {
   /**
    * Store a user message in history. This is called when user sends a prompt.
    * User messages are stored with sessionUpdate: "user_message" for easy identification.
+   *
+   * When an `eventId` is supplied (a durable promptId / Team report delivery
+   * ID), the push is idempotent within this store: an event with the same ID
+   * is never pushed twice.
    */
-  pushUserMessage(sessionId: string, prompt: string) {
+  pushUserMessage(sessionId: string, prompt: string, eventId?: string) {
+    const history = this.messageHistory.get(sessionId) ?? [];
+    if (eventId && history.some((entry) => entry.eventId === eventId)) {
+      return;
+    }
     const notification: SessionUpdateNotification = {
       sessionId,
+      ...(eventId ? { eventId } : {}),
       update: {
         sessionUpdate: "user_message",
         content: { type: "text", text: prompt },
       },
     };
-    const history = this.messageHistory.get(sessionId) ?? [];
     history.push(notification);
     this.messageHistory.set(sessionId, history);
     this.limitHistorySize(sessionId);
@@ -1093,10 +1122,14 @@ class HttpSessionStore {
           branch: s.branch,
           workspaceId: s.workspaceId,
           routaAgentId: s.routaAgentId,
+          providerSessionId: s.providerSessionId,
           provider: s.provider,
           role: s.role,
           modeId: s.modeId,
+          model: s.model,
           parentSessionId: s.parentSessionId,
+          specialistId: s.specialistId,
+          teamChainId: s.teamChainId,
           executionMode: s.executionMode,
           ownerInstanceId: s.ownerInstanceId,
           leaseExpiresAt: s.leaseExpiresAt,

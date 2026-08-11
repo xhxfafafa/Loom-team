@@ -28,6 +28,15 @@ export function buildAcpLeaseExpiresAt(now: Date = new Date()): string {
   return new Date(now.getTime() + getAcpLeaseDurationMs()).toISOString();
 }
 
+/**
+ * Cadence for refreshing the lease of an actively used session: at most 60s,
+ * and never more than 1/3 of the lease duration so a missed refresh still
+ * leaves margin before expiry. Floored at 5s for very small test leases.
+ */
+export function getSessionLeaseRefreshMs(): number {
+  return Math.min(60_000, Math.max(5_000, Math.floor(getAcpLeaseDurationMs() / 3)));
+}
+
 export function isWorkspaceExecutionProvider(provider?: string): boolean {
   const normalized = provider?.toLowerCase();
   return normalized === "workspace" || normalized === "workspace-agent" || normalized === "routa-native";
@@ -94,5 +103,8 @@ export function getEmbeddedOwnershipIssue(
     return `Session is currently owned by instance ${ownerInstanceId} until ${binding.leaseExpiresAt}.`;
   }
 
-  return `Session ownership lease expired on instance ${ownerInstanceId} at ${binding.leaseExpiresAt ?? "unknown time"}, and embedded ACP processes cannot be resumed on a different instance.`;
+  // Expired leases are no longer an ownership issue: recovery acquires them
+  // atomically via the lease compare-and-swap (tryAcquireExpiredLease). Only
+  // an ACTIVE lease held by another instance blocks a second runtime.
+  return null;
 }

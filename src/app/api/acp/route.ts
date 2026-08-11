@@ -31,22 +31,20 @@ import { isOpencodeServerConfigured } from "@/core/acp/opencode-sdk-adapter";
 import { AcpError } from "@/core/acp/acp-process";
 import {
   loadHistorySinceEventIdFromDb,
-  loadSessionFromDb,
-  loadSessionFromLocalStorage,
-  persistSessionToDb,
   renameSessionInDb,
-  updateSessionExecutionBindingInDb,
 } from "@/core/acp/session-db-persister";
 import type { SessionUpdateNotification } from "@/core/acp/http-session-store";
-import type { RoutaSessionRecord } from "@/core/acp/http-session-store";
 import { getTerminalManager } from "@/core/acp/terminal-manager";
 import {
   buildExecutionBinding,
   getEmbeddedOwnershipIssue,
-  refreshExecutionBinding,
   requiresRunnerProxy,
   shouldUseRunnerForProvider,
 } from "@/core/acp/execution-backend";
+import {
+  getSessionLeaseRefreshMs,
+  refreshEmbeddedSessionLease,
+} from "@/core/acp/session-lease";
 import {
   getRequiredRunnerUrl,
   getSessionRoutingRecord,
@@ -54,10 +52,13 @@ import {
   proxyRequestToRunner,
   runnerUnavailableResponse,
 } from "@/core/acp/runner-routing";
-import { buildProviderModelArgs } from "@/core/acp/provider-model-args";
+import {
+  ensureSessionRuntime,
+  SessionRuntimeRecoveryError,
+} from "@/core/acp/session-runtime-recovery";
 import { handleSessionNew, parseRequestedAcpMcpServers } from "./acp-session-create";
-import { getSessionWriteBuffer } from "./acp-session-history";
 import { handleSessionPrompt } from "./acp-session-prompt";
+import { pushAndPersistForwardedNotification } from "@/core/acp/forwarded-notification";
 
 export const dynamic = "force-dynamic";
 
@@ -74,50 +75,6 @@ function encodeSsePayload(payload: unknown): string {
     : undefined;
   const eventId = typeof params?.eventId === "string" ? params.eventId : undefined;
   return `${eventId ? `id: ${eventId}\n` : ""}data: ${JSON.stringify(payload)}\n\n`;
-}
-
-function shouldFlushForwardedSessionUpdate(
-  notification: SessionUpdateNotification,
-): boolean {
-  const update = notification.update as Record<string, unknown> | undefined;
-  const sessionUpdate = typeof update?.sessionUpdate === "string" ? update.sessionUpdate : undefined;
-  if (!sessionUpdate) return false;
-
-  if (
-    sessionUpdate === "turn_complete"
-    || sessionUpdate === "task_completion"
-    || sessionUpdate === "completed"
-    || sessionUpdate === "ended"
-    || sessionUpdate === "error"
-  ) {
-    return true;
-  }
-
-  if (sessionUpdate === "tool_call_update") {
-    const status = typeof update?.status === "string" ? update.status : undefined;
-    return status === "completed" || status === "failed";
-  }
-
-  return false;
-}
-
-function pushAndPersistForwardedNotification(
-  store: ReturnType<typeof getHttpSessionStore>,
-  sessionId: string,
-  data: unknown,
-): void {
-  const notification = {
-    ...(data as Record<string, unknown>),
-    sessionId,
-  } as SessionUpdateNotification;
-
-  store.pushNotification(notification);
-
-  const buffer = getSessionWriteBuffer();
-  buffer.add(sessionId, notification);
-  if (shouldFlushForwardedSessionUpdate(notification)) {
-    void buffer.flush(sessionId);
-  }
 }
 
 function markMissingInteractiveRequestAsFailed(
@@ -144,23 +101,6 @@ function requireWorkspaceId(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
-}
-
-function refreshEmbeddedSessionLease(
-  store: ReturnType<typeof getHttpSessionStore>,
-  session: RoutaSessionRecord | undefined,
-): void {
-  if (!session || session.executionMode !== "embedded") {
-    return;
-  }
-
-  const refreshed = refreshExecutionBinding(session);
-  store.upsertSession(refreshed);
-  void updateSessionExecutionBindingInDb(session.sessionId, {
-    executionMode: refreshed.executionMode,
-    ownerInstanceId: refreshed.ownerInstanceId,
-    leaseExpiresAt: refreshed.leaseExpiresAt,
-  });
 }
 
 // ─── GET: SSE stream for session/update ────────────────────────────────
@@ -268,8 +208,16 @@ export async function GET(request: NextRequest) {
       // ─── Heartbeat mechanism ─────────────────────────────────────────────
       // Send a comment every 30 seconds to keep the connection alive
       // and detect dead connections. If the write fails, cleanup is triggered.
+      // While a client stream is attached, the same tick also keeps the
+      // embedded runtime lease fresh (every 60s, or 1/3 of the lease when
+      // shorter) so an actively used session never expires mid-conversation.
+      let lastLeaseRefreshAt = Date.now();
       heartbeatTimer = setInterval(() => {
         try {
+          if (Date.now() - lastLeaseRefreshAt >= getSessionLeaseRefreshMs()) {
+            lastLeaseRefreshAt = Date.now();
+            refreshEmbeddedSessionLease(store, store.getSession(sessionId));
+          }
           const encoder = new TextEncoder();
           const heartbeat = ": heartbeat\n\n";
           controller.enqueue(encoder.encode(heartbeat));
@@ -475,7 +423,6 @@ export async function POST(request: NextRequest) {
         buildMcpConfigForClaude: (workspaceId, sessionId, toolMode, mcpProfile) =>
           buildMcpConfigForClaude(workspaceId, sessionId, toolMode, mcpProfile, requestServerUrl),
         requireWorkspaceId,
-        pushAndPersistForwardedNotification,
         serverUrlOverride: requestServerUrl,
       });
     }
@@ -499,11 +446,12 @@ export async function POST(request: NextRequest) {
     }
 
     // ── session/load ──────────────────────────────────────────────────
+    // Explicit Resume. Delegates to the same unified recovery entry point
+    // (ensureSessionRuntime) used by user prompts and sub-Agent reports, so
+    // recovery semantics, ID separation, and structured errors stay shared.
     if (method === "session/load") {
       const p = (params ?? {}) as Record<string, unknown>;
       const sessionId = typeof p.sessionId === "string" ? p.sessionId : undefined;
-      const manager = getAcpProcessManager();
-      const store = getHttpSessionStore();
 
       if (!sessionId) {
         return jsonrpcResponse(id ?? null, null, {
@@ -512,34 +460,6 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const existingSession = manager.hasActiveSession(sessionId);
-
-      const storedSession = store.getSession(sessionId);
-      const persistedSession = storedSession
-        ? null
-        : (await loadSessionFromDb(sessionId)) ?? (await loadSessionFromLocalStorage(sessionId));
-      const recoveredSession = storedSession ?? persistedSession ?? undefined;
-
-      if (!recoveredSession) {
-        return jsonrpcResponse(id ?? null, null, {
-          code: -32004,
-          message: `Persisted session not found: ${sessionId}`,
-        });
-      }
-
-      const ownershipIssue = getEmbeddedOwnershipIssue(recoveredSession);
-      if (ownershipIssue) {
-        return jsonrpcResponse(id ?? null, null, {
-          code: -32010,
-          message: ownershipIssue,
-        });
-      }
-
-      const provider = recoveredSession.provider ?? (isServerlessEnvironment() ? "claude-code-sdk" : "opencode");
-      const cwd = (typeof p.cwd === "string" ? p.cwd : recoveredSession.cwd) ?? process.cwd();
-      const workspaceId = recoveredSession.workspaceId;
-      const role = recoveredSession.role ?? "CRAFTER";
-      const providerSessionId = recoveredSession.routaAgentId ?? sessionId;
       const requestedAcpMcpServers = parseRequestedAcpMcpServers(p.mcpServers);
 
       if (requestedAcpMcpServers.error) {
@@ -549,166 +469,39 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      if (existingSession) {
-        store.upsertSession({
-          sessionId,
-          name: recoveredSession.name,
-          cwd,
-          branch: recoveredSession.branch,
-          workspaceId,
-          routaAgentId: manager.getAcpSessionId(sessionId) ?? recoveredSession.routaAgentId,
-          provider,
-          role,
-          toolMode: "toolMode" in recoveredSession
-            ? (recoveredSession as { toolMode?: "essential" | "full" }).toolMode
-            : undefined,
-          mcpProfile: "mcpProfile" in recoveredSession
-            ? (recoveredSession as { mcpProfile?: McpServerProfile }).mcpProfile
-            : undefined,
-          modeId: recoveredSession.modeId,
-          model: recoveredSession.model,
-          parentSessionId: recoveredSession.parentSessionId,
-          specialistId: recoveredSession.specialistId,
-          executionMode: recoveredSession.executionMode,
-          ownerInstanceId: recoveredSession.ownerInstanceId,
-          leaseExpiresAt: recoveredSession.leaseExpiresAt,
-          createdAt: recoveredSession.createdAt instanceof Date
-            ? recoveredSession.createdAt.toISOString()
-            : (recoveredSession.createdAt ?? new Date().toISOString()),
-          acpStatus: "ready",
-        });
-        return jsonrpcResponse(id ?? null, {
-          sessionId,
-          provider,
-          role,
-          acpStatus: "ready",
-          resumeMode: "attached",
-        });
-      }
-
-      const forwardSessionUpdate = createSessionUpdateForwarder(store, sessionId);
       const requestServerUrl = resolveRequestServerUrl(request);
-      let acpSessionId: string;
-      let resumeMode: "native" | "recreated" = "recreated";
-      let nativeResumeError: string | undefined;
-      const modelArgs = buildProviderModelArgs(provider, recoveredSession.model);
-
-      // Determine whether native resume should be attempted based on provider capabilities
-      const preset = getPresetById(provider);
-      const supportsNativeResume = preset?.resume?.supported && (preset.resume.mode === "native" || preset.resume.mode === "both");
 
       try {
-        if (supportsNativeResume) {
-          acpSessionId = await manager.loadSession(
-            sessionId,
-            cwd,
-            forwardSessionUpdate,
-            provider,
-            workspaceId,
-            "toolMode" in recoveredSession
-              ? (recoveredSession as { toolMode?: "essential" | "full" }).toolMode
-              : undefined,
-            "mcpProfile" in recoveredSession
-              ? (recoveredSession as { mcpProfile?: McpServerProfile }).mcpProfile
-              : undefined,
-            requestServerUrl,
-            {
-              provider,
-              role,
-            },
-            providerSessionId,
-            requestedAcpMcpServers.servers,
-            modelArgs,
-          );
-          resumeMode = "native";
-        } else {
-          throw new Error(`Native resume not supported for provider: ${provider} (mode: replay)`);
-        }
-      } catch (error) {
-        nativeResumeError = error instanceof Error ? error.message : "Native resume failed";
-        console.warn(`[ACP Route] Native resume failed for ${sessionId} (provider: ${provider}), falling back to recreate:`, error);
-        acpSessionId = await manager.createSession(
+        const recovery = await ensureSessionRuntime({
           sessionId,
-          cwd,
-          forwardSessionUpdate,
-          provider,
-          recoveredSession.modeId,
-          modelArgs,
-          undefined,
-          workspaceId,
-          "toolMode" in recoveredSession
-            ? (recoveredSession as { toolMode?: "essential" | "full" }).toolMode
-            : undefined,
-          "mcpProfile" in recoveredSession
-            ? (recoveredSession as { mcpProfile?: McpServerProfile }).mcpProfile
-            : undefined,
-          requestServerUrl,
-          {
-            provider,
-            role,
-          },
-          requestedAcpMcpServers.servers,
-        );
+          cwd: typeof p.cwd === "string" ? p.cwd : undefined,
+          requestedAcpMcpServers: requestedAcpMcpServers.servers,
+          serverUrlOverride: requestServerUrl,
+          allowFreshCreate: false,
+          createSessionUpdateForwarder,
+          buildMcpConfigForClaude: (workspaceId, targetSessionId, toolMode, mcpProfile) =>
+            buildMcpConfigForClaude(workspaceId, targetSessionId, toolMode, mcpProfile, requestServerUrl),
+        });
+
+        return jsonrpcResponse(id ?? null, {
+          sessionId,
+          provider: recovery.provider,
+          role: recovery.role,
+          acpStatus: "ready",
+          resumeMode: recovery.resumeMode,
+          ...(recovery.resumeCapabilities
+            ? { resumeCapabilities: recovery.resumeCapabilities }
+            : {}),
+          ...(recovery.nativeResumeError
+            ? { nativeResumeError: recovery.nativeResumeError }
+            : {}),
+        });
+      } catch (err) {
+        if (err instanceof SessionRuntimeRecoveryError) {
+          return jsonrpcResponse(id ?? null, null, err.jsonRpcError);
+        }
+        throw err;
       }
-
-      const executionBinding = buildExecutionBinding("embedded");
-      const now = new Date().toISOString();
-      const sessionRecord = {
-        sessionId,
-        name: recoveredSession.name,
-        cwd,
-        branch: recoveredSession.branch,
-        workspaceId,
-        routaAgentId: acpSessionId,
-        provider,
-        role,
-        toolMode: "toolMode" in recoveredSession
-          ? (recoveredSession as { toolMode?: "essential" | "full" }).toolMode
-          : undefined,
-        mcpProfile: "mcpProfile" in recoveredSession
-          ? (recoveredSession as { mcpProfile?: McpServerProfile }).mcpProfile
-          : undefined,
-        modeId: recoveredSession.modeId,
-        model: recoveredSession.model,
-        parentSessionId: recoveredSession.parentSessionId,
-        specialistId: recoveredSession.specialistId,
-        createdAt: now,
-        acpStatus: "ready" as const,
-        ...refreshExecutionBinding(executionBinding),
-      };
-      store.upsertSession(sessionRecord);
-      void persistSessionToDb({
-        id: sessionId,
-        name: recoveredSession.name,
-        cwd,
-        branch: recoveredSession.branch,
-        workspaceId,
-        routaAgentId: acpSessionId,
-        provider,
-        role,
-        parentSessionId: recoveredSession.parentSessionId,
-        modeId: recoveredSession.modeId,
-        model: recoveredSession.model,
-        specialistId: recoveredSession.specialistId,
-        executionMode: sessionRecord.executionMode,
-        ownerInstanceId: sessionRecord.ownerInstanceId,
-        leaseExpiresAt: sessionRecord.leaseExpiresAt,
-      });
-      void updateSessionExecutionBindingInDb(sessionId, {
-        executionMode: sessionRecord.executionMode,
-        ownerInstanceId: sessionRecord.ownerInstanceId,
-        leaseExpiresAt: sessionRecord.leaseExpiresAt,
-      });
-
-      return jsonrpcResponse(id ?? null, {
-        sessionId,
-        provider,
-        role,
-        acpStatus: "ready",
-        resumeMode,
-        resumeCapabilities: preset?.resume ?? { supported: false, mode: "replay" },
-        ...(nativeResumeError ? { nativeResumeError } : {}),
-      });
     }
 
     // ── session/cancel ─────────────────────────────────────────────────

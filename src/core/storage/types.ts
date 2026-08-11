@@ -30,6 +30,7 @@ export interface SessionMetadata {
   branch?: string;
   workspaceId: string;
   routaAgentId?: string;
+  providerSessionId?: string;
   provider?: string;
   role?: string;
   modeId?: string;
@@ -61,6 +62,7 @@ export interface SessionRecord {
   branch?: string;
   workspaceId: string;
   routaAgentId?: string;
+  providerSessionId?: string;
   provider?: string;
   role?: string;
   modeId?: string;

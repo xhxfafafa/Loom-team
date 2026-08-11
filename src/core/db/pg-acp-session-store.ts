@@ -2,10 +2,10 @@
  * PgAcpSessionStore — Postgres-backed ACP session store using Drizzle ORM.
  */
 
-import { and, asc, desc, eq, gt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lte, or } from "drizzle-orm";
 import type { Database } from "./index";
 import { acpSessions, sessionMessages } from "./schema";
-import type { AcpSessionStore, AcpSession, AcpSessionNotification } from "../store/acp-session-store";
+import type { AcpSessionStore, AcpSession, AcpSessionNotification, AppendHistoryOnceStatus } from "../store/acp-session-store";
 import { parseTeamChainId } from "../orchestration/team-chain";
 import {
   compactSessionHistoryForPersistence,
@@ -27,6 +27,7 @@ export class PgAcpSessionStore implements AcpSessionStore {
         branch: session.branch,
         workspaceId: session.workspaceId,
         routaAgentId: session.routaAgentId,
+        providerSessionId: session.providerSessionId,
         provider: session.provider,
         role: session.role,
         modeId: session.modeId,
@@ -49,6 +50,7 @@ export class PgAcpSessionStore implements AcpSessionStore {
           branch: session.branch,
           workspaceId: session.workspaceId,
           routaAgentId: session.routaAgentId,
+          providerSessionId: session.providerSessionId,
           provider: session.provider,
           role: session.role,
           modeId: session.modeId,
@@ -121,6 +123,87 @@ export class PgAcpSessionStore implements AcpSessionStore {
       .where(eq(acpSessions.id, sessionId));
   }
 
+  async appendHistoryOnce(
+    sessionId: string,
+    eventId: string,
+    notification: AcpSessionNotification,
+  ): Promise<AppendHistoryOnceStatus> {
+    // Atomic check-and-append inside ONE transaction: the event-ID existence
+    // check and the append cannot interleave with a concurrent retry, so a
+    // duplicated delivery never appends twice. Storage failures throw — a
+    // lost write must never be misread as a duplicate delivery.
+    return this.db.transaction(async (tx) => {
+      const existing = await tx
+        .select({ id: sessionMessages.id })
+        .from(sessionMessages)
+        .where(and(
+          eq(sessionMessages.sessionId, sessionId),
+          eq(sessionMessages.id, eventId),
+        ))
+        .limit(1);
+      if (existing.length > 0) return "duplicate";
+
+      const sessionRows = await tx
+        .select()
+        .from(acpSessions)
+        .where(eq(acpSessions.id, sessionId))
+        .limit(1);
+      if (sessionRows.length === 0) return "session_not_found";
+
+      // Legacy sessions may only carry history in the JSONB column; honour
+      // event IDs already present there too.
+      const legacyHistory = sessionRows[0].messageHistory ?? [];
+      if (legacyHistory.some((entry) => entry.eventId === eventId)) {
+        return "duplicate";
+      }
+
+      const persistedNotification = compactSessionNotificationForPersistence({
+        ...notification,
+        eventId,
+      });
+      const nextIndexRows = await tx
+        .select({ messageIndex: sessionMessages.messageIndex })
+        .from(sessionMessages)
+        .where(eq(sessionMessages.sessionId, sessionId))
+        .orderBy(desc(sessionMessages.messageIndex))
+        .limit(1);
+      const nextIndex = nextIndexRows.length > 0 ? nextIndexRows[0].messageIndex + 1 : 0;
+      const eventType = String(
+        (persistedNotification.update as Record<string, unknown> | undefined)?.sessionUpdate ?? "notification",
+      );
+
+      await tx.insert(sessionMessages).values({
+        id: eventId,
+        sessionId,
+        messageIndex: nextIndex,
+        eventType,
+        payload: persistedNotification as typeof sessionMessages.$inferInsert.payload,
+      });
+
+      await tx
+        .update(acpSessions)
+        .set({ messageHistory: [...legacyHistory, persistedNotification], updatedAt: new Date() })
+        .where(eq(acpSessions.id, sessionId));
+
+      return "appended";
+    });
+  }
+
+  async hasHistoryEvent(sessionId: string, eventId: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ id: sessionMessages.id })
+      .from(sessionMessages)
+      .where(and(
+        eq(sessionMessages.sessionId, sessionId),
+        eq(sessionMessages.id, eventId),
+      ))
+      .limit(1);
+    if (rows.length > 0) return true;
+
+    const session = await this.get(sessionId);
+    return session?.messageHistory.some((entry) => entry.eventId === eventId) ?? false;
+  }
+
   async getHistory(
     sessionId: string,
     options?: { afterEventId?: string },
@@ -175,6 +258,72 @@ export class PgAcpSessionStore implements AcpSessionStore {
       .where(eq(acpSessions.id, sessionId));
   }
 
+  async setProviderSessionId(sessionId: string, providerSessionId: string | undefined): Promise<void> {
+    await this.db
+      .update(acpSessions)
+      .set({ providerSessionId, updatedAt: new Date() })
+      .where(eq(acpSessions.id, sessionId));
+  }
+
+  async updateRuntimeBinding(
+    sessionId: string,
+    update: {
+      providerSessionId?: string | null;
+      executionMode?: "embedded" | "runner";
+      ownerInstanceId?: string;
+      leaseExpiresAt?: string;
+    },
+  ): Promise<boolean> {
+    const set: Partial<typeof acpSessions.$inferInsert> = { updatedAt: new Date() };
+    // `null` clears the column (stale/polluted native ID); `undefined` keeps it.
+    if (update.providerSessionId !== undefined) set.providerSessionId = update.providerSessionId;
+    if (update.executionMode !== undefined) set.executionMode = update.executionMode;
+    if (update.ownerInstanceId !== undefined) set.ownerInstanceId = update.ownerInstanceId;
+    if (update.leaseExpiresAt !== undefined) set.leaseExpiresAt = new Date(update.leaseExpiresAt);
+
+    const rows = await this.db
+      .update(acpSessions)
+      .set(set)
+      .where(eq(acpSessions.id, sessionId))
+      .returning({ id: acpSessions.id });
+    return rows.length > 0;
+  }
+
+  async tryAcquireExpiredLease(
+    sessionId: string,
+    acquire: {
+      ownerInstanceId: string;
+      leaseExpiresAt: string;
+      executionMode?: "embedded" | "runner";
+    },
+    now: Date = new Date(),
+  ): Promise<boolean> {
+    const set: Partial<typeof acpSessions.$inferInsert> = {
+      ownerInstanceId: acquire.ownerInstanceId,
+      leaseExpiresAt: new Date(acquire.leaseExpiresAt),
+      updatedAt: new Date(),
+    };
+    if (acquire.executionMode !== undefined) set.executionMode = acquire.executionMode;
+
+    // Atomic compare-and-swap: a single conditional UPDATE. The row is only
+    // claimed when it is unowned, leaseless, expired, or already owned by the
+    // requesting instance (refresh). Concurrent instances cannot both win.
+    const rows = await this.db
+      .update(acpSessions)
+      .set(set)
+      .where(and(
+        eq(acpSessions.id, sessionId),
+        or(
+          isNull(acpSessions.ownerInstanceId),
+          isNull(acpSessions.leaseExpiresAt),
+          lte(acpSessions.leaseExpiresAt, now),
+          eq(acpSessions.ownerInstanceId, acquire.ownerInstanceId),
+        ),
+      ))
+      .returning({ id: acpSessions.id });
+    return rows.length > 0;
+  }
+
   private toModel(row: typeof acpSessions.$inferSelect): AcpSession {
     return {
       id: row.id,
@@ -183,6 +332,7 @@ export class PgAcpSessionStore implements AcpSessionStore {
       branch: row.branch ?? undefined,
       workspaceId: row.workspaceId,
       routaAgentId: row.routaAgentId ?? undefined,
+      providerSessionId: row.providerSessionId ?? undefined,
       provider: row.provider ?? undefined,
       role: row.role ?? undefined,
       modeId: row.modeId ?? undefined,

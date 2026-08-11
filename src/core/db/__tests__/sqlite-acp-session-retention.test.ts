@@ -31,6 +31,7 @@ describe("sqlite ACP session retention", () => {
         branch TEXT,
         workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
         routa_agent_id TEXT,
+        provider_session_id TEXT,
         provider TEXT,
         role TEXT,
         mode_id TEXT,
@@ -149,6 +150,70 @@ describe("sqlite ACP session retention", () => {
       .prepare("SELECT team_chain_id AS teamChainId FROM acp_sessions WHERE id = ?")
       .get("team-legacy") as { teamChainId: string | null };
     expect(legacyRow.teamChainId).toBeNull();
+  });
+
+  it("round-trips providerSessionId separately from routaAgentId and never backfills it", async () => {
+    await store.save({
+      id: "session-ids",
+      cwd: "/tmp/project",
+      workspaceId: "workspace-1",
+      routaAgentId: "routa-agent-logical-1",
+      providerSessionId: "acp-native-1",
+      provider: "codex",
+      messageHistory: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const loaded = await store.get("session-ids");
+    expect(loaded?.routaAgentId).toBe("routa-agent-logical-1");
+    expect(loaded?.providerSessionId).toBe("acp-native-1");
+
+    // A save without providerSessionId must NOT backfill it from routaAgentId.
+    await store.save({
+      id: "session-no-provider-id",
+      cwd: "/tmp/project",
+      workspaceId: "workspace-1",
+      routaAgentId: "routa-agent-logical-2",
+      provider: "claude",
+      messageHistory: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const withoutProviderId = await store.get("session-no-provider-id");
+    expect(withoutProviderId?.routaAgentId).toBe("routa-agent-logical-2");
+    expect(withoutProviderId?.providerSessionId).toBeUndefined();
+    const rawRow = sqlite
+      .prepare("SELECT provider_session_id AS providerSessionId FROM acp_sessions WHERE id = ?")
+      .get("session-no-provider-id") as { providerSessionId: string | null };
+    expect(rawRow.providerSessionId).toBeNull();
+  });
+
+  it("updates only provider_session_id via setProviderSessionId, preserving routa_agent_id and history", async () => {
+    const notification: AcpSessionNotification = {
+      sessionId: "session-targeted",
+      eventId: "event-1",
+      update: { sessionUpdate: "user_message", content: "hello" },
+    };
+    await store.save({
+      id: "session-targeted",
+      cwd: "/tmp/project",
+      workspaceId: "workspace-1",
+      routaAgentId: "routa-agent-logical-3",
+      provider: "codex",
+      firstPromptSent: true,
+      messageHistory: [notification],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await store.setProviderSessionId("session-targeted", "acp-native-2");
+
+    const loaded = await store.get("session-targeted");
+    expect(loaded?.providerSessionId).toBe("acp-native-2");
+    expect(loaded?.routaAgentId).toBe("routa-agent-logical-3");
+    expect(loaded?.firstPromptSent).toBe(true);
+    expect(loaded?.messageHistory).toHaveLength(1);
   });
 });
 

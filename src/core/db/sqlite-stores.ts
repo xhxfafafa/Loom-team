@@ -5,7 +5,7 @@
  * All stores implement the same interfaces as their Pg counterparts.
  */
 
-import { eq, and, gte, lte, desc, asc, sql, isNotNull, isNull, lt, gt } from "drizzle-orm";
+import { eq, and, or, gte, lte, desc, asc, sql, isNotNull, isNull, lt, gt } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as sqliteSchema from "./sqlite-schema";
 import type { Agent, AgentRole, AgentStatus } from "../models/agent";
@@ -17,12 +17,13 @@ import { createSpecNote, SPEC_NOTE_ID } from "../models/note";
 import type { AgentStore } from "../store/agent-store";
 import type { ConversationStore } from "../store/conversation-store";
 import type { NoteStore } from "../store/note-store";
-import type { AcpSessionStore, AcpSession, AcpSessionNotification } from "../store/acp-session-store";
+import type { AcpSessionStore, AcpSession, AcpSessionNotification, AppendHistoryOnceStatus } from "../store/acp-session-store";
 import { parseTeamChainId } from "../orchestration/team-chain";
 import {
   compactSessionHistoryForPersistence,
   compactSessionNotificationForPersistence,
 } from "../acp/session-notification-retention";
+import { appendSessionHistoryEventOnce } from "./sqlite-acp-session-history";
 import type { KanbanBoardStore } from "../store/kanban-board-store";
 import type { ArtifactStore } from "../store/artifact-store";
 export { SqliteWorkspaceStore } from "./sqlite-workspace-store";
@@ -751,6 +752,7 @@ export class SqliteAcpSessionStore implements AcpSessionStore {
         branch: session.branch,
         workspaceId: session.workspaceId,
         routaAgentId: session.routaAgentId,
+        providerSessionId: session.providerSessionId,
         provider: session.provider,
         role: session.role,
         modeId: session.modeId,
@@ -773,6 +775,7 @@ export class SqliteAcpSessionStore implements AcpSessionStore {
           branch: session.branch,
           workspaceId: session.workspaceId,
           routaAgentId: session.routaAgentId,
+          providerSessionId: session.providerSessionId,
           provider: session.provider,
           role: session.role,
           modeId: session.modeId,
@@ -856,6 +859,29 @@ export class SqliteAcpSessionStore implements AcpSessionStore {
       .where(eq(sqliteSchema.acpSessions.id, sessionId));
   }
 
+  async appendHistoryOnce(
+    sessionId: string,
+    eventId: string,
+    notification: AcpSessionNotification,
+  ): Promise<AppendHistoryOnceStatus> {
+    return appendSessionHistoryEventOnce(this.db, sessionId, eventId, notification);
+  }
+
+  async hasHistoryEvent(sessionId: string, eventId: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ id: sqliteSchema.sessionMessages.id })
+      .from(sqliteSchema.sessionMessages)
+      .where(and(
+        eq(sqliteSchema.sessionMessages.sessionId, sessionId),
+        eq(sqliteSchema.sessionMessages.id, eventId),
+      ))
+      .limit(1);
+    if (rows.length > 0) return true;
+
+    const session = await this.get(sessionId);
+    return session?.messageHistory.some((entry) => entry.eventId === eventId) ?? false;
+  }
+
   async getHistory(
     sessionId: string,
     options?: { afterEventId?: string },
@@ -910,6 +936,72 @@ export class SqliteAcpSessionStore implements AcpSessionStore {
       .where(eq(sqliteSchema.acpSessions.id, sessionId));
   }
 
+  async setProviderSessionId(sessionId: string, providerSessionId: string | undefined): Promise<void> {
+    await this.db
+      .update(sqliteSchema.acpSessions)
+      .set({ providerSessionId, updatedAt: new Date() })
+      .where(eq(sqliteSchema.acpSessions.id, sessionId));
+  }
+
+  async updateRuntimeBinding(
+    sessionId: string,
+    update: {
+      providerSessionId?: string | null;
+      executionMode?: "embedded" | "runner";
+      ownerInstanceId?: string;
+      leaseExpiresAt?: string;
+    },
+  ): Promise<boolean> {
+    const set: Partial<typeof sqliteSchema.acpSessions.$inferInsert> = { updatedAt: new Date() };
+    // `null` clears the column (stale/polluted native ID); `undefined` keeps it.
+    if (update.providerSessionId !== undefined) set.providerSessionId = update.providerSessionId;
+    if (update.executionMode !== undefined) set.executionMode = update.executionMode;
+    if (update.ownerInstanceId !== undefined) set.ownerInstanceId = update.ownerInstanceId;
+    if (update.leaseExpiresAt !== undefined) set.leaseExpiresAt = new Date(update.leaseExpiresAt);
+
+    const rows = await this.db
+      .update(sqliteSchema.acpSessions)
+      .set(set)
+      .where(eq(sqliteSchema.acpSessions.id, sessionId))
+      .returning({ id: sqliteSchema.acpSessions.id });
+    return rows.length > 0;
+  }
+
+  async tryAcquireExpiredLease(
+    sessionId: string,
+    acquire: {
+      ownerInstanceId: string;
+      leaseExpiresAt: string;
+      executionMode?: "embedded" | "runner";
+    },
+    now: Date = new Date(),
+  ): Promise<boolean> {
+    const set: Partial<typeof sqliteSchema.acpSessions.$inferInsert> = {
+      ownerInstanceId: acquire.ownerInstanceId,
+      leaseExpiresAt: new Date(acquire.leaseExpiresAt),
+      updatedAt: new Date(),
+    };
+    if (acquire.executionMode !== undefined) set.executionMode = acquire.executionMode;
+
+    // Atomic compare-and-swap: a single conditional UPDATE. The row is only
+    // claimed when it is unowned, leaseless, expired, or already owned by the
+    // requesting instance (refresh). Concurrent instances cannot both win.
+    const rows = await this.db
+      .update(sqliteSchema.acpSessions)
+      .set(set)
+      .where(and(
+        eq(sqliteSchema.acpSessions.id, sessionId),
+        or(
+          isNull(sqliteSchema.acpSessions.ownerInstanceId),
+          isNull(sqliteSchema.acpSessions.leaseExpiresAt),
+          lte(sqliteSchema.acpSessions.leaseExpiresAt, now),
+          eq(sqliteSchema.acpSessions.ownerInstanceId, acquire.ownerInstanceId),
+        ),
+      ))
+      .returning({ id: sqliteSchema.acpSessions.id });
+    return rows.length > 0;
+  }
+
   private toModel(row: typeof sqliteSchema.acpSessions.$inferSelect): AcpSession {
     return {
       id: row.id,
@@ -918,6 +1010,7 @@ export class SqliteAcpSessionStore implements AcpSessionStore {
       branch: (row as unknown as { branch?: string | null }).branch ?? undefined,
       workspaceId: row.workspaceId,
       routaAgentId: row.routaAgentId ?? undefined,
+      providerSessionId: row.providerSessionId ?? undefined,
       provider: row.provider ?? undefined,
       role: row.role ?? undefined,
       modeId: row.modeId ?? undefined,

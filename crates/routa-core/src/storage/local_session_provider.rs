@@ -47,6 +47,10 @@ pub struct SessionMetadata {
     pub workspace_id: String,
     #[serde(rename = "routaAgentId")]
     pub routa_agent_id: Option<String>,
+    /// Provider-native session ID (ACP/Claude/Codex). Used only for native
+    /// resume; never derived from or conflated with `routa_agent_id`.
+    #[serde(rename = "providerSessionId", default)]
+    pub provider_session_id: Option<String>,
     pub provider: Option<String>,
     pub role: Option<String>,
     #[serde(rename = "modeId")]
@@ -80,6 +84,10 @@ pub struct SessionRecord {
     pub workspace_id: String,
     #[serde(rename = "routaAgentId")]
     pub routa_agent_id: Option<String>,
+    /// Provider-native session ID (ACP/Claude/Codex). Used only for native
+    /// resume; never derived from or conflated with `routa_agent_id`.
+    #[serde(rename = "providerSessionId", default)]
+    pub provider_session_id: Option<String>,
     pub provider: Option<String>,
     pub role: Option<String>,
     #[serde(rename = "modeId")]
@@ -149,6 +157,7 @@ impl LocalSessionProvider {
                 "branch": session.branch,
                 "workspaceId": session.workspace_id,
                 "routaAgentId": session.routa_agent_id,
+                "providerSessionId": session.provider_session_id,
                 "provider": session.provider,
                 "role": session.role,
                 "modeId": session.mode_id,
@@ -256,6 +265,7 @@ impl LocalSessionProvider {
                 .unwrap_or("default")
                 .to_string(),
             routa_agent_id: data["routaAgentId"].as_str().map(|s| s.to_string()),
+            provider_session_id: data["providerSessionId"].as_str().map(|s| s.to_string()),
             provider: data["provider"].as_str().map(|s| s.to_string()),
             role: data["role"].as_str().map(|s| s.to_string()),
             mode_id: data["modeId"].as_str().map(|s| s.to_string()),
@@ -350,6 +360,7 @@ mod tests {
             branch: Some("main".to_string()),
             workspace_id: "ws-1".to_string(),
             routa_agent_id: Some("agent-1".to_string()),
+            provider_session_id: None,
             provider: Some("test".to_string()),
             role: Some("ROUTA".to_string()),
             mode_id: None,
@@ -385,6 +396,34 @@ mod tests {
         assert_eq!(
             loaded.custom_args,
             vec!["codex-acp".to_string(), "--stdio".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_provider_session_id_round_trips_separately_from_routa_agent_id() {
+        let tmp = TempDir::new().unwrap();
+        let project_path = tmp.path().join("my-project");
+        std::fs::create_dir_all(&project_path).unwrap();
+        let provider =
+            LocalSessionProvider::new_with_storage_root(project_path.to_str().unwrap(), tmp.path());
+
+        // A session without a provider session ID must not derive one from
+        // the durable routa_agent_id.
+        let bare = make_session("sess-bare", project_path.to_str().unwrap());
+        provider.save(&bare).await.unwrap();
+        let loaded = provider.get("sess-bare").await.unwrap();
+        assert_eq!(loaded.routa_agent_id.as_deref(), Some("agent-1"));
+        assert_eq!(loaded.provider_session_id, None);
+
+        // When a provider session ID exists, it round-trips independently.
+        let mut bound = make_session("sess-bound", project_path.to_str().unwrap());
+        bound.provider_session_id = Some("provider-native-9".to_string());
+        provider.save(&bound).await.unwrap();
+        let loaded = provider.get("sess-bound").await.unwrap();
+        assert_eq!(loaded.routa_agent_id.as_deref(), Some("agent-1"));
+        assert_eq!(
+            loaded.provider_session_id.as_deref(),
+            Some("provider-native-9")
         );
     }
 

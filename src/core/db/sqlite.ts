@@ -380,6 +380,8 @@ function initializeSqliteTables(db: SqliteDatabase): void {
   try { db.run(sql`ALTER TABLE acp_sessions ADD COLUMN execution_mode TEXT`); } catch { /* column already exists */ }
   try { db.run(sql`ALTER TABLE acp_sessions ADD COLUMN owner_instance_id TEXT`); } catch { /* column already exists */ }
   try { db.run(sql`ALTER TABLE acp_sessions ADD COLUMN lease_expires_at INTEGER`); } catch { /* column already exists */ }
+  // Provider-native session ID (native resume). Never backfilled from routa_agent_id.
+  try { db.run(sql`ALTER TABLE acp_sessions ADD COLUMN provider_session_id TEXT`); } catch { /* column already exists */ }
 
   db.run(sql`
     CREATE TABLE IF NOT EXISTS session_messages (

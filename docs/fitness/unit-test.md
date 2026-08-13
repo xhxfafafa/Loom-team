@@ -197,3 +197,22 @@ Team 子 Agent 已创建 Task/Agent/子 Session 时，Team 任务树与看板卡
   - 锁定 codebase 创建：普通目录返回 201 且成为默认 codebase；git 仓库仍可导入；不存在/文件/不可读路径返回 400 携带 `errorCode` 且不落库；bare 仓库保持拒绝。
 - `src/client/components/__tests__/repo-picker.test.tsx`
   - 锁定 RepoPicker 本地文件夹交互：普通目录选择传播 `git=false`；`errorCode` 映射为本地化错误文案；非 git 项目显示「未启用版本管理」并隐藏分支控件；git 项目保留分支控件。
+
+## Kanban Task Input Attachments (Web)
+
+- `src/core/kanban/__tests__/task-attachments.test.ts`
+  - 锁定统一校验/归一化：文件数/图片数/单文件/总量上限、文件名清洗与长度、Base64 严格解码、UTF-8 与控制字符过滤、PNG/JPEG/WEBP 签名与扩展名互斥；`buildTaskInputArtifact` metadata 形状；摘要过滤与 prompt section 格式。
+- `src/client/__tests__/attachment-draft.test.ts`
+  - 锁定浏览器草稿层：accept 列表、逐文件拒绝原因、跨已选草稿的计数/总量上限、提交时 `arrayBuffer → Base64` 序列化（无 data: 前缀）、本地化错误映射。
+- `src/app/workspace/[workspaceId]/__tests__/kanban-create-modal.test.tsx`
+  - 锁定创建弹窗附件交互：文件选择/拖拽入草稿、非法扩展本地化反馈、提交中防重复点击、创建失败保留草稿与文件且只显示本地化 `createFailed`。
+- `src/app/workspace/[workspaceId]/kanban/__tests__/kanban-card-artifacts.test.tsx`
+  - 锁定任务详情渲染：附件与证据分组、附件不计入证据总数/缺口、仅签名推导的 3 种 MIME 可作为 data: URL 图片渲染、不可信 mediaType 不渲染为图片。
+- `src/app/api/tasks/__tests__/route.test.ts`
+  - 锁定 Web 路由：附件先于自动化触发持久化（transition 时可见）、无附件路径不变、非法附件整体 400 且不落库、持久化失败补偿（删任务、不触发 transition）、workspace 删除逐任务清理附件。
+- `src/core/tools/__tests__/agent-tools.test.ts`
+  - 锁定 MCP 写边界：`provideArtifact(type=attachment)` 拒绝且不落库；`listArtifacts` 返回 metadata + contentLength（无 content）且可按 attachment 过滤；`getArtifact` 返回完整内容。
+- `src/core/mcp/__tests__/mcp-tool-executor.test.ts`
+  - 锁定 MCP schema enum：`list_artifacts.type` 含 attachment；`provide_artifact.type` / `request_artifact.artifactType` 保持四个 agent 可写类型。
+- `src/core/kanban/__tests__/task-derived-summary.test.ts`、`completion-fallback-artifact.test.ts`、`agent-trigger.test.ts`
+  - 锁定证据隔离：证据摘要/总数排除附件、附件不能满足 transition 必需 artifact、仅附件任务仍生成 completion fallback、prompt 的 Input Attachments section 有/无附件两种形态。

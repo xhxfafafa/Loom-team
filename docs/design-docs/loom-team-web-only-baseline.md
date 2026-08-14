@@ -145,3 +145,44 @@ schema-validation. Missing (Phase 4 prerequisites): `team-runs`, `kanban`.
 | packages/{routa-cli,harness-monitor,entrix,office,office-render} | 128 |
 
 Each crate fits in its own commit under the 200-file threshold.
+
+## Local environment setup required by the test/push gates
+
+Two baseline gate failures are environment-state problems, fixed locally (no tracked changes):
+
+1. **vitest needs a runtime-initialized local `routa.db`.** The SQLite suite writes to the
+   repo-local `routa.db` (default path in `src/core/db/sqlite.ts`). On a fresh clone that file
+   must be created by the runtime DDL (`initializeSqliteTables`) — NOT by `drizzle-kit push`:
+   the drizzle schema declares an `acp_sessions.workspace_id → workspaces.id` foreign key and
+   columns the runtime DDL lacks (`team_chain_id`, `custom_command`, `custom_args`), while the
+   runtime DDL has no FKs but misses those columns. Tests insert sessions with workspace ids
+   that have no workspaces row, so a drizzle-pushed DB fails inserts (FK) and a runtime-only
+   DB fails queries (missing columns). The source repo's long-lived dev DB is "runtime DDL +
+   later-added columns", which satisfies both. Reproduced locally with: open the runtime DB,
+   then `ALTER TABLE acp_sessions ADD COLUMN custom_command/custom_args/team_chain_id TEXT`.
+   After this, `npm run test:run` passes identically to the source baseline
+   (405 files / 2754 tests passed).
+2. **pre-push `graph_test_mapping_probe` needs `entrix` on PATH.** Built via
+   `cargo build -p entrix` in this repo and symlinked to `~/.cargo/bin/entrix`.
+
+## Pre-push gate disposition (baseline-inherited failure)
+
+The husky pre-push hook runs `eslint_pass`, `ts_typecheck_pass`, `ts_test_pass_full`,
+`clippy_pass`, `rust_test_pass`, `graph_test_mapping_probe`. At baseline ff6ac33c,
+`rust_test_pass` FAILS for a pre-existing reason unrelated to this migration (exception 4:
+orphaned test `api_a2a_rpc_supports_spec_task_methods` asserts the `/api/a2a/rpc` route that
+upstream commit 8da5e6a0 deliberately removed from both backends).
+
+Per migration doc §13 ("必要测试通过，或提交说明中明确记录继承自 baseline 的失败") and the
+Phase 0 rule "record baseline exceptions; do not fix them in migration commits", this failure
+is recorded here and in the push record instead of being forced green. Forcing it green would
+require either deleting the orphaned test, altering it, or restoring the deliberately-removed
+route — all rejected (user execution rules 14/15; doc §15). Every other pre-push metric was
+run and passes. Pushes until Phase 4/5 remove the Rust backend and rewrite the gate therefore
+use the hook's own documented `SKIP_HOOKS` escape with the full check suite executed manually
+beforehand; `--no-verify`, force push and hard resets remain unused.
+
+**Inherited failure record (per doc §13):** `rust_test_pass` — 1 failing test,
+`crates/routa-server/tests/rust_api_task_artifacts.rs::api_a2a_rpc_supports_spec_task_methods`
+(expected 200, got 404 on `POST /api/a2a/rpc`); all other Rust workspace tests pass;
+fails identically in the source repo at ff6ac33c.

@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Response } from "@playwright/test";
 
-const DESKTOP_VIEWPORT = { width: 1440, height: 900 };
+const WEB_SHELL_VIEWPORT = { width: 1440, height: 900 };
 const NEXT_DEV_RECOVERY_TEXT = "missing required error components, refreshing...";
 const WORKSPACE_DEFAULT = "workspaceId=default";
 const ROUTE_RESPONSE_PATTERNS: Record<string, string[]> = {
@@ -24,7 +24,7 @@ function createRouteResponseWaiters(page: Page, path: string): Array<Promise<unk
   return patterns.map((pattern) => optionalResponse((response) => response.url().includes(pattern)));
 }
 
-async function waitForDesktopShell(page: Page) {
+async function waitForWebShell(page: Page) {
   await page.waitForFunction(
     () => Boolean(
       document.querySelector('[data-testid="desktop-shell-root"]') ||
@@ -37,9 +37,9 @@ async function waitForDesktopShell(page: Page) {
   );
 }
 
-async function openDesktopRoute(page: Page, path: string, colorScheme: "light" | "dark") {
+async function openWebShellRoute(page: Page, path: string, colorScheme: "light" | "dark") {
   await page.emulateMedia({ colorScheme });
-  await page.setViewportSize(DESKTOP_VIEWPORT);
+  await page.setViewportSize(WEB_SHELL_VIEWPORT);
   const routeResponses = createRouteResponseWaiters(page, path);
   let shellReady = false;
 
@@ -57,20 +57,20 @@ async function openDesktopRoute(page: Page, path: string, colorScheme: "light" |
     }
 
     try {
-      await waitForDesktopShell(page);
+      await waitForWebShell(page);
       shellReady = true;
       break;
     } catch {
       const retryBodyText = (await page.locator("body").textContent()) ?? "";
       if (!retryBodyText.includes(NEXT_DEV_RECOVERY_TEXT)) {
-        throw new Error(`desktop shell did not become ready for ${path}`);
+        throw new Error(`web shell did not become ready for ${path}`);
       }
       await page.waitForTimeout(1500);
     }
   }
 
   if (!shellReady) {
-    throw new Error(`desktop shell never became ready for ${path}`);
+    throw new Error(`web shell never became ready for ${path}`);
   }
 
   await Promise.allSettled(routeResponses);
@@ -105,12 +105,12 @@ async function openDesktopRoute(page: Page, path: string, colorScheme: "light" |
   });
 }
 
-test.describe("Desktop Shell Visual Regression", () => {
+test.describe("Web Shell Visual Regression", () => {
   test.setTimeout(60_000);
 
   for (const colorScheme of ["light", "dark"] as const) {
     test(`workspace shell chrome (${colorScheme})`, async ({ page }) => {
-      await openDesktopRoute(page, "/workspace/default", colorScheme);
+      await openWebShellRoute(page, "/workspace/default", colorScheme);
 
       await expect(page.getByTestId("desktop-shell-root")).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId("desktop-shell-header")).toHaveScreenshot(
@@ -124,7 +124,7 @@ test.describe("Desktop Shell Visual Regression", () => {
     });
 
     test(`kanban page header (${colorScheme})`, async ({ page }) => {
-      await openDesktopRoute(page, "/workspace/default/kanban", colorScheme);
+      await openWebShellRoute(page, "/workspace/default/kanban", colorScheme);
 
       await expect(page.getByTestId("desktop-shell-root")).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId("kanban-page-header")).toHaveScreenshot(
@@ -134,7 +134,7 @@ test.describe("Desktop Shell Visual Regression", () => {
     });
 
     test(`traces shell chrome (${colorScheme})`, async ({ page }) => {
-      await openDesktopRoute(page, "/traces?sessionId=none", colorScheme);
+      await openWebShellRoute(page, "/traces?sessionId=none", colorScheme);
 
       await expect(page.getByTestId("desktop-shell-root")).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId("traces-page-header")).toHaveScreenshot(

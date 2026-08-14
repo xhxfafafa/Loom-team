@@ -35,7 +35,7 @@ aggregate gates wired into `validate:web` are the canonical entry point.
 
 - Use Playwright for automated UI coverage.
 - Use browser walkthroughs for smoke validation when the UI changes.
-- For shell-level visual checks, run `npm run test:e2e:desktop-shell` against the web app.
+- For shell-level visual checks, run `npm run test:e2e:web-shell` against the web app.
 
 ## Docs-Only Changes
 

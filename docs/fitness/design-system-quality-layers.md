@@ -38,7 +38,7 @@ metrics:
     description: "组件层治理：Storybook 必须使用统一框架、统一 stories 目录，以及核心组件状态覆盖"
 
   - name: design_system_component_visual
-    command: npm run test:e2e:desktop-shell 2>&1
+    command: npm run test:e2e:web-shell 2>&1
     pattern: "\\d+\\s+passed"
     hard_gate: true
     tier: deep
@@ -106,7 +106,7 @@ metrics:
 
 - 命令：
   - `npm run storybook:governance`
-  - `npm run test:e2e:desktop-shell`
+  - `npm run test:e2e:web-shell`
 - 覆盖：
   - `DesktopAppShell` / `DesktopLayout` / `DesktopSidebar` / `WorkspaceTabBar` / `WorkspacePageHeader` / `CompactStat` / `OverviewCard` / `TracesPageHeader` / `TracesViewTabs` / `Button` 的统一 Storybook story contract
   - `desktop-shell-header`
@@ -144,7 +144,7 @@ npm run lint:css
 npm run lint:color-system
 npm run lint:color-system:strict -- src/client/components/button.tsx src/client/components/home-input.tsx
 npm run storybook:governance
-npm run test:e2e:desktop-shell
+npm run test:e2e:web-shell
 npm run test:accessibility
 entrix run --dry-run
 ```

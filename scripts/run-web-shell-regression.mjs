@@ -47,7 +47,7 @@ async function main() {
   if (useManagedServer) {
     const alreadyRunning = await isServerReachable(BASE_URL);
     if (alreadyRunning) {
-      console.error(`Refusing to start managed desktop-shell server because ${BASE_URL} is already in use.`);
+      console.error(`Refusing to start managed web-shell server because ${BASE_URL} is already in use.`);
       process.exit(1);
     }
 
@@ -71,7 +71,7 @@ async function main() {
     [
       "playwright",
       "test",
-      "e2e/desktop-shell-visual.spec.ts",
+      "e2e/web-shell-visual.spec.ts",
       "--project=chromium",
       "--workers=1",
       ...PLAYWRIGHT_ARGS,

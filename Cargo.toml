@@ -9,7 +9,6 @@ members = [
     "crates/routa-scanner",
     "crates/trace-parser",
     "crates/entrix",
-    "apps/desktop/src-tauri",
     "crates/harness-monitor",
 ]
 

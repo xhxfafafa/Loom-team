@@ -98,7 +98,7 @@ describe("HarnessReleaseTriggersPanel", () => {
         type: "capability_change",
         severity: "high",
         action: "require_human_review",
-        paths: ["apps/desktop/src-tauri/capabilities/**"],
+        paths: ["packages/entrix/**"],
         pathCount: 1,
       }),
     ];

@@ -10,12 +10,12 @@ import { test, expect } from "@playwright/test";
  * 4. Create a session and send a message
  * 5. Verify redirection to session detail page with ACP response
  *
- * Run with Tauri backend:
- *   npx playwright test --config=playwright.tauri.config.ts e2e/docker-opencode.spec.ts
+ * Run against the web server:
+ *   npx playwright test e2e/docker-opencode.spec.ts
  */
 test.describe("Docker OpenCode Flow", () => {
   const getBaseUrl = () => {
-    return process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:3210";
+    return process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
   };
 
   test("Docker status API is available", async ({ request }) => {

@@ -75,9 +75,6 @@ jobs:
           allowed_files=(
             "Cargo.toml"
             "package.json"
-            "apps/desktop/package.json"
-            "apps/desktop/src-tauri/Cargo.toml"
-            "apps/desktop/src-tauri/tauri.conf.json"
             "packages/routa-cli/package.json"
             "packages/entrix/package.json"
             "packages/harness-monitor/package.json"
@@ -158,9 +155,6 @@ jobs:
           allowed_files=(
             "Cargo.toml"
             "package.json"
-            "apps/desktop/package.json"
-            "apps/desktop/src-tauri/Cargo.toml"
-            "apps/desktop/src-tauri/tauri.conf.json"
             "packages/routa-cli/package.json"
             "packages/entrix/package.json"
             "packages/harness-monitor/package.json"

@@ -13,7 +13,6 @@ RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-COPY apps/desktop/package.json ./apps/desktop/package.json
 COPY packages/office-render/package.json ./packages/office-render/package.json
 COPY scripts/install ./scripts/install
 COPY tools/hook-runtime ./tools/hook-runtime
@@ -43,7 +42,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Build in standalone mode and compile SQLite chunk modules for runtime use.
-# `build:docker` sets ROUTA_DESKTOP_STANDALONE=1 (output: standalone) and then
+# `build:docker` sets ROUTA_WEB_STANDALONE=1 (output: standalone) and then
 # runs scripts/build-docker.mjs to esbuild the SQLite TS sources into the
 # standalone chunks directory so ROUTA_DB_DRIVER=sqlite works at runtime.
 RUN npm run build:docker

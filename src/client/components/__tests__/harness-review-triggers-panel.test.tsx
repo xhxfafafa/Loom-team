@@ -196,7 +196,7 @@ function createHooksResponse(): HooksResponse {
             },
             {
               name: "rust",
-              paths: ["crates/**", "apps/desktop/src-tauri/**"],
+              paths: ["crates/**"],
             },
           ],
           directories: [],

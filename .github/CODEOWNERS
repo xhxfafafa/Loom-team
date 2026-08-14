@@ -63,12 +63,10 @@ tools/** @phodal
 /package-lock.json @phodal
 /package.json @phodal
 /playwright.config.ts @phodal
-/playwright.tauri.config.ts @phodal
 /postcss.config.mjs @phodal
 /sidebars.js @phodal
 /skills-lock.json @phodal
 /tailwind.config.ts @phodal
-/tsconfig.desktop.json @phodal
 /tsconfig.json @phodal
 /vercel.json @phodal
 /vitest.config.ts @phodal

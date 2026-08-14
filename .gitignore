@@ -22,14 +22,6 @@ docs-site/
 .docusaurus/
 docs/specialists/
 
-# Tauri
-apps/desktop/src-tauri/target/
-apps/desktop/app-icon.png
-apps/desktop/src-tauri/bundled/
-apps/desktop/src-tauri/frontend/
-apps/desktop/src-tauri/frontend/**
-!apps/desktop/src-tauri/frontend/
-!apps/desktop/src-tauri/frontend/.placeholder
 apps/vscode/bin/
 apps/vscode/dist/
 apps/vscode/out/
@@ -110,9 +102,6 @@ test-results
 docs/fitness/reports/
 crates/docs/fitness/reports/
 docs/fitness/playbooks/*.json
-apps/desktop/src-tauri/icons/android/
-apps/desktop/src-tauri/icons/ios/
-.next-desktop/
 .next-page-snapshots/
 
 # SQLite database files
@@ -125,7 +114,6 @@ target/
 .playwright-mcp/*
 .playwright-cli/*
 *.png
-!apps/desktop/src-tauri/icons/tray-template-macos.png
 routa.db-shm
 dogfood-output
 .worktrees

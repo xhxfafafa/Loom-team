@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
-const isDesktopServerBuild = process.env.ROUTA_DESKTOP_SERVER_BUILD === "1";
-const isDesktopStandaloneBuild = process.env.ROUTA_DESKTOP_STANDALONE === "1";
+const isWebStandaloneBuild = process.env.ROUTA_WEB_STANDALONE === "1";
 const isPageSnapshotServerBuild = process.env.ROUTA_PAGE_SNAPSHOT_SERVER === "1";
 
 // When set, proxy API requests to the Rust backend server (desktop mode without Node.js backend)
@@ -16,9 +15,6 @@ const additionalDevOrigins = process.env.ROUTA_ALLOWED_DEV_ORIGINS
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1", ...additionalDevOrigins],
   transpilePackages: ["@autodev/office-render"],
-  typescript: {
-    tsconfigPath: isDesktopServerBuild ? "tsconfig.desktop.json" : "tsconfig.json",
-  },
   serverExternalPackages: [
     "@modelcontextprotocol/sdk",
     "@agentclientprotocol/sdk",
@@ -51,10 +47,8 @@ const nextConfig: NextConfig = {
       "./.agents/skills/**/*",
     ],
   },
-  ...((isDesktopServerBuild || isPageSnapshotServerBuild)
-    ? { distDir: isDesktopServerBuild ? ".next-desktop" : ".next-page-snapshots" }
-    : {}),
-  ...(isDesktopStandaloneBuild
+  ...(isPageSnapshotServerBuild ? { distDir: ".next-page-snapshots" } : {}),
+  ...(isWebStandaloneBuild
     ? {
         output: "standalone",
         outputFileTracingIncludes: {

@@ -236,7 +236,7 @@ Multi-agent coordination platform. This document is auto-generated from:
 | Page | Route | Source File | Description |
 |------|-------|-------------|-------------|
 | Home | `/` | `src/app/page.tsx` | Workspace-first landing page for selecting a workspace, connecting providers, an |
-| Canvas | `/canvas/:id` | `src/app/canvas/[id]/page.tsx` | Viewer page for opening a saved canvas artifact by ID, including static-export p |
+| Canvas | `/canvas/:id` | `src/app/canvas/[id]/page.tsx` | Viewer page for opening a saved canvas artifact by ID. |
 | Mcp Tools | `/mcp-tools` | `src/app/mcp-tools/page.tsx` | Shortcut route that redirects to the MCP tools settings experience for browsing  |
 | Settings Page | `/settings` | `src/app/settings/page.tsx` | Provides a full-page UI for all Routa settings: - Providers (default agent provi |
 | Settings / Agents | `/settings/agents` | `src/app/settings/agents/page.tsx` | Settings page for installing, discovering, and managing ACP-compatible agent run |
@@ -249,12 +249,12 @@ Multi-agent coordination platform. This document is auto-generated from:
 | Settings / Webhooks | `/settings/webhooks` | `src/app/settings/webhooks/page.tsx` | Settings page for configuring GitHub webhook ingestion and inspecting the webhoo |
 | Settings / Workflows | `/settings/workflows` | `src/app/settings/workflows/page.tsx` | Settings page for defining reusable workflows and reviewing workflow-focused exe |
 | Trace Page | `/traces` | `src/app/traces/page.tsx` | Full-page view for browsing and analyzing Agent Trace records |
-| Workspace Page (Server Component Wrapper) | `/workspace/:workspaceId` | `src/app/workspace/[workspaceId]/page.tsx` | This server component provides generateStaticParams for static export and redire |
+| Workspace Page (Server Component Wrapper) | `/workspace/:workspaceId` | `src/app/workspace/[workspaceId]/page.tsx` | This server component redirects the workspace root to the canonical Kanban work  |
 | Codebases / Reposlide | `/workspace/:workspaceId/codebases/:codebaseId/reposlide` | `src/app/workspace/[workspaceId]/codebases/[codebaseId]/reposlide/page.tsx` | Workspace-scoped RepoSlide surface for generating and reviewing presentation out |
 | Workspace / Feature Explorer | `/workspace/:workspaceId/feature-explorer` | `src/app/workspace/[workspaceId]/feature-explorer/page.tsx` |  |
 | Workspace / Kanban | `/workspace/:workspaceId/kanban` | `src/app/workspace/[workspaceId]/kanban/page.tsx` | Main kanban board for workspace-scoped task coordination, lane automation, and g |
 | Workspace / Sessions | `/workspace/:workspaceId/sessions` | `src/app/workspace/[workspaceId]/sessions/page.tsx` | Workspace-scoped session index for browsing, filtering, and opening agent execut |
-| Workspace Session Page (Server Component Wrapper) | `/workspace/:workspaceId/sessions/:sessionId` | `src/app/workspace/[workspaceId]/sessions/[sessionId]/page.tsx` | This server component provides generateStaticParams for static export and render |
+| Workspace Session Page (Server Component Wrapper) | `/workspace/:workspaceId/sessions/:sessionId` | `src/app/workspace/[workspaceId]/sessions/[sessionId]/page.tsx` | This server component renders the client component |
 | Workspace / Spec | `/workspace/:workspaceId/spec` | `src/app/workspace/[workspaceId]/spec/page.tsx` | Dense issue relationship board for local docs/issues records |
 | Workspace / Team | `/workspace/:workspaceId/team` | `src/app/workspace/[workspaceId]/team/page.tsx` | Workspace-scoped team run index for multi-agent collaboration and coordination h |
 | Workspace / Team | `/workspace/:workspaceId/team/:sessionId` | `src/app/workspace/[workspaceId]/team/[sessionId]/page.tsx` | Detail page for inspecting a specific workspace team run and its coordinated ses |
@@ -810,3 +810,4 @@ Multi-agent coordination platform. This document is auto-generated from:
 |--------|----------|--------------|
 | POST | `/api/spec/feature-tree/commit` | `crates/routa-server/src/api/spec.rs` |
 | GET | `/api/spec/feature-tree/preflight` | `crates/routa-server/src/api/spec.rs` |
+

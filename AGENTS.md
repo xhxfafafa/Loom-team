@@ -38,17 +38,16 @@ The project is intentionally not "two separate products". Web and desktop differ
 
 ## Validation
 
-Before PR, run `entrix` using `docs/fitness/README.md` as canonical rulebook.
+Before PR, run fitness gates using `docs/fitness/README.md` as canonical rulebook.
 
 ```bash
-entrix run --dry-run
-entrix run --tier fast
-entrix run --tier normal   # when behavior/shared modules/APIs/workflow orchestration changed
+npm run fitness:run -- --tier fast --scope local --min-score 0
+npm run fitness:run -- --tier normal --scope local --min-score 0
+npm run validate:web   # aggregate Web-only gate (lint, tsc, vitest, build, etc.)
 ```
 
 - If a check fails, fix and re-run; do not skip.
 - Skip source-code validation only when changes are strictly non-code (`*.md`, `*.yml`, `*.yaml`, `.github/`, `docs/`, etc.).
-- Build if needed: `cargo build -p entrix`.
 
 ## Git Discipline
 

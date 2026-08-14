@@ -117,7 +117,7 @@ git ls-tree -r --name-only "$base_ref" -- scripts
 find scripts -maxdepth 1 -type f
 
 # blast radius 探针
-entrix run --dimension engineering_governance --tier normal --scope ci
+npm run fitness:run -- --dimension engineering_governance --tier normal --scope ci --min-score 0
 
 # Markdown 外链检查
 node --import tsx tools/hook-runtime/src/check-markdown-links.ts

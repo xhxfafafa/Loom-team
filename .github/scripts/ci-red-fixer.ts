@@ -132,12 +132,8 @@ function parseValidationCommand(command: string): { executable: string; args: st
   switch (command) {
     case "npm run lint":
       return { executable: "npm", args: ["run", "lint"] };
-    case "cargo clippy --workspace -- -D warnings":
-      return { executable: "cargo", args: ["clippy", "--workspace", "--", "-D", "warnings"] };
     case "npm run test:run":
       return { executable: "npm", args: ["run", "test:run"] };
-    case "cargo test --workspace":
-      return { executable: "cargo", args: ["test", "--workspace"] };
     case "npm run api:schema:validate":
       return { executable: "npm", args: ["run", "api:schema:validate"] };
     case "npm run api:check":

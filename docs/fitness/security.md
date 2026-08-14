@@ -17,13 +17,6 @@ metrics:
     tier: fast
     description: "检测运行时 npm 依赖中的 critical 级别漏洞"
 
-  - name: cargo_audit
-    command: cargo audit 2>&1 || echo "cargo-audit not installed"
-    pattern: "0 vulnerabilities|No vulnerabilities found|cargo-audit not installed"
-    hard_gate: true
-    tier: normal
-    description: "检测 Rust 依赖中的已知漏洞"
-
   - name: semgrep_critical
     command: semgrep --config=p/security-audit --config=p/owasp-top-ten --severity=ERROR --sarif --quiet . 2>&1 || true
     evidence_type: sarif
@@ -88,7 +81,6 @@ metrics:
 | 工具 | 类型 | 检测范围 | Hard Gate |
 |------|------|----------|-----------|
 | npm audit | 依赖扫描 | npm 包 CVE | ✅ critical |
-| cargo audit | 依赖扫描 | Rust crate CVE | ✅ |
 | Semgrep | SAST | 代码漏洞模式 | ✅ ERROR |
 | Trivy | 全能扫描 | 文件系统/容器 | ❌ |
 | Hadolint | Dockerfile | CIS Benchmark | ❌ |
@@ -103,9 +95,6 @@ semgrep --config=p/security-audit --config=p/owasp-top-ten .
 
 # 仅 TypeScript/JavaScript
 semgrep --config=p/typescript --config=p/javascript .
-
-# 仅 Rust
-semgrep --config=p/rust .
 ```
 
 ### 核心规则集
@@ -129,7 +118,6 @@ brew install trivy hadolint  # macOS
 
 # 运行检查
 npm audit --omit=dev --audit-level=critical
-cargo audit
 semgrep --config=p/security-audit --config=p/owasp-top-ten .
 trivy fs --severity HIGH,CRITICAL .
 hadolint Dockerfile

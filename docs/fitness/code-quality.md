@@ -200,12 +200,6 @@ metrics:
     tier: fast
     description: "TypeScript 类型检查必须通过；若检测到 stale .next types，会自动清理后重试一次"
 
-  - name: clippy_pass
-    command: cargo clippy --workspace -- -D warnings 2>&1
-    hard_gate: true
-    tier: fast
-    description: "Clippy 必须通过（无警告）"
-
   # ══════════════════════════════════════════════════════════════
   # AI 特有检测
   # ══════════════════════════════════════════════════════════════
@@ -312,7 +306,7 @@ git diff --name-only --diff-filter=ACMR HEAD -- src apps
 ast-grep scan --help
 
 # 运行 fitness 检查
-entrix run
+npm run fitness:run -- --tier fast --scope local --min-score 0
 ```
 
 ## 相关文件

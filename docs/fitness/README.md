@@ -8,77 +8,34 @@
 
 - **控制爆炸半径**: 通过权限和行为约束限定 AI 的操作范围
 - **反熵增机制**: 设立质量门槛与技术债检查（Linter、静态分析），将 AI 的解空间限制在安全边界内
-- **契约优先**: `api-contract.yaml` 作为单一事实来源，双后端必须一致
+- **契约优先**: `api-contract.yaml` 作为单一事实来源，Web API 必须一致
 
 ## Quick Start
 
 ```bash
-# 构建（首次）
-cargo build -p entrix
-
 # 快速检查（仅 fast tier，<30s）
-entrix run --tier fast
+npm run fitness:run -- --tier fast --scope local --min-score 0
 
 # 标准检查（fast + normal tier，<5min）
-entrix run --tier normal
+npm run fitness:run -- --tier normal --scope local --min-score 0
 
 # 完整检查（所有 tier，<15min）
-entrix run
+npm run fitness:run -- --tier deep --scope local --min-score 0
 
-# Harness Fluency 评估（默认 generic profile，文本报告）
-cargo run -p routa-cli -- fitness fluency
+# 聚合 Web-only 验证门 (§11.1)
+npm run validate:web
 
-# Harness Fluency 评估（agent_orchestrator profile）
-cargo run -p routa-cli -- fitness fluency --profile agent_orchestrator
+# E2E 验证（需要先跑 validate:web 构建 .next）
+npm run validate:web:e2e
 
-# Harness Fluency 评估（JSON + 与上次快照对比）
-cargo run -p routa-cli -- fitness fluency --format json --compare-last
-
-# Harnessability framing（对外基线视角）
-cargo run -p routa-cli -- fitness fluency --framing harnessability
-
-# Harness Fluency 评估（只读，不落快照）
-cargo run -p routa-cli -- fitness fluency --no-save
-
-# Harness Engineering 评估（默认 dry-run，结构化 gap classification）
-cargo run -p routa-cli -- harness evolve --dry-run --format json
-
-# 弱仓库 bootstrap（先评估，再显式 apply 低风险 patch）
-cargo run -p routa-cli -- harness evolve --repo-root /path/to/repo --bootstrap --dry-run --format json
-cargo run -p routa-cli -- harness evolve --repo-root /path/to/repo --bootstrap --apply --format json
-
-# Harness Engineering + AI specialist（deterministic report 仍是权威输入）
-cargo run -p routa-cli -- harness evolve --ai --provider claude --format json
-
-# Trace Learning: 从演进历史中生成 playbook（需要 3+ 成功运行）
-cargo run -p routa-cli -- harness evolve --learn
-
-# 包管理器快捷入口（仍走 Rust CLI）
+# Harness Fluency 评估
 npm run fitness:fluency
 
-# 旧 TS 入口（兼容层，内部会转发到 routa-cli）
-node --import tsx tools/harness-fluency/src/cli.ts --json
+# 仅运行指定维度
+npm run fitness:run -- --dimension code_quality --tier normal --scope ci --min-score 0
 
-# 并行执行（加速）
-entrix run --parallel
-
-# Harness specialist 手工验收（可重放：只验证输出是否可解析且为纯 JSON）
-set -a; source .env; set +a
-./target/debug/routa specialist run resources/specialists/tools/harness-build.yaml --provider claude -p "Read docs/harness/build.yml and output strict JSON."
-./target/debug/routa specialist run resources/specialists/tools/harness-test.yaml --provider claude -p "Read docs/harness/test.yml and output strict JSON."
-
-# 若先前 provider 不可用，可临时切换为 codex（若配置了 CODEX_API_KEY）
-./target/debug/routa specialist run resources/specialists/tools/harness-build.yaml --provider codex -p "Read docs/harness/build.yml and output strict JSON."
-./target/debug/routa specialist run resources/specialists/tools/harness-test.yaml --provider codex -p "Read docs/harness/test.yml and output strict JSON."
-
-# 仅查看会执行什么（不实际运行）
-entrix run --dry-run
-
-# 仅运行指定维度（可重复传参）
-entrix run --tier normal --scope ci --dimension code_quality --dimension testability
-
-# 校验维度权重
-entrix validate
+# 写入报告 JSON
+npm run fitness:run -- --dimension api_contract --tier fast --scope local --min-score 0 --output report.json
 ```
 
 Harness Fluency 默认跑通用 `generic` 模型；如果要评估编排型 agent 平台能力，可显式传 `--profile agent_orchestrator`。不同 profile 会使用独立快照文件，避免 `--compare-last` 互相污染。
@@ -126,7 +83,7 @@ Harness Fluency 默认跑通用 `generic` 模型；如果要评估编排型 agen
 
 ## Scope
 
-- 覆盖 `routa-core`、`routa-server`、`routa-cli`、`routa-rpc` 及前端 Next.js
+- 覆盖 Next.js 前端及 API 路由层
 - 目标不是"覆盖率数字"，而是"变更后核心行为可被验证"
 - 评估依据必须来自可执行证据（测试文件、命令输出）
 
@@ -136,8 +93,9 @@ Harness Fluency 默认跑通用 `generic` 模型；如果要评估编排型 agen
 1. AGENTS.md                        → 项目概述 + Fitness 入口
 2. README.md                        → 规则手册（本文件）
 3. unit-test.md                     → 单元测试证据（含 frontmatter）
-4. rust-api-test.md                 → API 契约证据（含 frontmatter）
-5. crates/entrix/             → 解析 frontmatter，执行检查（Rust crate + CLI）
+4. web-api-test.md                  → API 契约证据（含 frontmatter）
+5. src/core/fitness/                → Node fitness engine (TypeScript)
+6. scripts/fitness/run-fitness.ts   → CLI entry point
 ```
 
 ## Score Model
@@ -152,11 +110,11 @@ Fitness = Σ (Weight_i × Score_i) / 100
 
 | 维度 | 权重 | 描述 | 关键指标 | 证据文件 |
 |------|------|------|----------|----------|
-| code_quality | 18% | 代码本体质量与静态门禁 | 文件/函数预算, lint/typecheck/clippy, 重复与复杂度 | [code-quality.md](code-quality.md) |
+| code_quality | 18% | 代码本体质量与静态门禁 | 文件/函数预算, lint/typecheck, 重复与复杂度 | [code-quality.md](code-quality.md) |
 | engineering_governance | 6% | 工程治理与仓库卫生 | blast radius, 外链可达, scripts 冻结预算, TODO/FIXME 监控 | [engineering-governance.md](engineering-governance.md) |
 | testability | 20% | 测试覆盖与通过率 | 覆盖率≥80%, 通过率100% | [unit-test.md](unit-test.md) |
 | security | 20% | 依赖漏洞与安全扫描 | critical=0, high≤阈值 | [security.md](security.md) |
-| api_contract | 10% | API 契约测试 | Rust API 测试通过, 契约同步 | [rust-api-test.md](rust-api-test.md) |
+| api_contract | 10% | API 契约测试 | Web API 测试通过, 契约同步 | [web-api-test.md](web-api-test.md) |
 | design_system | 10% | 设计系统质量 | CSS 契约, 组件视觉回归, 可访问性 | [design-system-quality-layers.md](design-system-quality-layers.md) |
 | evolvability | 8% | API 兼容性与契约 | breaking changes=0, parity=100% | [api-contract.md](api-contract.md) |
 | ui_consistency | 8% | UI 一致性 | Shell 组件覆盖, Token 接入 | [design-system-shell.md](design-system-shell.md) |
@@ -168,7 +126,7 @@ Fitness = Σ (Weight_i × Score_i) / 100
 说明：
 
 - `observability` 与 `performance` 目前是 runtime 维度，权重为 `0`，不会改变总分，但会作为执行证据出现在报告里。
-- `security` 维度仍由 `entrix` 评分，同时 GitHub Actions 会继续保留 SARIF / scanner 类型的独立安全作业。
+- `security` 维度由 Node fitness engine 评分，同时 GitHub Actions 会继续保留 SARIF / scanner 类型的独立安全作业。
 
 ## Hard Gates
 
@@ -178,10 +136,9 @@ Fitness = Σ (Weight_i × Score_i) / 100
 |------|------|------|
 | ts_test_pass | `npm run test:run:fast` | 100% |
 | ts_test_pass_full | `npm run test:run` | 100% |
-| rust_test_pass | `cargo test --workspace` | 100% |
 | api_contract_parity | `npm run api:check` | pass |
 | lint_pass | `npm run lint` | 0 errors |
-| no_critical_vulnerabilities | `snyk test` | 0 critical |
+| no_critical_vulnerabilities | `npm audit --audit-level=critical` | 0 critical |
 
 ### TypeScript Gate Split
 
@@ -190,25 +147,25 @@ Fitness = Σ (Weight_i × Score_i) / 100
 - `ts_test_pass`
   - 运行 `npm run test:run:fast`
   - 基于 git base ref 只跑受影响的 Vitest 范围；如果当前改动与 Vitest 无关，会输出 `Tests 0 passed`
-  - 适用于 `entrix run --tier fast`、本地快速验证、`harness-monitor` 的 fast fitness 体验
+  - 适用于 `npm run fitness:run -- --tier fast`、本地快速验证、`harness-monitor` 的 fast fitness 体验
 - `ts_test_pass_full`
   - 运行 `npm run test:run`
-  - 保留全量 Vitest hard gate，适用于 `entrix run --tier normal` 以及 `pre-push` / `local-validate`
+  - 保留全量 Vitest hard gate，适用于 `npm run fitness:run -- --tier normal` 以及 `pre-push` / `local-validate`
 - `ts_typecheck_pass`
   - 仍属于 `code_quality` fast hard gate
   - 现在会在检测到 `.next/dev/types/routes.d.ts`、`validator.ts` 等 Next 生成类型损坏时先执行 `next typegen` 再重试 `tsc --noEmit`
 
 当前默认心智：
 
-- `fast` = 增量 lint / typecheck / TS test / clippy / contract
-- `normal` = 在 `fast` 之上补全量 TS 测试、Rust 测试、API 测试和更重的质量门禁
+- `fast` = 增量 lint / typecheck / TS test / contract
+- `normal` = 在 `fast` 之上补全量 TS 测试、API 测试和更重的质量门禁
 - hook runtime 的 `pre-push` 与 `local-validate` 默认只保留 `ts_test_pass_full`
   - hook 关注 push 前的整仓回归把关，避免在同一轮里重复执行增量与全量 TS 测试
-  - `ts_test_pass` 仍然保留给 `entrix run --tier fast`、`harness-monitor` 和手工本地快速检查
+  - `ts_test_pass` 仍然保留给 `npm run fitness:run -- --tier fast`、`harness-monitor` 和手工本地快速检查
 
 ## CI Fan-out
 
-`Defense` workflow 现在按维度拆分 `entrix run --dimension ...`，每个 job 对应一个 fitness 维度：
+`Defense` workflow 现在按维度拆分 `node --import tsx scripts/fitness/run-fitness.ts --dimension ...`，每个 job 对应一个 fitness 维度：
 
 - `Gate: Code Quality`
 - `Gate: Engineering Governance`
@@ -219,14 +176,13 @@ Fitness = Σ (Weight_i × Score_i) / 100
 - `Gate: Evolvability`
 - `Gate: UI Consistency`
 - `Gate: Observability`
-- `Gate: Performance`
 
 这保证了 CI 展示和 `docs/fitness/*.md` 的维度定义保持一一对应，而不是回退到手写命令的旧 gate 模式。
 
 ## 规则（AI Verifier / 人工都按同一标准执行）
 
 ### 1) API Contract 变更规则
-- 变更到的 HTTP 行为必须先在 `docs/fitness/rust-api-test.md` 上登记 endpoint 级条目。
+- 变更到的 HTTP 行为必须先在 `docs/fitness/web-api-test.md` 上登记 endpoint 级条目。
 - 每个新增/修改 endpoint 必须至少有：
   - 1 个正向用例（成功路径，含预期响应体字段）
   - 1 个负向用例（400/404/409/422 类中的任意一个或更多）
@@ -247,7 +203,7 @@ Fitness = Σ (Weight_i × Score_i) / 100
 - 禁止"隐式共享状态"导致测试顺序相关；同一文件下测试应可并行顺序执行。
 
 ### 4) 证据优先规则
-- 可执行性优先：所有条目必须指向 `crates/...` 的测试代码路径。
+- 可执行性优先：所有条目必须指向 `src/` 或 `tests/` 的测试代码路径。
 - 不可执行项必须标记为 `blocked`，并给出阻塞原因。
 - 未执行/未更新条目视为未完成，不得计入得分。
 
@@ -262,15 +218,16 @@ Fitness = Σ (Weight_i × Score_i) / 100
 - Negative-path Completeness（20%）
 - Regression Evidence Stability（10%）
 
-每项仅基于 `docs/fitness/unit-test.md` 与 `docs/fitness/rust-api-test.md` 上的已验证条目计分。
+每项仅基于 `docs/fitness/unit-test.md` 与 `docs/fitness/web-api-test.md` 上的已验证条目计分。
 未验证条目按 0 分处理。
 
 ## 文件职责（只允许单一事实来源）
 
 - `README.md`：规则手册（本文件）。
 - `unit-test.md`：单元测试证据，frontmatter 定义 metrics。
-- `rust-api-test.md`：API 契约证据，frontmatter 定义 metrics。
-- `crates/entrix/`：解析 frontmatter，执行命令，输出结果（`entrix` CLI）。
+- `web-api-test.md`：API 契约证据，frontmatter 定义 metrics。
+- `src/core/fitness/`：Node fitness engine（TypeScript 实现，解析 frontmatter，执行命令，输出结果）。
+- `scripts/fitness/run-fitness.ts`：CLI 入口。
 - 所有测试改动必须同步更新证据文件。
 
 ## Core principle
@@ -355,18 +312,16 @@ claude -p "请执行 fitness 检查的 dry-run"
 
 ## 模块架构
 
-执行引擎位于 `crates/entrix/`，按《Building Evolutionary Architectures》概念分层：
+执行引擎位于 `src/core/fitness/`，按《Building Evolutionary Architectures》概念分层：
 
 ```
-crates/entrix/
-  model.rs          → 领域模型 (Tier, Metric, Dimension, FitnessReport)
-  evidence.rs       → 从 docs/fitness/*.md 加载 frontmatter → Dimension
-  runner.rs         → Shell 命令执行
-  review_trigger.rs → review-trigger 规则执行
-  scoring.rs        → 加权评分
-  governance.py     → 策略过滤 (tier, hard gate)
-  reporters/        → 终端 / JSON 输出
-  structure/        → 代码图集成层 (Protocol + Adapter)
-  cli.py            → CLI 入口
-  server.py         → MCP server (可选)
+src/core/fitness/
+  node-fitness-engine.ts     → 编排入口 (加载配置 → 过滤 → 执行 → 评分 → 报告)
+  fitness-config-loader.ts   → 从 docs/fitness/*.md 加载 frontmatter → Dimension
+  fitness-metric-runner.ts   → Shell 命令执行 (/bin/bash -lc)
+  fitness-scoring.ts         → 加权评分 + exit code 判定
+  entrix-runner.ts           → 兼容层 (snake_case → camelCase 归一化)
+  repo-root.ts               → 仓库根目录解析
+scripts/fitness/
+  run-fitness.ts             → CLI 入口 (--dimension, --tier, --scope, --min-score, --output)
 ```

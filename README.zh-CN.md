@@ -1,57 +1,58 @@
 <div align="center">
 
-<img src="public/logo-animated.svg" alt="Routa" width="360" />
+<img src="public/logo-animated.svg" alt="Loom-team" width="360" />
 
-# Routa
+# Loom-team
 
-**以工作区为核心、面向软件交付的多智能体协同平台**
+**以工作区为核心、面向软件交付的多智能体协同平台（Web-only）**
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-16.2-black.svg)](https://nextjs.org/)
-[![Rust](https://img.shields.io/badge/Rust-Axum-orange.svg)](https://github.com/tokio-rs/axum)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Join Slack](https://img.shields.io/badge/Slack-Join%20Community-4A154B?logo=slack&logoColor=white)](https://join.slack.com/t/routa-group/shared_invite/zt-3txzzfxm8-tnRFwNpPvdfjAVoSD6MTJg)
-[![npm version](https://img.shields.io/npm/v/routa-cli)](https://www.npmjs.com/package/routa-cli)
-[![crates.io](https://img.shields.io/crates/v/routa-cli)](https://crates.io/crates/routa-cli)
 
-[演示](#演示) • [架构](#架构) • [工作流程](#工作流程) • [为什么是 Routa](#为什么是-routa) • [快速开始](#快速开始) • [文档](#文档) • [English](README.md)
+[演示](#演示) • [架构](#架构) • [工作流程](#工作流程) • [为什么是 Loom-team](#为什么是-loom-team) • [快速开始](#快速开始) • [文档](#文档) • [English](README.md)
 
 </div>
 
 ---
 
-Routa 是一个以工作区为核心的多智能体协同平台，面向真实的软件交付流程。它把目标、任务、会话、追踪、证据和评审状态放回看板，而不是让这些信息淹没在单一聊天线程里。
+Loom-team 是一个以工作区为核心的多智能体协同平台，面向真实的软件交付流程。它把目标、任务、会话、追踪、证据和评审状态放回看板，而不是让这些信息淹没在单一聊天线程里。
 
-[版本发布](https://github.com/phodal/routa/releases) · [架构文档](docs/ARCHITECTURE.md) · [功能树](docs/product-specs/FEATURE_TREE.md) · [快速开始](docs/quick-start.md) · [文档站点](https://phodal.github.io/routa/) · [Slack](https://join.slack.com/t/routa-group/shared_invite/zt-3txzzfxm8-tnRFwNpPvdfjAVoSD6MTJg) · [贡献指南](CONTRIBUTING.md)
+本仓库是该产品的 Web-only 版本：由单一 Next.js 后端同时承载 UI、API 与 Agent 运行时。原 Tauri 桌面壳与 Rust 后端 crates 已被移除，其面向 Web 的能力已全部移植到 TypeScript/Node。
+
+[架构文档](docs/ARCHITECTURE.md) · [功能树](docs/product-specs/FEATURE_TREE.md) · [快速开始](docs/quick-start.md) · [贡献指南](CONTRIBUTING.md)
 
 ## 演示
 
 - [Bilibili 演示视频](https://www.bilibili.com/video/BV16CwyzUED5/)
 - [YouTube 演示视频](https://www.youtube.com/watch?v=spjmr_1AQLM)
 
-![Routa Kanban Overview](https://github.com/user-attachments/assets/8fdf7934-f8ba-469f-a8b8-70e215637a45)
+![Loom-team Kanban Overview](https://github.com/user-attachments/assets/8fdf7934-f8ba-469f-a8b8-70e215637a45)
 
 ## 架构
 
 ### 系统架构
 
-![Routa architecture](docs/architecture.svg)
+![Loom-team architecture](docs/architecture.svg)
 
-当前实现是有意保持双后端一致性的，而不是“一个 Web demo 加一个独立桌面端”。
+当前实现是单后端 Web 产品。
 
-- Web：`src/` 中的 Next.js 页面与路由处理器
-- Desktop：`apps/desktop/` 中的 Tauri 壳，后端由 `crates/routa-server/` 的 Axum 服务提供
-- 共享边界：两端都遵守 `api-contract.yaml` 定义的 workspace、session、task、trace、codebase、worktree 和 review 语义
+- Web：`src/` 中的 Next.js 页面与路由处理器，底层是 `src/core/` 的 TypeScript 领域核心
+- 存储：本地优先开发使用 SQLite，生产部署使用 Postgres
+- 契约：`api-contract.yaml` 是后端所有端点的唯一事实来源
 - 集成表面：ACP、MCP、A2UI、REST 与 SSE
+
+> 说明：内部标识符（环境变量前缀 `ROUTA_`、部分组件与 key 名称）在本版本中有意保持不变。
+> 完整的品牌重命名是独立的后续阶段。
 
 ### Review Gate 架构
 
-![Routa review gate](docs/review-gate.svg)
+![Loom-team review gate](docs/review-gate.svg)
 
 交付 Gate 不是一个 reviewer 角色，而是一条分层决策路径。
 
-- Harness Monitor 负责回答“到底发生了什么”，它暴露 traces、改动文件、执行命令、git 状态和归因信息
-- Entrix Fitness 负责回答“哪些事情必须成立”，它执行 hard gates、证据要求以及文件预算或策略检查
+- Harness traces 负责回答“到底发生了什么”，它暴露 traces、改动文件、执行命令、git 状态和归因信息
+- Fitness functions 负责回答“哪些事情必须成立”，它执行 hard gates、证据要求以及文件预算或策略检查（TypeScript fitness 引擎位于 `scripts/fitness/` 与 `src/core/fitness/`）
 - Gate Specialist 负责回答“这张卡是否可以继续前进”，它逐条验证 acceptance criteria，并决定进入 Done、打回 Dev 或升级到人工处理
 
 ## 工作流程
@@ -67,7 +68,7 @@ Routa 是一个以工作区为核心的多智能体协同平台，面向真实�
                                                                 Blocked Resolver
 ```
 
-Routa 把看板同时当成规划界面和协同总线。关键点在于：每个泳道背后都是不同的 specialist prompt，而且下游泳道会故意比上游更严格。
+Loom-team 把看板同时当成规划界面和协同总线。关键点在于：每个泳道背后都是不同的 specialist prompt，而且下游泳道会故意比上游更严格。
 
 可以把它理解成两层 specialist 同时工作：
 
@@ -116,11 +117,11 @@ Routa 把看板同时当成规划界面和协同总线。关键点在于：每�
 
 内置的 Kanban 泳道 prompt 在 `resources/specialists/workflows/kanban/*.yaml`，核心角色 prompt 在 `resources/specialists/core/{routa,crafter,gate}.yaml`。
 
-## 为什么是 Routa
+## 为什么是 Loom-team
 
 单一 Agent 聊天适合处理孤立任务，但一旦同一条线程同时承担拆解、实现、评审、证据收集和发布决策，语义边界就会迅速混乱。
 
-Routa 把这些职责显式化：
+Loom-team 把这些职责显式化：
 
 - 工作从 workspace 开始，而不是隐式的全局仓库状态
 - 看板泳道负责在不同 specialist 之间路由工作，而不是把所有角色揉进一个 prompt
@@ -138,38 +139,11 @@ Routa 把这些职责显式化：
 - 接入 MCP 工具以及自定义 MCP server
 - 用 schedule、webhook、background task 和 workflow run 驱动持续自动化
 - 基于 findings、severity、trace、harness signals 和 fitness report 做评审
-- 以 local-first desktop 模式运行，或以 self-hosted web 模式部署
+- 以 self-hosted web 模式部署：本地优先使用 SQLite，生产环境使用 Postgres
 
 ## 快速开始
 
-按你的使用方式选择最短路径。
-
-| 入口 | 适合谁 | 开始方式 |
-| --- | --- | --- |
-| Desktop | 完整产品体验、可视化流程、本地优先 | 从 [GitHub Releases](https://github.com/phodal/routa/releases) 下载 |
-| CLI | 终端优先工作流与脚本化使用 | `npm install -g routa-cli` |
-| Web | 自托管或浏览器优先接入 | 从源码运行 |
-
-### Desktop
-
-1. 从 [GitHub Releases](https://github.com/phodal/routa/releases) 下载 Routa Desktop。
-2. 创建一个 workspace。
-3. 启用一个 provider。
-4. 关联一个仓库。
-5. 先用 Session 做临时任务，或直接进入 Kanban 做路由式交付。
-
-### CLI
-
-```bash
-npm install -g routa-cli
-
-routa --help
-routa -p "解释这个仓库的架构"
-routa acp list
-routa workspace list
-```
-
-### Web
+Loom-team 完全运行在浏览器中，后端是自托管的 Next.js 服务。
 
 ```bash
 npm install --legacy-peer-deps
@@ -177,6 +151,31 @@ npm run dev
 ```
 
 打开 `http://localhost:3000`。
+
+`npm run dev` 启动 Webpack dev server（内存行为更稳的默认选项）；
+`npm run dev:turbopack` 保留 Turbopack dev server 用于对比和测试。生产构建不受影响。
+
+Next dev 缓存（`.next/`）是可丢弃的生成产物，但只能在没有任何 dev server 运行时删除：
+
+1. 停止正在运行的 dev server。
+2. 运行 `npm run dev:clean` —— 检测到仍有 dev server 时会明确报错拒绝，只删除仓库内的 `.next` 目录。
+3. 重新启动所选 bundler（`npm run dev` 或 `npm run dev:turbopack`）。
+
+运行 `npm run dev:diagnose` 可以报告 `.next` 缓存大小；当 Turbopack dev 缓存
+（`.next/dev/cache/turbopack`）超过 2 GiB 时会给出警告。报告问题时请附上它的输出，
+而不是直接翻查本地文件。
+
+然后：
+
+1. 创建一个 workspace。
+2. 启用一个 provider。
+3. 关联一个仓库。
+4. 先用 Session 做临时任务，或直接进入 Kanban 做路由式交付。
+
+部署、环境变量与 provider 配置见
+[docs/administration/self-hosting.md](docs/administration/self-hosting.md)、
+[docs/deployment/index.md](docs/deployment/index.md) 和
+[docs/configuration/environment-variables.md](docs/configuration/environment-variables.md)。
 
 ## 从源码开发
 
@@ -187,14 +186,6 @@ npm install --legacy-peer-deps
 npm run dev
 ```
 
-### Desktop 运行时
-
-```bash
-npm install --legacy-peer-deps
-npm --prefix apps/desktop install
-npm run tauri:dev
-```
-
 ### Docker
 
 ```bash
@@ -202,20 +193,19 @@ docker compose up --build
 docker compose --profile postgres up --build
 ```
 
-Tauri 的本地 smoke 路径会通过桌面壳访问 `http://127.0.0.1:3210/`。
+Docker 镜像构建 standalone Next.js 产物（`ROUTA_WEB_STANDALONE=1`），对外提供同一个 Web 服务。
 
 ## 验证
 
 把 [docs/fitness/README.md](docs/fitness/README.md) 视为权威验证规则手册。
+Web-only 汇总门禁为：
 
 ```bash
-cargo build -p entrix
-entrix run --dry-run
-entrix run --tier fast
-entrix run --tier normal
+npm run validate:web        # lint、tsc、api schema、dependency-cruiser、vitest、snapshots、build
+npm run validate:web:e2e    # 针对测试 server 运行 contract 测试与 Team/Kanban Playwright spec
 npm run test
 npm run test:e2e
-npm run api:test
+npm run api:test:nextjs
 npm run lint
 ```
 
@@ -225,12 +215,9 @@ npm run lint
 | --- | --- |
 | `src/app/` | Next.js App Router 页面与 API 路由 |
 | `src/client/` | 客户端组件、hooks、view model 与 UI 协议辅助层 |
-| `src/core/` | TypeScript 领域服务：ACP/MCP、Kanban、workflow、trace、review、harness 与 stores |
-| `apps/desktop/` | Tauri 桌面壳与打包 |
-| `crates/routa-core/` | 共享的 Rust 运行时基础层 |
-| `crates/routa-server/` | 供 desktop 与本地服务模式使用的 Axum 后端 |
-| `crates/routa-cli/` | CLI 入口与 ACP 服务命令 |
-| `crates/harness-monitor/` | 运行观测、评估以及面向操作员的 harness monitor |
+| `src/core/` | TypeScript 领域服务：ACP/MCP、Kanban、workflow、trace、review、harness、fitness 与 stores |
+| `scripts/fitness/` | TypeScript fitness 函数运行器与门禁辅助脚本 |
+| `api-contract.yaml` | OpenAPI 契约：后端 API 的唯一事实来源 |
 | `docs/ARCHITECTURE.md` | 权威架构边界与不变量 |
 | `docs/adr/` | 架构决策记录 |
 | `docs/product-specs/FEATURE_TREE.md` | 自动生成的路由与端点清单 |
@@ -243,16 +230,8 @@ npm run lint
 - [快速开始](docs/quick-start.md)
 - [功能树](docs/product-specs/FEATURE_TREE.md)
 - [Fitness 规则](docs/fitness/README.md)
-- [Harness Monitor 架构](docs/harness/harness-monitor-run-centric-operator-model.md)
 - [贡献指南](CONTRIBUTING.md)
 - [安全说明](SECURITY.md)
-
-## 社区
-
-- [文档站点](https://phodal.github.io/routa/)
-- [Slack 社区](https://join.slack.com/t/routa-group/shared_invite/zt-3txzzfxm8-tnRFwNpPvdfjAVoSD6MTJg)
-- [版本发布](https://github.com/phodal/routa/releases)
-- [Issues](https://github.com/phodal/routa/issues)
 
 ## 许可证
 

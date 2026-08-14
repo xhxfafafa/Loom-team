@@ -1,7 +1,13 @@
 import { promises as fsp } from "fs";
 import * as path from "path";
 import { NextRequest, NextResponse } from "next/server";
-import { safeSpawn } from "@/core/utils/safe-exec";
+import { handleSessionNew } from "../../acp/acp-session-create";
+import { dispatchSessionPrompt } from "@/core/acp/session-prompt";
+import {
+  getHttpSessionStore,
+  type SessionUpdateNotification,
+} from "@/core/acp/http-session-store";
+import { getAcpProcessManager } from "@/core/acp/processer";
 import { isContextError, parseContext, resolveRepoRoot } from "../hooks/shared";
 
 type AuditStatus = "ok" | "heuristic" | "error";
@@ -38,6 +44,20 @@ const CANDIDATE_FILES = ["CLAUDE.md", "AGENTS.md"] as const;
 const AUDIT_SPECIALIST_ID = "agents-md-auditor";
 const AUDIT_COMMAND_TIMEOUT_MS = 120_000;
 const DEFAULT_AUDIT_PROVIDER = process.env.HARNESS_INSTRUCTION_AUDIT_PROVIDER ?? "codex";
+
+/**
+ * Maps legacy audit provider names (from the Rust `routa specialist run`
+ * era) onto Web ACP provider ids. Names without a Web equivalent map to
+ * `undefined`, letting session creation fall back to the standard Web
+ * provider resolution (specialist default → environment default).
+ */
+function resolveAuditProvider(requested: string): string | undefined {
+  const normalized = requested.trim().toLowerCase();
+  if (normalized === "claude" || normalized === "anthropic") return "claude";
+  if (normalized === "claude-code-sdk") return "claude-code-sdk";
+  if (normalized === "opencode" || normalized === "opencode-sdk") return "opencode";
+  return undefined;
+}
 
 function joinRepoPath(repoRoot: string, ...relativeSegments: string[]) {
   return path.join(/* turbopackIgnore: true */ repoRoot, ...relativeSegments);
@@ -234,80 +254,116 @@ function parseAuditPayload(
   };
 }
 
-async function executeAuditorCommand(repoRoot: string, workspaceId: string, source: string, provider: string) {
-  const localBinaryPath = path.join(repoRoot, "target", "debug", "routa");
-  let command = localBinaryPath;
-  let args = [
-    "specialist",
-    "run",
-    "--json",
-    "--workspace-id",
-    workspaceId,
-    "--provider",
-    provider,
-    "--provider-timeout-ms",
-    "30000",
-    "--provider-retries",
-    "0",
-    "-p",
-    source,
-    AUDIT_SPECIALIST_ID,
-  ];
-
-  try {
-    await fsp.access(localBinaryPath);
-  } catch {
-    command = "cargo";
-    args = ["run", "-p", "routa-cli", "--", ...args];
-  }
-
-  return await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-    const child = safeSpawn(command, args, {
-      cwd: repoRoot,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGKILL");
-    }, AUDIT_COMMAND_TIMEOUT_MS);
-
-    child.stdout?.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-
-    child.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-
-    child.on("close", (code, signal) => {
-      clearTimeout(timeout);
-      if (timedOut) {
-        reject(new Error(`Instruction audit command timed out after ${AUDIT_COMMAND_TIMEOUT_MS}ms`));
-        return;
-      }
-      if (signal) {
-        reject(new Error(`Instruction audit command terminated by signal: ${signal}`));
-        return;
-      }
-      if (code !== 0) {
-        reject(new Error(`Instruction audit command failed (exit ${code}): ${(stderr || stdout).trim()}`));
-        return;
-      }
-      resolve({ stdout, stderr });
-    });
+function auditJsonrpcResponse(
+  id: string | number | null,
+  result: unknown,
+  error?: { code: number; message: string; data?: Record<string, unknown> },
+): Response {
+  const body = error
+    ? { jsonrpc: "2.0", id, error }
+    : { jsonrpc: "2.0", id, result };
+  return new Response(JSON.stringify(body), {
+    headers: { "Content-Type": "application/json" },
   });
 }
 
+function auditRequireWorkspaceId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function createAuditSessionUpdateForwarder(
+  store: ReturnType<typeof getHttpSessionStore>,
+  sessionId: string,
+): (msg: { method?: string; params?: Record<string, unknown> }) => void {
+  return (msg) => {
+    if (msg.method !== "session/update" || !msg.params) return;
+    store.pushNotification({
+      ...msg.params,
+      sessionId,
+    } as SessionUpdateNotification);
+  };
+}
+
+/**
+ * The auditor is a pure text-in/JSON-out review: no MCP servers needed.
+ */
+async function buildAuditMcpConfig(): Promise<string[]> {
+  return [];
+}
+
+function decodeAuditJsonRpcResult<T>(payload: unknown): T {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Invalid JSON-RPC response");
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.error && typeof record.error === "object") {
+    const errorRecord = record.error as Record<string, unknown>;
+    const message = typeof errorRecord.message === "string"
+      ? errorRecord.message
+      : "ACP request failed";
+    throw new Error(message);
+  }
+  return record.result as T;
+}
+
+function extractAuditUpdateText(update: Record<string, unknown>): string {
+  const message = update.content ?? update.chunk ?? update.text ?? update.update;
+  if (typeof message === "string") return message;
+  if (message && typeof message === "object") {
+    const record = message as Record<string, unknown>;
+    if (typeof record.text === "string") return record.text;
+    const nested = record.content;
+    if (typeof nested === "string") return nested;
+    if (Array.isArray(nested)) {
+      return nested
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return "";
+          const block = entry as Record<string, unknown>;
+          if (typeof block.text === "string") return block.text;
+          if (typeof block.content === "string") return block.content;
+          return "";
+        })
+        .join("");
+    }
+  }
+  return "";
+}
+
+function extractAuditTextFromHistory(
+  history: Array<{ update?: unknown }>,
+): string {
+  return history
+    .map((entry) => {
+      const update = entry.update && typeof entry.update === "object"
+        ? entry.update as Record<string, unknown>
+        : null;
+      if (!update) return "";
+      const sessionUpdate = typeof update.sessionUpdate === "string"
+        ? update.sessionUpdate
+        : "";
+      if (
+        sessionUpdate === "agent_message"
+        || sessionUpdate === "agent_message_chunk"
+        || sessionUpdate === "agent_chunk"
+      ) {
+        return extractAuditUpdateText(update);
+      }
+      return "";
+    })
+    .join("")
+    .trim();
+}
+
+/**
+ * Web-only port of the former `routa specialist run agents-md-auditor`
+ * shell-out: the audit now runs through the Web ACP one-shot path
+ * (create an ephemeral specialist session, dispatch the guidance document
+ * as the prompt, read the agent output back from the session history,
+ * then kill the session). Any failure degrades to the heuristic audit,
+ * matching the previous fallback behavior.
+ */
 async function runInstructionAudit(
   repoRoot: string,
   workspaceId: string,
@@ -315,14 +371,68 @@ async function runInstructionAudit(
   provider: string,
 ): Promise<HarnessInstructionAuditSummary> {
   const start = Date.now();
+  let sessionId: string | undefined;
+  let effectiveProvider: string;
   try {
-    const { stdout } = await executeAuditorCommand(repoRoot, workspaceId, source, provider);
-    const parsed = JSON.parse(extractJsonOutput(stdout));
+    const store = getHttpSessionStore();
+    const sessionCreateResponse = await handleSessionNew({
+      id: null,
+      params: {
+        workspaceId,
+        provider: resolveAuditProvider(provider),
+        specialistId: AUDIT_SPECIALIST_ID,
+        specialistLocale: "en",
+        cwd: repoRoot,
+        name: "Harness instruction audit",
+      },
+      jsonrpcResponse: auditJsonrpcResponse,
+      createSessionUpdateForwarder: createAuditSessionUpdateForwarder,
+      buildMcpConfigForClaude: buildAuditMcpConfig,
+      requireWorkspaceId: auditRequireWorkspaceId,
+    });
+
+    const createPayload = await sessionCreateResponse.json() as unknown;
+    const created = decodeAuditJsonRpcResult<{ sessionId: string; provider?: string }>(createPayload);
+    sessionId = created.sessionId;
+    if (typeof created.provider === "string" && created.provider.trim()) {
+      effectiveProvider = created.provider;
+    } else {
+      effectiveProvider = resolveAuditProvider(provider) ?? provider;
+    }
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        dispatchSessionPrompt({
+          sessionId,
+          workspaceId,
+          provider: resolveAuditProvider(provider),
+          cwd: repoRoot,
+          prompt: source,
+        }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`Instruction audit timed out after ${AUDIT_COMMAND_TIMEOUT_MS}ms`)),
+            AUDIT_COMMAND_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+
+    const history = store.getConsolidatedHistory(sessionId);
+    const rawOutput = extractAuditTextFromHistory(history);
+    const parsed = JSON.parse(extractJsonOutput(rawOutput));
     const durationMs = Date.now() - start;
-    return parseAuditPayload(parsed, durationMs, provider);
+    return parseAuditPayload(parsed, durationMs, effectiveProvider);
   } catch (error) {
     const durationMs = Date.now() - start;
     return buildHeuristicAudit(source, durationMs, provider, toMessage(error));
+  } finally {
+    if (sessionId) {
+      await getAcpProcessManager().killSession(sessionId).catch(() => undefined);
+    }
   }
 }
 

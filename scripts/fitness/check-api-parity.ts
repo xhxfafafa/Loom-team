@@ -161,7 +161,7 @@ function printReport(report: ParityReport) {
   const fail = "❌";
 
   console.log("\n╔══════════════════════════════════════════════════╗");
-  console.log("║           Routa.js API Parity Report             ║");
+  console.log("║           Loom-team API Parity Report            ║");
   console.log("╚══════════════════════════════════════════════════╝\n");
 
   console.log(`📋 Contract defines:   ${report.contract.length} endpoints`);

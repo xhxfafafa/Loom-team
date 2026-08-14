@@ -1,15 +1,15 @@
 openapi: 3.1.0
 info:
-  title: Routa.js API Contract
+  title: Loom-team Web API Contract
   description: |
-    Single source of truth for the Routa.js Web API.
+    Single source of truth for the Loom-team Web-only API.
     The Next.js backend (src/app/api/) MUST implement all endpoints defined here
     with compatible request/response shapes.
   version: 0.1.0
 
 servers:
   - url: http://localhost:3000
-    description: Next.js backend (dev)
+    description: Next.js backend (single Web backend, dev and production)
 
 # ─────────────────────────────────────────────────────────
 # Shared component schemas

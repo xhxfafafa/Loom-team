@@ -65,7 +65,7 @@ async function checkBackendAvailable(): Promise<boolean> {
 async function main() {
   if (!jsonMode) {
     console.log("\n╔══════════════════════════════════════════════════╗");
-    console.log("║       Routa.js API Contract Test Suite           ║");
+    console.log("║       Loom-team API Contract Test Suite          ║");
     console.log("╚══════════════════════════════════════════════════╝\n");
     console.log(`🎯 Target: ${BASE_URL}`);
   }

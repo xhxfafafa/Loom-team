@@ -250,7 +250,7 @@ export function printReport(report: SchemaReport): number {
   const infos = report.issues.filter((i) => i.severity === "info");
 
   console.log("\n╔══════════════════════════════════════════════════╗");
-  console.log("║     Routa.js OpenAPI Schema Validation Report    ║");
+  console.log("║     Loom-team OpenAPI Schema Validation Report   ║");
   console.log("╚══════════════════════════════════════════════════╝\n");
   console.log(`📋 Contract version:        ${report.contractVersion}`);
   console.log(`🛤️  Total paths:             ${report.totalPaths}`);

@@ -10,7 +10,7 @@
  *
  * Options:
  *   --json          Output results as JSON
- *   --suite=agents  Run only a specific suite (agents, tasks, notes, workspaces, sessions, skills)
+ *   --suite=agents  Run only a specific suite (agents, tasks, notes, workspaces, sessions, skills, team-runs)
  *   --bail          Stop on first failure
  */
 
@@ -20,6 +20,7 @@ import { testTasks } from "./test-tasks";
 import { testNotes } from "./test-notes";
 import { testWorkspaces } from "./test-workspaces";
 import { testSessions, testSkills } from "./test-sessions";
+import { testTeamRuns } from "./test-team-runs";
 import { testSchemaValidation } from "./test-schema-validation";
 
 const jsonMode = process.argv.includes("--json");
@@ -41,6 +42,7 @@ const suites: { name: string; run: () => Promise<TestResult[]> }[] = [
   { name: "notes", run: testNotes },
   { name: "sessions", run: testSessions },
   { name: "skills", run: testSkills },
+  { name: "team-runs", run: testTeamRuns },
   { name: "schema-validation", run: testSchemaValidation },
 ];
 

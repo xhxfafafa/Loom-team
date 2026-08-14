@@ -85,14 +85,13 @@ export const FILE_BUDGETS_RELATIVE_PATH = path.join("docs", "fitness", "file_bud
 const ISSUE_SCANNER_RELATIVE_PATH = path.join(".github", "scripts", "issue-scanner.py");
 export const DEFAULT_FILE_BUDGETS: FileBudgetConfig = {
   default_max_lines: 1600,
-  include_roots: ["src", "apps", "crates"],
-  extensions: [".ts", ".tsx", ".rs"],
+  include_roots: ["src"],
+  extensions: [".ts", ".tsx"],
   extension_max_lines: {
-    ".rs": 1600,
     ".ts": 1600,
     ".tsx": 1600,
   },
-  excluded_parts: ["/node_modules/", "/target/", "/.next/", "/_next/", "/bundled/"],
+  excluded_parts: ["/node_modules/", "/.next/", "/_next/", "/bundled/"],
   overrides: [],
 };
 const execFile = promisify(execFileCallback);

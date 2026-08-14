@@ -41,7 +41,6 @@ metrics:
     run_when_changed:
       - src/app/workspace/**
       - src/client/components/kanban/**
-      - crates/routa-server/**
       - e2e/**
       - playwright*.ts
     description: "Kanban 建卡、列流转、列自动化与 workspace 事件同步回归"

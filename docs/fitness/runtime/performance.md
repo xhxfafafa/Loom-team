@@ -35,14 +35,12 @@ metrics:
     analysis: dynamic
     stability: noisy
     evidence_type: command
-    scope: [desktop, acp, runtime]
+    scope: [acp, runtime]
     run_when_changed:
-      - crates/routa-server/**
-      - crates/routa-core/src/acp/**
-      - apps/desktop/src-tauri/src/lib.rs
+      - src/core/acp/**
       - scripts/fitness/check-startup-performance.mjs
       - docs/fitness/runtime/performance.md
-    description: "记录 Routa service 与 ACP provider 的本地启动延迟基线，作为 advisory startup evidence。"
+    description: "记录 Web 运行时与 ACP provider 的本地启动延迟基线，作为 advisory startup evidence。"
 
   - name: sqlite_wal_mode_guard
     command: rg -q 'journal_mode = WAL' src/core/db/sqlite.ts && echo 'sqlite_wal_mode_ok'

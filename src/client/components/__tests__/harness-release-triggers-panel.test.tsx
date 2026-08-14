@@ -71,12 +71,12 @@ describe("HarnessReleaseTriggersPanel", () => {
         severity: "critical",
         action: "block_release",
         patterns: ["**/*.map"],
-        applyTo: ["npm_tarball", "tauri_bundle"],
+        applyTo: ["npm_tarball", "static_release_assets"],
         patternCount: 1,
         applyToCount: 2,
       }),
       makeRule({
-        name: "cli_binary_growth_guard",
+        name: "npm_tarball_growth_guard",
         type: "artifact_size_delta",
         severity: "high",
         action: "require_human_review",
@@ -98,7 +98,7 @@ describe("HarnessReleaseTriggersPanel", () => {
         type: "capability_change",
         severity: "high",
         action: "require_human_review",
-        paths: ["packages/entrix/**"],
+        paths: ["package-lock.json"],
         pathCount: 1,
       }),
     ];

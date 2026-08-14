@@ -61,9 +61,8 @@ npm run api:schema:report
 
 1. 在 `api-contract.yaml` 中定义端点
 2. 在 Next.js 中实现 (`src/app/api/`)
-3. 在 Rust 中实现 (`crates/routa-server/src/api/`)
-4. 运行 `npm run api:check` 验证一致性
-5. 更新 `web-api-test.md` 添加测试条目
+3. 运行 `npm run api:check` 验证一致性
+4. 更新 `web-api-test.md` 添加测试条目
 
 ### 修改现有端点
 

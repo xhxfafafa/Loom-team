@@ -58,21 +58,6 @@ review_triggers:
     context:
       - graph_review_context
 
-  - name: cross_boundary_change_web_desktop
-    type: cross_boundary_change
-    boundaries:
-      web:
-        - src/**
-      desktop:
-        - apps/desktop/src-tauri/**
-    min_boundaries: 2
-    severity: medium
-    action: staged
-    confidence_threshold: 8
-    fallback_action: require_human_review
-    context:
-      - graph_review_context
-
   - name: directory_file_count_guard
     type: directory_file_count
     directories:

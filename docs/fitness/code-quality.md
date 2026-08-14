@@ -238,8 +238,8 @@ metrics:
 
 | 检测项 | 阈值 | Hard Gate | 工具 |
 |--------|------|-----------|------|
-| 文件行数 | 新文件 ≤1600 行，历史超标文件按 HEAD 基线冻结 | ❌ | `cargo run -q -p routa-cli -- harness budget` |
-| 历史热点守护 | 已登记热点只允许缩小不允许继续膨胀 | ✅ | `cargo run -q -p routa-cli -- harness budget --overrides-only` |
+| 文件行数 | 新文件 ≤1600 行，历史超标文件按 HEAD 基线冻结 | ❌ | `node --import tsx scripts/fitness/check-file-budget.ts --changed-only` |
+| 历史热点守护 | 已登记热点只允许缩小不允许继续膨胀 | ✅ | `node --import tsx scripts/fitness/check-file-budget.ts --changed-only --overrides-only` |
 | 函数行数 | ≤100 行 | ❌ | grep + 人工 |
 | 重复代码 | 变更文件不新增大块 clone | ❌ | jscpd |
 | 结构坏味道 | 变更文件中结构型包装重复 = 0 | ❌ | ast-grep |

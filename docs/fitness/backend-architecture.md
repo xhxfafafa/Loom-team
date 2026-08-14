@@ -38,7 +38,7 @@ metrics:
       - scripts/fitness/check-backend-architecture.ts
       - src/app/api/fitness/architecture/route.ts
       - docs/fitness/backend-architecture.md
-    description: "TypeScript backend core 循环依赖通过 Rust graph 执行器做本地 advisory 检查。"
+    description: "TypeScript backend core 循环依赖通过 TypeScript graph 执行器做本地 advisory 检查。"
 ---
 
 # Backend Architecture
@@ -50,8 +50,8 @@ metrics:
 ## Why This Exists
 
 - `code_quality` 中的 `dependency-cruiser` 适合做 repo 级依赖健康检查，但不适合作为 backend core 规则的唯一承载层。
-- Routa CLI 的 graph 执行器已经能直接表达 `src/core` 与 `src/app/api` 的定向边界规则，以及 core 内部 cycle 检测。
-- Routa 的多语言 UI 不应依赖外部 HTML report；第一阶段先产出结构化结果，再由 Harness/Fitness 页面消费。
+- 共享的 TypeScript graph 执行器（由原 Rust CLI 移植而来）已经能直接表达 `src/core` 与 `src/app/api` 的定向边界规则，以及 core 内部 cycle 检测。
+- Loom-team 的多语言 UI 不应依赖外部 HTML report；第一阶段先产出结构化结果，再由 Harness/Fitness 页面消费。
 
 ## Current Scope
 
@@ -68,8 +68,8 @@ metrics:
 ## Runtime Contract
 
 - 规则模型默认从 `architecture/rules/backend-core.archdsl.yaml` 读取
-- `npm run test:arch:backend-core` 通过兼容壳调用 `routa-cli fitness arch-dsl --report backend-core-suite`
-- Next.js 与 Rust server 的 architecture endpoint 也复用同一份 Rust CLI 输出契约
+- `npm run test:arch:backend-core` 调用 TypeScript graph 执行器（`scripts/fitness/check-backend-architecture.ts` → `scripts/fitness/architecture-rule-dsl.ts`）运行 backend-core suite
+- Next.js 的 architecture endpoint（`src/app/api/fitness/architecture/route.ts`）复用同一份执行器输出契约
 
 ## Local Commands
 
@@ -78,11 +78,10 @@ npm run test:arch:dsl
 npm run test:arch:backend-core -- --suite boundaries
 npm run test:arch:backend-core -- --suite cycles
 npm run test:arch:backend-core -- --suite boundaries --json
-cargo run -p routa-cli -- fitness arch-dsl --json
 ```
 
 ## Known Limits
 
-- 当前只覆盖 TypeScript backend core，不覆盖 Rust backend
-- 结果还未进入专用 UI 面板，第一阶段主要用于 entrix advisory evidence
-- 包管理器脚本 `scripts/fitness/check-backend-architecture.ts` 仅保留为兼容入口壳，权威执行器是 Rust CLI
+- 当前只覆盖 TypeScript backend core（Web-only 仓库没有其他 backend 运行时）
+- 结果作为 advisory evidence 由 Harness/Fitness 页面消费
+- `scripts/fitness/architecture-rule-dsl.ts` 是权威 TypeScript 执行器，`scripts/fitness/check-backend-architecture.ts` 是 backend-core suite 入口

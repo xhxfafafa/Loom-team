@@ -63,7 +63,7 @@ function createHooksResponse(): HooksResponse {
     reviewTriggerFile: {
       relativePath: "docs/fitness/review-triggers.yaml",
       source: "review_triggers: []",
-      ruleCount: 7,
+      ruleCount: 6,
       rules: [
         createReviewTriggerRule({
           name: "high_risk_directory_change",
@@ -73,7 +73,7 @@ function createHooksResponse(): HooksResponse {
           paths: [
             "src/core/acp/**",
             "src/core/orchestration/**",
-            "crates/routa-server/src/api/**",
+            "src/app/api/**",
           ],
           evidencePaths: [],
           boundaries: [],
@@ -138,11 +138,11 @@ function createHooksResponse(): HooksResponse {
           paths: [
             "src/core/acp/**",
             "src/core/orchestration/**",
-            "crates/routa-server/src/api/**",
+            "src/app/api/**",
           ],
           evidencePaths: [
             "docs/fitness/**",
-            "crates/entrix/**",
+            "docs/fitness/manifest.yaml",
             ".github/workflows/defense.yaml",
           ],
           boundaries: [],
@@ -167,14 +167,13 @@ function createHooksResponse(): HooksResponse {
             "scripts/fitness/check-api-parity.ts",
             "scripts/fitness/validate-openapi-schema.ts",
             "src/app/api/**",
-            "crates/routa-server/src/api/**",
             "docs/fitness/unit-test.md",
-            "docs/fitness/rust-api-test.md",
+            "docs/fitness/web-api-test.md",
           ],
           boundaries: [],
           directories: [],
           pathCount: 1,
-          evidencePathCount: 7,
+          evidencePathCount: 6,
           boundaryCount: 0,
           directoryCount: 0,
           minBoundaries: null,
@@ -183,7 +182,7 @@ function createHooksResponse(): HooksResponse {
           maxDeletedLines: null,
         }),
         createReviewTriggerRule({
-          name: "cross_boundary_change_web_rust",
+          name: "cross_boundary_change_core_api",
           type: "cross_boundary_change",
           severity: "medium",
           action: "require_human_review",
@@ -191,12 +190,12 @@ function createHooksResponse(): HooksResponse {
           evidencePaths: [],
           boundaries: [
             {
-              name: "web",
-              paths: ["src/**", "apps/web/**"],
+              name: "core",
+              paths: ["src/core/**"],
             },
             {
-              name: "rust",
-              paths: ["crates/**"],
+              name: "api",
+              paths: ["src/app/api/**"],
             },
           ],
           directories: [],
@@ -298,7 +297,7 @@ describe("HarnessReviewTriggersPanel", () => {
     );
 
     expect(screen.getAllByText("src/core/acp/**").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("crates/routa-server/src/api/**").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("src/app/api/**").length).toBeGreaterThan(0);
     expect(screen.getAllByText("api-contract.yaml").length).toBeGreaterThan(0);
     expect(screen.getAllByText("docs/fitness/api-contract.md").length).toBeGreaterThan(0);
     expect(screen.getAllByText("scripts/fitness/check-api-parity.ts").length).toBeGreaterThan(0);

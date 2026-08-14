@@ -31,7 +31,7 @@ metrics:
 > 本文件记录测试条目的验证状态，作为 testability 维度的证据来源。
 
 ## 适用范围
-- `routa-core`, `routa-server` 为本版主线；`routa-cli`, `routa-rpc` 在联动改动时同步纳入。
+- Web-only 仓库主线：`src/core`、`src/app/api`、`src/client`；联动改动时同步纳入 `scripts/` 与 `e2e/`。
 
 ## 评估目标
 - 用例以“行为正确性”计分，不以文件字数或命令日志计分。
@@ -39,7 +39,7 @@ metrics:
 
 ## 规则清单（逐项可验）
 
-### 单元测试（`routa-core`）
+### 单元测试（`src/core`）
 - [ ] store: workspace
   - status: `TODO`
   - required: CRUD、查询过滤、归档状态一致性
@@ -65,7 +65,7 @@ metrics:
   - required: 列表/状态转换边界、冲突校验（如同 ID/非法状态）
   - evidence:
 
-### 单元测试（`routa-server`）
+### 单元测试（Web API 层）
 - [ ] error contract helpers
   - status: `TODO`
   - required: 错误分类与状态码映射一致性
@@ -73,11 +73,11 @@ metrics:
 - [x] application/use-case: tasks
   - status: `VERIFIED`
   - required: task 创建默认值推导、标签清洗、状态/列一致性校验、retry trigger 行为
-  - evidence: `crates/routa-server/src/application/tasks.rs`
+  - evidence: `src/core/kanban/__tests__/task-status-transition.test.ts`, `src/app/api/tasks/__tests__/route.test.ts`（原 Rust 侧证据随 crates 移除，行为由 Web 测试承接）
 - [x] application/use-case: sessions
   - status: `VERIFIED`
   - required: 内存/数据库 session 合并、workspace/parent 过滤、context 构建、history fallback 与缓存
-  - evidence: `crates/routa-server/src/application/sessions.rs`
+  - evidence: `src/core/__tests__/session-history.test.ts`, `src/app/api/sessions/[sessionId]/history/__tests__/route.test.ts`（原 Rust 侧证据随 crates 移除，行为由 Web 测试承接）
 - [ ] 参数校验器 / 清洗函数
   - status: `TODO`
   - required: 空值、非法类型、越界输入
@@ -85,7 +85,7 @@ metrics:
 - [x] 轻量 handler-level 辅助逻辑
   - status: `VERIFIED`
   - required: 会话历史 chunk 合并逻辑正确性
-  - evidence: `crates/routa-server/src/api/sessions.rs`
+  - evidence: `src/app/api/sessions/[sessionId]/history/__tests__/route.test.ts`（原 Rust 侧证据随 crates 移除，行为由 Web 测试承接）
 
 ### 集成测试（与 API 行为强绑定）
 - [x] notes 流程
@@ -128,12 +128,12 @@ metrics:
 - DB 状态污染
   - 对应修正：每个测试独立数据库（临时 db_path）并确保销毁
 - 文件系统副作用未清理
-  - 对应修正：临时目录/文件在 `Drop` 或测试尾部清理
+  - 对应修正：临时目录/文件在 `afterEach` 或测试尾部清理
 - 查询参数命名不一致（camelCase / snake_case）
   - 对应修正：接口文档与用例字段统一验证
 
 ## This Batch
-- 新增：`crates/routa-server/tests/rust_api_end_to_end.rs`
+- 新增：Web API 契约套件 `tests/api-contract/`（承接原 Rust 端到端 API 测试的覆盖）
 - 入口文件：`docs/fitness/web-api-test.md`
 - 下一个批次：补 `acp / agents / sessions / polling` 用例与健康检查场景
 
@@ -150,7 +150,7 @@ metrics:
 - `src/app/workspace/[workspaceId]/team/__tests__/delete-team-run-dialog.test.tsx`
   - 锁定删除确认对话框：预览统计展示、输入 DELETE/Team 名才可确认、取消、runner 阻断、删除/预览失败的本地化错误。
 
-## Team Task Lifecycle / Kanban Consistency (Web + Rust)
+## Team Task Lifecycle / Kanban Consistency (Web)
 
 锁定 design doc `docs/design-docs/team-task-lifecycle-consistency.md` 的两个问题：
 Team 子 Agent 已创建 Task/Agent/子 Session 时，Team 任务树与看板卡片必须立即可见且 Session 可读；
@@ -176,17 +176,6 @@ Team 子 Agent 已创建 Task/Agent/子 Session 时，Team 任务树与看板卡
 - `src/app/workspace/[workspaceId]/team/[sessionId]/__tests__/team-run-page-model.test.ts`
   - 锁定 Team 任务树以持久化 Task 为主源（不再依赖 task-shaped Note）：`buildTeamTaskTree` 每个持久化 Task 成为节点、重复 Note 去重、legacy Note 保留层级；`delegated` 归一为 in-progress；delegation 结果解析（结构化字段 / JSON envelope / MCP content / 纯文本 / 正则兜底）。
 
-### Rust
-
-- `crates/routa-core/src/kanban.rs`（inline tests）
-  - 锁定与 Web 同名的镜像函数：`apply_task_status_transition` / `resolve_effective_column_id_for_read` / `is_task_terminal_for_read` / `load_task_board` / board-aware `task_to_card`。
-- `crates/routa-core/src/orchestration/mod.rs`（inline tests）
-  - 锁定 delegation 绑定的 `sessionIds` 去重追加；`handle_report_submitted` 成功报告将任务移到 board 语义 Done 列并写 completion_summary、agent 置 Completed；失败报告置 NEEDS_FIX 且保留原列。
-- `crates/routa-core/src/store/task_store.rs`（inline tests）
-  - 锁定 `list_by_team_run_is_workspace_scoped` 的 workspace 隔离。
-- `crates/routa-server/tests/rust_api_end_to_end.rs::api_tasks_filter_by_team_run_id_with_workspace_isolation`
-  - 锁定 `GET /api/tasks?teamRunId=`：正向过滤、响应携带 `teamRunId`、workspace 隔离、未绑定任务不出现、未知 teamRunId 返回空数组。
-
 ## Session Persistence / Recovery Characterization
 
 - `src/core/__tests__/session-history.test.ts`
@@ -208,5 +197,3 @@ Team 子 Agent 已创建 Task/Agent/子 Session 时，Team 任务树与看板卡
   - 锁定 codebase 创建：普通目录返回 201 且成为默认 codebase；git 仓库仍可导入；不存在/文件/不可读路径返回 400 携带 `errorCode` 且不落库；bare 仓库保持拒绝。
 - `src/client/components/__tests__/repo-picker.test.tsx`
   - 锁定 RepoPicker 本地文件夹交互：普通目录选择传播 `git=false`；`errorCode` 映射为本地化错误文案；非 git 项目显示「未启用版本管理」并隐藏分支控件；git 项目保留分支控件。
-- `crates/routa-server/src/api/repo_context.rs`（inline unit tests）
-  - 锁定 `validate_local_folder_path` / `validate_local_project_path`：普通目录通过校验；缺失路径与文件路径被拒绝。

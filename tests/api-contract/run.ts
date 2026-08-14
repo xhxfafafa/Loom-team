@@ -78,8 +78,8 @@ async function main() {
     } else {
       console.error(`\n❌ Backend not available at ${BASE_URL}`);
       console.error("   Start the backend first:\n");
-      console.error("   Next.js:  npm run dev");
-      console.error("   Rust:     cargo run -p routa-server\n");
+      console.error("   Next.js:  npm run dev          (development)");
+      console.error("   Next.js:  npm run build && npm exec next start   (production)\n");
     }
     process.exit(1);
   }

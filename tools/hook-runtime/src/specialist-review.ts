@@ -493,17 +493,13 @@ function normalizeConfidence(value: number | string | undefined): number | null 
 }
 
 async function loadGraphReviewContext(reviewRoot: string, base: string): Promise<unknown | null> {
-  const command = `entrix graph review-context --base ${shellQuote(base)} --json`;
-  const result = await runCommand(command, { cwd: reviewRoot, stream: false });
-  if (result.exitCode !== 0 || !result.output.trim()) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(result.output);
-  } catch {
-    return result.output.trim();
-  }
+  // Web-only migration: graph review context used to come from the Rust CLI
+  // (`entrix graph review-context`), removed with the Cargo workspace. The
+  // specialist payload is built without this optional enrichment until a
+  // TypeScript graph-context provider exists.
+  void reviewRoot;
+  void base;
+  return null;
 }
 
 async function buildReviewPayload(

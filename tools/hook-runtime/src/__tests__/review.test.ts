@@ -6,10 +6,10 @@ const loadCodeownersRulesMock = vi.hoisted(() => vi.fn());
 const resolveOwnershipMock = vi.hoisted(() => vi.fn());
 const buildOwnershipRoutingContextMock = vi.hoisted(() => vi.fn());
 const loadReviewTriggerRulesMock = vi.hoisted(() => vi.fn());
+const evaluateReviewTriggersMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../process.js", () => ({
   runCommand: runCommandMock,
-  resolveEntrixShellCommand: (args: string[]) => args.join(" "),
 }));
 
 vi.mock("../specialist-review.js", () => ({
@@ -32,6 +32,7 @@ vi.mock("../../../../src/core/harness/codeowners", () => {
 vi.mock("../../../../src/core/harness/review-triggers", () => {
   const mockModule = {
     loadReviewTriggerRules: loadReviewTriggerRulesMock,
+    evaluateReviewTriggers: evaluateReviewTriggersMock,
   };
 
   return {
@@ -41,6 +42,20 @@ vi.mock("../../../../src/core/harness/review-triggers", () => {
 });
 
 import { runReviewTriggerPhase } from "../review.js";
+
+function emptyEvaluation(overrides: Record<string, unknown> = {}) {
+  return {
+    blocked: false,
+    humanReviewRequired: false,
+    advisoryOnly: false,
+    stagedReviewRequired: false,
+    base: "origin/main...HEAD",
+    changedFiles: [],
+    diffStats: { fileCount: 0, addedLines: 0, deletedLines: 0 },
+    triggers: [],
+    ...overrides,
+  };
+}
 
 describe("runReviewTriggerPhase", () => {
   const originalAllowReviewTriggerPush = process.env.ROUTA_ALLOW_REVIEW_TRIGGER_PUSH;
@@ -72,6 +87,7 @@ describe("runReviewTriggerPhase", () => {
       relativePath: "docs/fitness/review-triggers.yaml",
       rules: [],
     });
+    evaluateReviewTriggersMock.mockReturnValue(emptyEvaluation());
   });
 
   afterEach(() => {
@@ -124,10 +140,10 @@ describe("runReviewTriggerPhase", () => {
         output: "",
       })
       .mockResolvedValueOnce({
-        command: "entrix review-trigger",
+        command: "git diff --numstat",
         durationMs: 10,
         exitCode: 0,
-        output: "",
+        output: "1\t0\ttools/hook-runtime/src/review.ts\n",
       });
 
     const result = await runReviewTriggerPhase("jsonl");
@@ -136,6 +152,12 @@ describe("runReviewTriggerPhase", () => {
     expect(result.status).toBe("passed");
     expect(result.base).toBe("origin/main");
     expect(result.triggers).toEqual([]);
+    expect(evaluateReviewTriggersMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changedFiles: ["tools/hook-runtime/src/review.ts"],
+        diffStats: { fileCount: 1, addedLines: 1, deletedLines: 0 },
+      }),
+    );
   });
 
   it("blocks a matched review trigger when the specialist rejects it", async () => {
@@ -172,18 +194,31 @@ describe("runReviewTriggerPhase", () => {
         output: "tmp/debug.txt\n",
       })
       .mockResolvedValueOnce({
-        command: "entrix review-trigger",
+        command: "git diff --numstat",
         durationMs: 10,
-        exitCode: 3,
-        output: JSON.stringify({
-          base: "origin/main",
-          triggers: [{ action: "review", name: "oversized_change", severity: "high" }],
-          committed_files: ["tools/hook-runtime/src/review.ts"],
-          working_tree_files: ["tools/hook-runtime/src/runtime.ts"],
-          untracked_files: ["tmp/debug.txt"],
-          diff_stats: { file_count: 1, added_lines: 10, deleted_lines: 2 },
-        }),
+        exitCode: 0,
+        output: "10\t2\ttools/hook-runtime/src/review.ts\n",
       });
+    evaluateReviewTriggersMock.mockReturnValueOnce(
+      emptyEvaluation({
+        stagedReviewRequired: true,
+        changedFiles: ["tools/hook-runtime/src/review.ts"],
+        diffStats: { fileCount: 1, addedLines: 10, deletedLines: 2 },
+        triggers: [{
+          action: "staged",
+          name: "oversized_change",
+          severity: "high",
+          confidenceThreshold: null,
+          fallbackAction: "require_human_review",
+          specialistId: null,
+          provider: null,
+          model: null,
+          context: [],
+          reviewLayers: [],
+          reasons: ["diff touched 1 files (threshold: 12)"],
+        }],
+      }),
+    );
     runReviewTriggerSpecialistMock.mockResolvedValueOnce({
       allowed: false,
       outcome: "block",
@@ -247,16 +282,31 @@ describe("runReviewTriggerPhase", () => {
         output: "",
       })
       .mockResolvedValueOnce({
-        command: "entrix review-trigger",
+        command: "git diff --numstat",
         durationMs: 10,
-        exitCode: 3,
-        output: JSON.stringify({
-          base: "origin/main",
-          triggers: [{ action: "advisory", name: "docs_change", severity: "low" }],
-          committed_files: ["docs/fitness/README.md"],
-          diff_stats: { file_count: 1, added_lines: 5, deleted_lines: 0 },
-        }),
+        exitCode: 0,
+        output: "5\t0\tdocs/fitness/README.md\n",
       });
+    evaluateReviewTriggersMock.mockReturnValueOnce(
+      emptyEvaluation({
+        advisoryOnly: true,
+        changedFiles: ["docs/fitness/README.md"],
+        diffStats: { fileCount: 1, addedLines: 5, deletedLines: 0 },
+        triggers: [{
+          action: "advisory",
+          name: "docs_change",
+          severity: "low",
+          confidenceThreshold: null,
+          fallbackAction: null,
+          specialistId: null,
+          provider: null,
+          model: null,
+          context: [],
+          reviewLayers: [],
+          reasons: ["changed path: docs/fitness/README.md"],
+        }],
+      }),
+    );
 
     const result = await runReviewTriggerPhase("jsonl");
 
@@ -299,16 +349,31 @@ describe("runReviewTriggerPhase", () => {
         output: "",
       })
       .mockResolvedValueOnce({
-        command: "entrix review-trigger",
+        command: "git diff --numstat",
         durationMs: 10,
-        exitCode: 3,
-        output: JSON.stringify({
-          base: "origin/main",
-          triggers: [{ action: "require_human_review", name: "api_contract_change", severity: "high" }],
-          committed_files: ["api-contract.yaml"],
-          diff_stats: { file_count: 1, added_lines: 4, deleted_lines: 1 },
-        }),
+        exitCode: 0,
+        output: "4\t1\tapi-contract.yaml\n",
       });
+    evaluateReviewTriggersMock.mockReturnValueOnce(
+      emptyEvaluation({
+        humanReviewRequired: true,
+        changedFiles: ["api-contract.yaml"],
+        diffStats: { fileCount: 1, addedLines: 4, deletedLines: 1 },
+        triggers: [{
+          action: "require_human_review",
+          name: "api_contract_change",
+          severity: "high",
+          confidenceThreshold: null,
+          fallbackAction: null,
+          specialistId: null,
+          provider: null,
+          model: null,
+          context: [],
+          reviewLayers: [],
+          reasons: ["sensitive file changed: api-contract.yaml"],
+        }],
+      }),
+    );
 
     const result = await runReviewTriggerPhase("jsonl");
 
@@ -351,16 +416,31 @@ describe("runReviewTriggerPhase", () => {
         output: "",
       })
       .mockResolvedValueOnce({
-        command: "entrix review-trigger",
+        command: "git diff --numstat",
         durationMs: 10,
-        exitCode: 3,
-        output: JSON.stringify({
-          base: "origin/main",
-          triggers: [{ action: "block", name: "forbidden_change", severity: "high" }],
-          committed_files: ["src/core/acp/process.ts"],
-          diff_stats: { file_count: 1, added_lines: 12, deleted_lines: 3 },
-        }),
+        exitCode: 0,
+        output: "12\t3\tsrc/core/acp/process.ts\n",
       });
+    evaluateReviewTriggersMock.mockReturnValueOnce(
+      emptyEvaluation({
+        blocked: true,
+        changedFiles: ["src/core/acp/process.ts"],
+        diffStats: { fileCount: 1, addedLines: 12, deletedLines: 3 },
+        triggers: [{
+          action: "block",
+          name: "forbidden_change",
+          severity: "high",
+          confidenceThreshold: null,
+          fallbackAction: null,
+          specialistId: null,
+          provider: null,
+          model: null,
+          context: [],
+          reviewLayers: [],
+          reasons: ["changed path: src/core/acp/process.ts"],
+        }],
+      }),
+    );
 
     const result = await runReviewTriggerPhase("jsonl");
 
@@ -403,22 +483,31 @@ describe("runReviewTriggerPhase", () => {
         output: "",
       })
       .mockResolvedValueOnce({
-        command: "entrix review-trigger",
+        command: "git diff --numstat",
         durationMs: 10,
-        exitCode: 3,
-        output: JSON.stringify({
-          base: "origin/main",
-          triggers: [{
-            action: "staged",
-            confidence_threshold: 9,
-            fallback_action: "require_human_review",
-            name: "high_risk_directory_change",
-            severity: "high",
-          }],
-          committed_files: ["src/core/acp/process.ts"],
-          diff_stats: { file_count: 1, added_lines: 20, deleted_lines: 6 },
-        }),
+        exitCode: 0,
+        output: "20\t6\tsrc/core/acp/process.ts\n",
       });
+    evaluateReviewTriggersMock.mockReturnValueOnce(
+      emptyEvaluation({
+        stagedReviewRequired: true,
+        changedFiles: ["src/core/acp/process.ts"],
+        diffStats: { fileCount: 1, addedLines: 20, deletedLines: 6 },
+        triggers: [{
+          action: "staged",
+          confidenceThreshold: 9,
+          fallbackAction: "require_human_review",
+          name: "high_risk_directory_change",
+          severity: "high",
+          specialistId: null,
+          provider: null,
+          model: null,
+          context: [],
+          reviewLayers: [],
+          reasons: ["changed path: src/core/acp/process.ts"],
+        }],
+      }),
+    );
     runReviewTriggerSpecialistMock.mockResolvedValueOnce({
       allowed: true,
       outcome: "pass",
@@ -469,37 +558,46 @@ describe("runReviewTriggerPhase", () => {
         output: "",
       })
       .mockResolvedValueOnce({
-        command: "entrix review-trigger",
+        command: "git diff --numstat",
         durationMs: 10,
-        exitCode: 3,
-        output: JSON.stringify({
-          base: "origin/main",
-          triggers: [{
-            action: "staged",
-            confidence_threshold: 8,
-            fallback_action: "require_human_review",
-            provider: "codex",
-            model: "gpt-5.4-mini",
-            context: ["graph_review_context"],
-            review_layers: [
-              {
-                provider: "codex",
-                model: "gpt-5.4-mini",
-                confidence_threshold: 7,
-              },
-              {
-                provider: "claude",
-                model: "claude-sonnet",
-                confidence_threshold: 9,
-              },
-            ],
-            name: "high_risk_directory_change",
-            severity: "high",
-          }],
-          committed_files: ["src/core/acp/process.ts"],
-          diff_stats: { file_count: 1, added_lines: 20, deleted_lines: 6 },
-        }),
+        exitCode: 0,
+        output: "20\t6\tsrc/core/acp/process.ts\n",
       });
+    evaluateReviewTriggersMock.mockReturnValueOnce(
+      emptyEvaluation({
+        stagedReviewRequired: true,
+        changedFiles: ["src/core/acp/process.ts"],
+        diffStats: { fileCount: 1, addedLines: 20, deletedLines: 6 },
+        triggers: [{
+          action: "staged",
+          confidenceThreshold: 8,
+          fallbackAction: "require_human_review",
+          provider: "codex",
+          model: "gpt-5.4-mini",
+          context: ["graph_review_context"],
+          reviewLayers: [
+            {
+              provider: "codex",
+              model: "gpt-5.4-mini",
+              confidenceThreshold: 7,
+              specialistId: null,
+              context: [],
+            },
+            {
+              provider: "claude",
+              model: "claude-sonnet",
+              confidenceThreshold: 9,
+              specialistId: null,
+              context: [],
+            },
+          ],
+          name: "high_risk_directory_change",
+          severity: "high",
+          specialistId: null,
+          reasons: ["changed path: src/core/acp/process.ts"],
+        }],
+      }),
+    );
     runReviewTriggerSpecialistMock
       .mockResolvedValueOnce({
         allowed: true,
@@ -530,6 +628,10 @@ describe("runReviewTriggerPhase", () => {
 
   it("prints a compact human summary table for matched triggers", async () => {
     delete process.env.ROUTA_ALLOW_REVIEW_TRIGGER_PUSH;
+    const numstatLines = ["942\t636\tsrc/a.ts"];
+    for (let index = 1; index < 32; index += 1) {
+      numstatLines.push(`0\t0\tsrc/generated/file-${index}.ts`);
+    }
     runCommandMock
       .mockResolvedValueOnce({
         command: "git rev-parse",
@@ -562,39 +664,54 @@ describe("runReviewTriggerPhase", () => {
         output: "tmp/debug.txt\n",
       })
       .mockResolvedValueOnce({
-        command: "entrix review-trigger",
+        command: "git diff --numstat",
         durationMs: 10,
-        exitCode: 3,
-        output: JSON.stringify({
-          base: "origin/main",
-          triggers: [
-            {
-              action: "review",
-              name: "high_risk_directory_change",
-              severity: "high",
-              reasons: [
-                "changed path: crates/routa-server/src/api/clone_local.rs",
-                "changed path: crates/routa-server/src/api/codebases.rs",
-                "changed path: crates/routa-server/src/api/mod.rs",
-              ],
-            },
-            {
-              action: "review",
-              name: "oversized_change",
-              severity: "medium",
-              reasons: [
-                "diff touched 32 files (threshold: 12)",
-                "diff added 942 lines (threshold: 600)",
-                "diff deleted 636 lines (threshold: 400)",
-              ],
-            },
-          ],
-          committed_files: ["src/a.ts", "src/b.ts", "api-contract.yaml"],
-          working_tree_files: ["src/local-only.ts"],
-          untracked_files: ["tmp/debug.txt"],
-          diff_stats: { file_count: 32, added_lines: 942, deleted_lines: 636 },
-        }),
+        exitCode: 0,
+        output: `${numstatLines.join("\n")}\n`,
       });
+    evaluateReviewTriggersMock.mockReturnValueOnce(
+      emptyEvaluation({
+        stagedReviewRequired: true,
+        changedFiles: ["src/a.ts", "src/b.ts", "api-contract.yaml"],
+        diffStats: { fileCount: 32, addedLines: 942, deletedLines: 636 },
+        triggers: [
+          {
+            action: "staged",
+            name: "high_risk_directory_change",
+            severity: "high",
+            confidenceThreshold: null,
+            fallbackAction: "require_human_review",
+            specialistId: null,
+            provider: null,
+            model: null,
+            context: [],
+            reviewLayers: [],
+            reasons: [
+              "changed path: src/core/acp/process.ts",
+              "changed path: src/core/acp/recovery.ts",
+              "changed path: src/core/acp/session-lease.ts",
+            ],
+          },
+          {
+            action: "staged",
+            name: "oversized_change",
+            severity: "medium",
+            confidenceThreshold: null,
+            fallbackAction: "require_human_review",
+            specialistId: null,
+            provider: null,
+            model: null,
+            context: [],
+            reviewLayers: [],
+            reasons: [
+              "diff touched 32 files (threshold: 12)",
+              "diff added 942 lines (threshold: 600)",
+              "diff deleted 636 lines (threshold: 400)",
+            ],
+          },
+        ],
+      }),
+    );
     runReviewTriggerSpecialistMock.mockResolvedValueOnce({
       allowed: false,
       outcome: "block",
@@ -610,7 +727,7 @@ describe("runReviewTriggerPhase", () => {
       unownedChangedFiles: ["api-contract.yaml"],
       overlappingChangedFiles: ["src/a.ts"],
       highRiskUnownedFiles: ["api-contract.yaml"],
-      crossOwnerTriggers: ["cross_boundary_change_web_rust"],
+      crossOwnerTriggers: ["cross_boundary_change_core_api"],
       triggerCorrelations: [],
     });
 
@@ -624,13 +741,13 @@ describe("runReviewTriggerPhase", () => {
     expect(output).toMatch(/\|\s+Workspace residue\s+\|\s+1 tracked, 1 untracked\s+\|/);
     expect(output).toContain("@arch-team, @platform-team");
     expect(output).toContain("api-contract.yaml");
-    expect(output).toContain("cross_boundary_change_web_rust");
+    expect(output).toContain("cross_boundary_change_core_api");
     expect(output).toContain("Matched triggers:");
     expect(output).toContain("[HIGH] High Risk Directory Change");
     expect(output).toContain("changed path:");
-    expect(output).toContain("crates/routa-server/src/api/clone_local.rs");
-    expect(output).toContain("crates/routa-server/src/api/codebases.rs");
-    expect(output).toContain("crates/routa-server/src/api/mod.rs");
+    expect(output).toContain("src/core/acp/process.ts");
+    expect(output).toContain("src/core/acp/recovery.ts");
+    expect(output).toContain("src/core/acp/session-lease.ts");
     expect(output).not.toContain("- Base: origin/main");
   });
 
@@ -668,30 +785,40 @@ describe("runReviewTriggerPhase", () => {
         output: "",
       })
       .mockResolvedValueOnce({
-        command: "entrix review-trigger",
+        command: "git diff --numstat",
         durationMs: 10,
-        exitCode: 3,
-        output: JSON.stringify({
-          base: "origin/main",
-          triggers: [
-            {
-              action: "review",
-              name: "cross_boundary_change_web_rust",
-              severity: "medium",
-              reasons: [
-                "changed boundary 'web': src/app/globals.css, src/app/page.tsx, docs/fitness/README.md, src/core/review.ts, src/app/layout.tsx",
-              ],
-            },
-          ],
-          committed_files: [
-            "src/app/globals.css",
-            "src/app/page.tsx",
-            "docs/fitness/README.md",
-            "src/core/review.ts",
-          ],
-          diff_stats: { file_count: 4, added_lines: 42, deleted_lines: 7 },
-        }),
+        exitCode: 0,
+        output: "42\t7\tsrc/app/page.tsx\n",
       });
+    evaluateReviewTriggersMock.mockReturnValueOnce(
+      emptyEvaluation({
+        stagedReviewRequired: true,
+        changedFiles: [
+          "src/app/globals.css",
+          "src/app/page.tsx",
+          "docs/fitness/README.md",
+          "src/core/review.ts",
+        ],
+        diffStats: { fileCount: 4, addedLines: 42, deletedLines: 7 },
+        triggers: [
+          {
+            action: "staged",
+            name: "fitness_evidence_gap_for_core_paths",
+            severity: "medium",
+            confidenceThreshold: null,
+            fallbackAction: "require_human_review",
+            specialistId: null,
+            provider: null,
+            model: null,
+            context: [],
+            reviewLayers: [],
+            reasons: [
+              "changed code path without evidence update: src/app/globals.css, src/app/page.tsx, docs/fitness/README.md, src/core/review.ts, src/app/layout.tsx",
+            ],
+          },
+        ],
+      }),
+    );
     runReviewTriggerSpecialistMock.mockResolvedValueOnce({
       allowed: false,
       outcome: "block",
@@ -705,7 +832,7 @@ describe("runReviewTriggerPhase", () => {
 
     expect(result.allowed).toBe(false);
     const output = consoleLogSpy.mock.calls.map((call: unknown[]) => String(call[0])).join("\n");
-    expect(output).toContain("[MEDIUM] Cross Boundary Change Web Rust");
+    expect(output).toContain("[MEDIUM] Fitness Evidence Gap For Core Paths");
     expect(output).toContain("Examples: src/app/page.tsx, src/core/review.ts, src/app/layout.tsx, src/app/globals.css");
     expect(output).toContain("+1 more lower-signal file");
   });
@@ -744,16 +871,31 @@ describe("runReviewTriggerPhase", () => {
         output: "",
       })
       .mockResolvedValueOnce({
-        command: "entrix review-trigger",
+        command: "git diff --numstat",
         durationMs: 10,
-        exitCode: 3,
-        output: JSON.stringify({
-          base: "origin/main",
-          triggers: [{ action: "review", name: "oversized_change", severity: "high" }],
-          committed_files: ["tools/hook-runtime/src/review.ts"],
-          diff_stats: { file_count: 1, added_lines: 10, deleted_lines: 2 },
-        }),
+        exitCode: 0,
+        output: "10\t2\ttools/hook-runtime/src/review.ts\n",
       });
+    evaluateReviewTriggersMock.mockReturnValueOnce(
+      emptyEvaluation({
+        stagedReviewRequired: true,
+        changedFiles: ["tools/hook-runtime/src/review.ts"],
+        diffStats: { fileCount: 1, addedLines: 10, deletedLines: 2 },
+        triggers: [{
+          action: "staged",
+          name: "oversized_change",
+          severity: "high",
+          confidenceThreshold: null,
+          fallbackAction: "require_human_review",
+          specialistId: null,
+          provider: null,
+          model: null,
+          context: [],
+          reviewLayers: [],
+          reasons: ["diff added 10 lines (threshold: 600)"],
+        }],
+      }),
+    );
 
     const result = await runReviewTriggerPhase("jsonl");
 
@@ -765,7 +907,7 @@ describe("runReviewTriggerPhase", () => {
     expect(runReviewTriggerSpecialistMock).not.toHaveBeenCalled();
   });
 
-  it("falls back to legacy changed_files payloads", async () => {
+  it("reports committed files from the push scope", async () => {
     runCommandMock
       .mockResolvedValueOnce({
         command: "git rev-parse",
@@ -798,16 +940,31 @@ describe("runReviewTriggerPhase", () => {
         output: "",
       })
       .mockResolvedValueOnce({
-        command: "entrix review-trigger",
+        command: "git diff --numstat",
         durationMs: 10,
-        exitCode: 3,
-        output: JSON.stringify({
-          base: "origin/main",
-          triggers: [{ action: "review", name: "oversized_change", severity: "high" }],
-          changed_files: ["tools/hook-runtime/src/review.ts"],
-          diff_stats: { file_count: 1, added_lines: 10, deleted_lines: 2 },
-        }),
+        exitCode: 0,
+        output: "10\t2\ttools/hook-runtime/src/review.ts\n",
       });
+    evaluateReviewTriggersMock.mockReturnValueOnce(
+      emptyEvaluation({
+        stagedReviewRequired: true,
+        changedFiles: ["tools/hook-runtime/src/review.ts"],
+        diffStats: { fileCount: 1, addedLines: 10, deletedLines: 2 },
+        triggers: [{
+          action: "staged",
+          name: "oversized_change",
+          severity: "high",
+          confidenceThreshold: null,
+          fallbackAction: "require_human_review",
+          specialistId: null,
+          provider: null,
+          model: null,
+          context: [],
+          reviewLayers: [],
+          reasons: ["diff added 10 lines (threshold: 600)"],
+        }],
+      }),
+    );
     runReviewTriggerSpecialistMock.mockResolvedValueOnce({
       allowed: true,
       outcome: "pass",
@@ -824,7 +981,7 @@ describe("runReviewTriggerPhase", () => {
     expect(result.allowed).toBe(true);
   });
 
-  it("passes without invoking entrix when push scope has no committed files", async () => {
+  it("passes without evaluating triggers when push scope has no committed files", async () => {
     runCommandMock
       .mockResolvedValueOnce({
         command: "git rev-parse",
@@ -865,6 +1022,7 @@ describe("runReviewTriggerPhase", () => {
     expect(result.workingTreeFiles).toEqual(["tools/hook-runtime/src/runtime.ts"]);
     expect(result.untrackedFiles).toEqual(["tmp/debug.txt"]);
     expect(runCommandMock).toHaveBeenCalledTimes(5);
+    expect(evaluateReviewTriggersMock).not.toHaveBeenCalled();
   });
 
   it("blocks push when review evaluation is unavailable by default", async () => {
@@ -900,11 +1058,14 @@ describe("runReviewTriggerPhase", () => {
         output: "",
       })
       .mockResolvedValueOnce({
-        command: "entrix review-trigger",
+        command: "git diff --numstat",
         durationMs: 10,
-        exitCode: 2,
-        output: "python error",
+        exitCode: 0,
+        output: "10\t2\ttools/hook-runtime/src/review.ts\n",
       });
+    evaluateReviewTriggersMock.mockImplementationOnce(() => {
+      throw new Error("review trigger rules failed to load");
+    });
 
     const result = await runReviewTriggerPhase("jsonl");
 
@@ -948,16 +1109,31 @@ describe("runReviewTriggerPhase", () => {
         output: "",
       })
       .mockResolvedValueOnce({
-        command: "entrix review-trigger",
+        command: "git diff --numstat",
         durationMs: 10,
-        exitCode: 3,
-        output: JSON.stringify({
-          base: "origin/main",
-          triggers: [{ action: "review", name: "oversized_change", severity: "high" }],
-          committed_files: ["tools/hook-runtime/src/review.ts"],
-          diff_stats: { file_count: 1, added_lines: 10, deleted_lines: 2 },
-        }),
+        exitCode: 0,
+        output: "10\t2\ttools/hook-runtime/src/review.ts\n",
       });
+    evaluateReviewTriggersMock.mockReturnValueOnce(
+      emptyEvaluation({
+        stagedReviewRequired: true,
+        changedFiles: ["tools/hook-runtime/src/review.ts"],
+        diffStats: { fileCount: 1, addedLines: 10, deletedLines: 2 },
+        triggers: [{
+          action: "staged",
+          name: "oversized_change",
+          severity: "high",
+          confidenceThreshold: null,
+          fallbackAction: "require_human_review",
+          specialistId: null,
+          provider: null,
+          model: null,
+          context: [],
+          reviewLayers: [],
+          reasons: ["diff added 10 lines (threshold: 600)"],
+        }],
+      }),
+    );
     runReviewTriggerSpecialistMock.mockRejectedValueOnce(
       new Error("Missing ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY for automatic review specialist."),
     );
@@ -1006,11 +1182,14 @@ describe("runReviewTriggerPhase", () => {
         output: "",
       })
       .mockResolvedValueOnce({
-        command: "entrix review-trigger",
+        command: "git diff --numstat",
         durationMs: 10,
-        exitCode: 2,
-        output: "python error",
+        exitCode: 0,
+        output: "10\t2\ttools/hook-runtime/src/review.ts\n",
       });
+    evaluateReviewTriggersMock.mockImplementationOnce(() => {
+      throw new Error("review trigger rules failed to load");
+    });
 
     const result = await runReviewTriggerPhase("jsonl");
 

@@ -1,4 +1,4 @@
-import { resolveEntrixShellCommand, runCommand } from "./process.js";
+import { runCommand } from "./process.js";
 import path from "node:path";
 import {
   runReviewTriggerSpecialist,
@@ -7,6 +7,11 @@ import {
   type ReviewTriggerLayer,
 } from "./specialist-review.js";
 import type { OwnershipRoutingContext } from "../../../src/core/harness/codeowners-types";
+import type {
+  ReviewTriggerDiffStats,
+  ReviewTriggerMatch,
+  ReviewTriggerReport,
+} from "../../../src/core/harness/review-triggers";
 import * as codeownersImport from "../../../src/core/harness/codeowners";
 import * as reviewTriggersImport from "../../../src/core/harness/review-triggers";
 
@@ -24,7 +29,7 @@ const {
   resolveOwnership,
 } = codeownersModule;
 
-const { loadReviewTriggerRules } = reviewTriggersModule;
+const { evaluateReviewTriggers, loadReviewTriggerRules } = reviewTriggersModule;
 
 const REVIEW_UNAVAILABLE_BYPASS_ENV = "ROUTA_ALLOW_REVIEW_UNAVAILABLE";
 const ANSI_RESET = "\u001B[0m";
@@ -166,21 +171,53 @@ function getReviewScopeMismatchMessage(rootPath: string): string {
     ` Set ${REVIEW_UNAVAILABLE_BYPASS_ENV}=1 only if you intentionally want to proceed with potentially shifted scope.`;
 }
 
-function parseReport(reviewOutput: string): ReviewReport {
-  if (!reviewOutput) {
-    return emptyReport();
+function parseDiffNumstat(output: string, fallbackFileCount: number): ReviewTriggerDiffStats {
+  let addedLines = 0;
+  let deletedLines = 0;
+  let fileCount = 0;
+
+  for (const line of output.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const [addedRaw, deletedRaw] = trimmed.split("\t");
+    if (addedRaw !== "-") {
+      addedLines += Number.parseInt(addedRaw ?? "", 10) || 0;
+    }
+    if (deletedRaw !== "-") {
+      deletedLines += Number.parseInt(deletedRaw ?? "", 10) || 0;
+    }
+    fileCount += 1;
   }
 
-  try {
-    const report = JSON.parse(reviewOutput) as ReviewReport;
-    return {
-      ...emptyReport(),
-      ...report,
-      committed_files: report.committed_files ?? report.changed_files ?? [],
-    };
-  } catch {
-    return emptyReport();
-  }
+  return {
+    fileCount: fileCount > 0 ? fileCount : fallbackFileCount,
+    addedLines,
+    deletedLines,
+  };
+}
+
+function toPayloadTrigger(match: ReviewTriggerMatch): ReviewTrigger {
+  return {
+    action: match.action,
+    name: match.name,
+    reasons: match.reasons,
+    severity: match.severity,
+    confidence_threshold: match.confidenceThreshold,
+    fallback_action: match.fallbackAction,
+    specialist_id: match.specialistId,
+    provider: match.provider,
+    model: match.model,
+    context: match.context,
+    review_layers: match.reviewLayers.map((layer) => ({
+      confidence_threshold: layer.confidenceThreshold,
+      specialist_id: layer.specialistId,
+      provider: layer.provider,
+      model: layer.model,
+      context: layer.context,
+    })),
+  };
 }
 
 function titleCaseTriggerName(name: string): string {
@@ -1000,22 +1037,35 @@ export async function runReviewTriggerPhase(outputMode: "human" | "jsonl" = "hum
     }
     return buildResultBase(reviewBase, report, "passed", true, false, null, message);
   }
-  const entrixBase = `${reviewBase}...HEAD`;
-  const reviewCommand = resolveEntrixShellCommand(
-    [
-      "review-trigger",
-      "--base",
-      entrixBase,
-      "--json",
-      "--fail-on-trigger",
-      ...scopeFiles.committedFiles,
-    ],
-    reviewRoot,
-  );
+  const reviewRange = `${reviewBase}...HEAD`;
 
-  const review = await runCommand(reviewCommand, { stream: false, cwd: reviewRoot });
+  // Web-only migration: review triggers used to be evaluated by the Rust CLI
+  // (`entrix review-trigger --base <range> --json --fail-on-trigger`), which
+  // was removed with the Cargo workspace. Evaluate them in-process with the
+  // TypeScript engine (`src/core/harness/review-triggers.ts`) instead — the
+  // same engine the GitHub PR review flow uses.
+  let evaluation: ReviewTriggerReport | null = null;
+  try {
+    const { rules: scopeTriggerRules } = await loadReviewTriggerRules(reviewRoot);
+    const numstat = await runCommand(`git diff --numstat ${shellQuote(reviewRange)}`, {
+      cwd: reviewRoot,
+      stream: false,
+    });
+    if (numstat.exitCode !== 0) {
+      throw new Error(`git diff --numstat ${reviewRange} exited ${numstat.exitCode}`);
+    }
+    evaluation = evaluateReviewTriggers({
+      rules: scopeTriggerRules,
+      changedFiles: scopeFiles.committedFiles,
+      diffStats: parseDiffNumstat(numstat.output, scopeFiles.committedFiles.length),
+      base: reviewRange,
+      repoRoot: reviewRoot,
+    });
+  } catch {
+    evaluation = null;
+  }
 
-  if (review.exitCode === 0) {
+  if (evaluation && evaluation.triggers.length === 0) {
     if (outputMode === "human") {
       console.log("No review trigger matched.");
       console.log("");
@@ -1032,15 +1082,23 @@ export async function runReviewTriggerPhase(outputMode: "human" | "jsonl" = "hum
   }
 
   const report = {
-    ...parseReport(review.output),
+    ...emptyReport(),
     base: reviewBase,
+    triggers: evaluation ? evaluation.triggers.map(toPayloadTrigger) : [],
     committed_files: scopeFiles.committedFiles,
     changed_files: scopeFiles.committedFiles,
     working_tree_files: scopeFiles.workingTreeFiles,
     untracked_files: scopeFiles.untrackedFiles,
+    diff_stats: evaluation
+      ? {
+          file_count: evaluation.diffStats.fileCount,
+          added_lines: evaluation.diffStats.addedLines,
+          deleted_lines: evaluation.diffStats.deletedLines,
+        }
+      : { file_count: scopeFiles.committedFiles.length },
   } satisfies ReviewReport;
   const ownershipRouting = await loadOwnershipRoutingContext(reviewRoot, report);
-  if (review.exitCode !== 3) {
+  if (!evaluation) {
     if (shouldBypassUnavailableReviewGate()) {
       const message = `${REVIEW_UNAVAILABLE_BYPASS_ENV}=1 set, bypassing unavailable review gate.`;
       if (outputMode === "human") {

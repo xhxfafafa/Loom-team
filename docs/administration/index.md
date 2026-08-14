@@ -27,19 +27,19 @@ than only using one session at a time.
     <span className="routa-start-card__badge">Hosting</span>
     <h3>Self-Host Routa</h3>
     <p>Run the browser and runtime surfaces in your own environment for a team.</p>
-    <a className="routa-inline-link" href="/routa/administration/self-hosting">Open Self-Hosting</a>
+    <a className="routa-inline-link" href="/Loom-team/administration/self-hosting">Open Self-Hosting</a>
   </div>
   <div className="routa-start-card">
     <span className="routa-start-card__badge">Distribution</span>
     <h3>Publish Releases</h3>
     <p>Use this when you need to ship Desktop, CLI, or Web artifacts.</p>
-    <a className="routa-inline-link" href="/routa/release-guide">Open Release Guide</a>
+    <a className="routa-inline-link" href="/Loom-team/release-guide">Open Release Guide</a>
   </div>
   <div className="routa-start-card">
     <span className="routa-start-card__badge">Runtime</span>
     <h3>Prepare Configuration</h3>
     <p>Make sure providers, models, and environment values line up with your deployment.</p>
-    <a className="routa-inline-link" href="/routa/configuration">Open Configuration</a>
+    <a className="routa-inline-link" href="/Loom-team/configuration">Open Configuration</a>
   </div>
 </div>
 

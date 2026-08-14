@@ -33,13 +33,13 @@ The most important configuration areas are:
     <span className="routa-start-card__badge">Required</span>
     <h3>Providers And Models</h3>
     <p>Make one provider available and point one role at one working model.</p>
-    <a className="routa-inline-link" href="/routa/configuration/providers-and-models">Open Providers And Models</a>
+    <a className="routa-inline-link" href="/Loom-team/configuration/providers-and-models">Open Providers And Models</a>
   </div>
   <div className="routa-start-card">
     <span className="routa-start-card__badge">Optional</span>
     <h3>Environment Variables</h3>
     <p>Use this when local runtime wiring or deployment needs explicit env values.</p>
-    <a className="routa-inline-link" href="/routa/configuration/environment-variables">Open Environment Variables</a>
+    <a className="routa-inline-link" href="/Loom-team/configuration/environment-variables">Open Environment Variables</a>
   </div>
 </div>
 

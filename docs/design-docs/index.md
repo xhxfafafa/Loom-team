@@ -14,27 +14,27 @@ If you are still trying to get Routa running, go back to [Quick Start](/quick-st
 ## Choose A Reading Path
 
 <div className="routa-doc-map">
-  <a href="/routa/ARCHITECTURE">
+  <a href="/Loom-team/ARCHITECTURE">
     <strong>Architecture</strong>
     Start here when you need system boundaries, runtime topology, and the web/desktop parity
     model.
   </a>
-  <a href="/routa/adr">
+  <a href="/Loom-team/adr">
     <strong>Architecture Decisions</strong>
     Read the ADR index when you need the durable decisions behind providers, workspaces,
     Kanban automation, and specialist loading.
   </a>
-  <a href="/routa/design-docs/execution-modes">
+  <a href="/Loom-team/design-docs/execution-modes">
     <strong>Execution Modes</strong>
     Understand the product meaning of `Session`, `Kanban`, and `Team` before changing workflow
     behavior.
   </a>
-  <a href="/routa/design-docs/workspace-centric-redesign">
+  <a href="/Loom-team/design-docs/workspace-centric-redesign">
     <strong>Workspace-Centric Redesign</strong>
     Use this to understand the current product shape, shipped changes, and remaining transition
     debt.
   </a>
-  <a href="/routa/design-docs/core-beliefs">
+  <a href="/Loom-team/design-docs/core-beliefs">
     <strong>Core Beliefs</strong>
     Read the product and repository principles that should survive refactors and UI changes.
   </a>

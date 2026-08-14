@@ -10,16 +10,16 @@ This section is the fastest way to see what changed recently in Routa.
 ## Start Here
 
 <div className="routa-doc-map">
-  <a href="/routa/releases/v0.14.0-release-notes">
+  <a href="/Loom-team/releases/v0.14.0-release-notes">
     <strong>Curated Release Notes</strong>
     Start here if you want the highest-signal, user-facing summary of the latest release.
   </a>
-  <a href="/routa/releases/v0.14.0-changelog">
+  <a href="/Loom-team/releases/v0.14.0-changelog">
     <strong>Technical Changelog</strong>
     Read the commit-grouped changelog generated from `release:changelog` when you want the raw
     release delta.
   </a>
-  <a href="/routa/blog">
+  <a href="/Loom-team/blog">
     <strong>Blog</strong>
     Use longer write-ups for product direction, architecture background, and workflow design.
   </a>

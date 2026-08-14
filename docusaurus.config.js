@@ -1,11 +1,11 @@
 /** @type {import("@docusaurus/types").Config} */
 module.exports = {
-  title: "Routa",
+  title: "Loom-team",
   tagline: "Workspace-first multi-agent coordination for real software delivery",
-  url: "https://phodal.github.io",
-  baseUrl: "/routa/",
-  organizationName: "phodal",
-  projectName: "routa",
+  url: "https://xhxfafafa.github.io",
+  baseUrl: "/Loom-team/",
+  organizationName: "xhxfafafa",
+  projectName: "Loom-team",
   trailingSlash: false,
   favicon: "favicon.ico",
   staticDirectories: ["public"],
@@ -75,15 +75,15 @@ module.exports = {
       respectPrefersColorScheme: true,
     },
     announcementBar: {
-      id: "routa-docs",
+      id: "loom-team-docs",
       content:
-        'Routa — workspace-first AI agent coordination across ACP, MCP, A2A &amp; AG-UI.',
+        'Loom-team — workspace-first AI agent coordination across ACP, MCP, A2A &amp; AG-UI.',
       isCloseable: true,
     },
     navbar: {
-      title: "Routa",
+      title: "Loom-team",
       logo: {
-        alt: "Routa logo",
+        alt: "Loom-team logo",
         src: "logo-symbol.svg",
         srcDark: "logo-symbol-dark.svg",
       },
@@ -97,7 +97,7 @@ module.exports = {
         {
           type: "doc",
           docId: "use-routa/index",
-          label: "Use Routa",
+          label: "Use Loom-team",
           position: "left",
         },
         {
@@ -181,14 +181,6 @@ module.exports = {
               to: "/quick-start",
             },
             {
-              label: "Desktop Releases",
-              href: "https://github.com/phodal/routa/releases",
-            },
-            {
-              label: "CLI Package",
-              href: "https://www.npmjs.com/package/routa-cli",
-            },
-            {
               label: "Platforms",
               to: "/platforms",
             },
@@ -207,7 +199,7 @@ module.exports = {
           ],
         },
         {
-          title: "Use Routa",
+          title: "Use Loom-team",
           items: [
             {
               label: "Overview",
@@ -269,12 +261,12 @@ module.exports = {
             },
             {
               label: "GitHub",
-              href: "https://github.com/phodal/routa",
+              href: "https://github.com/xhxfafafa/Loom-team",
             },
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Routa`,
+      copyright: `Copyright © ${new Date().getFullYear()} Loom-team`,
     },
   },
 };

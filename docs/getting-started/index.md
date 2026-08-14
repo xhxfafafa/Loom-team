@@ -5,31 +5,27 @@ hide_table_of_contents: true
 
 # Getting Started
 
-This section is for the first 10 minutes with Routa: what it is, which surface to choose, and
+This section is for the first 10 minutes with Loom-team: what it is, how to run it, and
 what "working" should look like after setup.
 
-## Choose Your Surface
+## Run Loom-team
+
+Loom-team is a Web-only product: one Next.js backend serves the UI, the API, and the agent
+runtime.
 
 <div className="routa-doc-map">
-  <a href="/routa/platforms/desktop">
-    <strong>Desktop</strong>
-    Recommended for most users. Install from GitHub Releases and use the full workspace,
-    session, kanban, and team UI.
+  <a href="/Loom-team/platforms/web">
+    <strong>Web — Local Development</strong>
+    Run from source with <code>npm run dev</code> and open <code>http://localhost:3000</code>.
+    Uses SQLite by default, so no external database is needed.
   </a>
-  <a href="/routa/platforms/cli">
-    <strong>CLI</strong>
-    Best for terminal-first usage. Install with <code>npm install -g routa-cli</code> and start
-    with prompts, scripting, or ACP/runtime inspection.
-  </a>
-  <a href="/routa/platforms/web">
-    <strong>Web</strong>
-    Best for browser-based access and self-hosting. Run from source when you want the browser
-    runtime rather than the packaged desktop path.
+  <a href="/Loom-team/administration/self-hosting">
+    <strong>Web — Self-Hosted</strong>
+    Deploy the Docker build for your own team, with SQLite or Postgres persistence.
   </a>
 </div>
 
-If you only want the shortest path to a successful first run, start with [Quick Start](/quick-start)
-and choose `Desktop` or `CLI`.
+If you only want the shortest path to a successful first run, start with [Quick Start](/quick-start).
 
 ## What To Do First
 
@@ -38,32 +34,32 @@ Do not try to learn the whole product on day one. Reach one useful outcome first
 <div className="routa-start-grid">
   <div className="routa-start-card">
     <span className="routa-start-card__badge">Step 1</span>
-    <h3>Pick One Surface</h3>
-    <p>Choose Desktop, CLI, or Web based on how you already work.</p>
-    <a className="routa-inline-link" href="/routa/quick-start">Open Quick Start</a>
+    <h3>Start The Web App</h3>
+    <p>Run Loom-team locally with <code>npm run dev</code>, or deploy the Docker build.</p>
+    <a className="routa-inline-link" href="/Loom-team/quick-start">Open Quick Start</a>
   </div>
   <div className="routa-start-card">
     <span className="routa-start-card__badge">Step 2</span>
     <h3>Enable One Provider</h3>
     <p>You only need one working provider and one valid model path to get moving.</p>
-    <a className="routa-inline-link" href="/routa/configuration">Open Configuration</a>
+    <a className="routa-inline-link" href="/Loom-team/configuration">Open Configuration</a>
   </div>
   <div className="routa-start-card">
     <span className="routa-start-card__badge">Step 3</span>
     <h3>Run Against A Real Repo</h3>
-    <p>Attach a codebase or open a repository, then start with a Session or one CLI prompt.</p>
-    <a className="routa-inline-link" href="/routa/use-routa">Open Use Routa</a>
+    <p>Attach a codebase or open a repository, then start with a Session.</p>
+    <a className="routa-inline-link" href="/Loom-team/use-routa">Open Use Loom-team</a>
   </div>
 </div>
 
 ## Recommended Reading Order
 
-1. Read [Quick Start](/quick-start) to pick `Desktop`, `CLI`, or `Web`.
-2. Follow the matching platform page for install and first-run steps.
+1. Read [Quick Start](/quick-start) for the Web run path.
+2. Follow the [Web platform page](/platforms/web) for run and deployment steps.
 3. Open [Configuration](/configuration) if you still need a provider or model.
 4. Read [Core Concepts](/core-concepts) once the product is already running.
 
-## What "Started" Means In Routa
+## What "Started" Means In Loom-team
 
 You are successfully onboarded once you can do all of the following:
 
@@ -76,4 +72,4 @@ You are successfully onboarded once you can do all of the following:
 
 - [Quick Start](/quick-start): fast install and first-run path
 - [Changelog](/getting-started/changelog): release notes and release history entry points
-- [Platforms](/platforms): Desktop, CLI, and Web as separate runtime surfaces
+- [Platforms](/platforms): the Web-only runtime surface

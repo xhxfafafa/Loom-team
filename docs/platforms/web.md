@@ -4,14 +4,16 @@ title: Web
 
 # Web
 
-Web is a first-class Routa runtime surface when you want browser-based access instead of the
-packaged desktop app.
+The web app is the product surface of Loom-team: a Next.js backend serves the UI, the API,
+and the agent runtime, and you use it in the browser.
 
 ## When To Use Web
 
-- self-hosting
-- browser-based access for your own team
-- internal deployment that preserves the same workspace model used by Desktop
+Always — Web is the only runtime surface. Typical setups:
+
+- local development from source
+- self-hosting for your own team
+- internal deployment with Postgres persistence
 
 ## Run Locally
 
@@ -22,25 +24,21 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-If you want the web UI to point at a local backend:
+Local development uses SQLite by default (`ROUTA_DB_DRIVER=sqlite`), so no external
+database is required for a first run. See
+[Environment Variables](/configuration/environment-variables) for storage options.
+
+## Production
+
+For a production deployment, build the standalone output and run it behind your preferred
+hosting:
 
 ```bash
-ROUTA_RUST_BACKEND_URL="http://127.0.0.1:3210" npm run dev
+npm run build:docker
 ```
 
-## Best Fit
-
-Use Web when you want:
-
-- the browser surface instead of a packaged desktop app
-- self-hosted deployment for your own team
-- a hosted internal entry point to the same product model
-
-## Why Web Is Different
-
-Web is intentionally described as a runtime surface, not the default first-install path. If
-your goal is to start using Routa quickly, choose [Desktop](/platforms/desktop) or
-[CLI](/platforms/cli) first.
+Docker Compose profiles cover SQLite and Postgres; see
+[Self-Hosting](/administration/self-hosting) and [Deployment](/deployment).
 
 ## Related Docs
 

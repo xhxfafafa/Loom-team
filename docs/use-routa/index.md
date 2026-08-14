@@ -23,19 +23,19 @@ provider is available.
     <span className="routa-start-card__badge">Default</span>
     <h3>Sessions</h3>
     <p>Use this if you want the shortest path from repo to useful work.</p>
-    <a className="routa-inline-link" href="/routa/use-routa/sessions">Open Sessions</a>
+    <a className="routa-inline-link" href="/Loom-team/use-routa/sessions">Open Sessions</a>
   </div>
   <div className="routa-start-card">
     <span className="routa-start-card__badge">Flow</span>
     <h3>Kanban</h3>
     <p>Use this when work needs explicit stages, automation, and review gates.</p>
-    <a className="routa-inline-link" href="/routa/use-routa/kanban">Open Kanban</a>
+    <a className="routa-inline-link" href="/Loom-team/use-routa/kanban">Open Kanban</a>
   </div>
   <div className="routa-start-card">
     <span className="routa-start-card__badge">Coordination</span>
     <h3>Team</h3>
     <p>Use this when routing work across specialists is itself the main problem.</p>
-    <a className="routa-inline-link" href="/routa/use-routa/team">Open Team</a>
+    <a className="routa-inline-link" href="/Loom-team/use-routa/team">Open Team</a>
   </div>
 </div>
 

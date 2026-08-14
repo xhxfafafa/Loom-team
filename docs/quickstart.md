@@ -1,6 +1,6 @@
 ---
 slug: /
-title: Routa
+title: Loom-team
 displayed_sidebar: docsSidebar
 hide_table_of_contents: true
 hide_title: true
@@ -10,49 +10,40 @@ hide_title: true
 
 <div className="routa-hero">
   <span className="routa-hero__eyebrow">Multi-Agent Coordination Platform</span>
-  <h1 className="routa-hero__title">Routa</h1>
+  <h1 className="routa-hero__title">Loom-team</h1>
   <p className="routa-hero__lead">
     Workspace-first multi-agent coordination for real software delivery.
     Keep work attached to explicit product objects such as sessions, boards,
     specialists, and codebases instead of hiding everything inside one long-running chat.
   </p>
   <div className="routa-pills">
-    <a className="routa-pill" href="/routa/quick-start">Quick Start</a>
-    <a className="routa-pill" href="/routa/platforms/desktop">Desktop</a>
-    <a className="routa-pill" href="/routa/platforms/cli">CLI</a>
-    <a className="routa-pill" href="/routa/use-routa/common-workflows">Common Workflows</a>
+    <a className="routa-pill" href="/Loom-team/quick-start">Quick Start</a>
+    <a className="routa-pill" href="/Loom-team/platforms/web">Web</a>
+    <a className="routa-pill" href="/Loom-team/use-routa/common-workflows">Common Workflows</a>
   </div>
 </div>
 
 ## Start In 5 Minutes
 
-If you are evaluating Routa, do not start by reading everything. Pick one path and aim for one
-real result:
+If you are evaluating Loom-team, do not start by reading everything. Pick one path and aim for
+one real result:
 
 <div className="routa-start-grid">
   <div className="routa-start-card">
     <span className="routa-start-card__badge">Recommended</span>
-    <h3>Desktop</h3>
-    <p>Best for most users who want the full Routa product surface with the least setup work.</p>
-    <code>Download from GitHub Releases</code>
-    <p>Create a workspace, attach a repo, then start with a Session.</p>
-    <a className="routa-inline-link" href="/routa/platforms/desktop">Open Desktop Guide</a>
-  </div>
-  <div className="routa-start-card">
-    <span className="routa-start-card__badge">Terminal First</span>
-    <h3>CLI</h3>
-    <p>Best when your repository is already open in a terminal and you want the shortest path.</p>
-    <code>npm install -g routa-cli</code>
-    <p>Then run <code>routa -p "Explain this repository"</code>.</p>
-    <a className="routa-inline-link" href="/routa/platforms/cli">Open CLI Guide</a>
+    <h3>Web — Local Development</h3>
+    <p>Best for contributors and first-time setup: the full product surface in your browser.</p>
+    <code>npm install --legacy-peer-deps && npm run dev</code>
+    <p>Open <code>http://localhost:3000</code>, create a workspace, attach a repo, then start with a Session.</p>
+    <a className="routa-inline-link" href="/Loom-team/platforms/web">Open Web Guide</a>
   </div>
   <div className="routa-start-card">
     <span className="routa-start-card__badge">Self-Hosted</span>
-    <h3>Web</h3>
-    <p>Best for browser-based access in your own environment or internal deployment.</p>
-    <code>npm run dev</code>
-    <p>Use this path when you want the browser surface rather than the packaged app.</p>
-    <a className="routa-inline-link" href="/routa/platforms/web">Open Web Guide</a>
+    <h3>Web — Deployment</h3>
+    <p>Best for running Loom-team for your own team in your own environment.</p>
+    <code>npm run build:docker</code>
+    <p>Docker Compose profiles cover SQLite and Postgres persistence.</p>
+    <a className="routa-inline-link" href="/Loom-team/administration/self-hosting">Open Self-Hosting Guide</a>
   </div>
 </div>
 
@@ -85,27 +76,27 @@ real result:
 ## Documentation
 
 <div className="routa-doc-map">
-  <a href="/routa/getting-started">
+  <a href="/Loom-team/getting-started">
     <strong>Getting Started</strong>
-    Read this only after you know whether you want Desktop, CLI, or Web.
+    Read this after your first successful run to understand what "started" means.
   </a>
-  <a href="/routa/use-routa">
-    <strong>Use Routa</strong>
+  <a href="/Loom-team/use-routa">
+    <strong>Use Loom-team</strong>
     Learn what to do after setup: Sessions, Kanban, Team, and common workflows.
   </a>
-  <a href="/routa/developer-guide">
+  <a href="/Loom-team/developer-guide">
     <strong>Developer Guide</strong>
     Use this when you need configuration, hosting, testing, or deeper technical context.
   </a>
-  <a href="/routa/design-docs">
+  <a href="/Loom-team/design-docs">
     <strong>Design Docs</strong>
     Read this only when you need design intent, invariants, or implementation reasoning.
   </a>
-  <a href="/routa/reference">
+  <a href="/Loom-team/reference">
     <strong>Reference</strong>
     Lookup material for specialists, product specs, release process, and stable references.
   </a>
-  <a href="/routa/whats-new">
+  <a href="/Loom-team/whats-new">
     <strong>What's New</strong>
     Recent release notes, changelog entry points, and current product updates.
   </a>

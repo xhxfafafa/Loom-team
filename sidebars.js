@@ -29,16 +29,6 @@ module.exports = {
             },
             {
               type: "doc",
-              id: "platforms/desktop",
-              label: "Desktop",
-            },
-            {
-              type: "doc",
-              id: "platforms/cli",
-              label: "CLI",
-            },
-            {
-              type: "doc",
               id: "platforms/web",
               label: "Web",
             },

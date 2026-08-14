@@ -11,33 +11,33 @@ first-run path, or running it in their own environment.
 ## Start Here
 
 <div className="routa-doc-map">
-  <a href="/routa/configuration">
+  <a href="/Loom-team/configuration">
     <strong>Configuration</strong>
     Set up providers, models, and environment variables so Routa can actually run useful work.
   </a>
-  <a href="/routa/administration">
+  <a href="/Loom-team/administration">
     <strong>Administration</strong>
     Use self-hosting, deployment, and release-oriented docs when you are operating Routa for a
     team or internal environment.
   </a>
-  <a href="/routa/developer-guide/project-structure">
+  <a href="/Loom-team/developer-guide/project-structure">
     <strong>Project Structure</strong>
     Learn how the desktop app, CLI, web runtime, and server pieces fit together.
   </a>
-  <a href="/routa/ARCHITECTURE">
+  <a href="/Loom-team/ARCHITECTURE">
     <strong>Architecture</strong>
     Read the canonical system boundaries, runtime topology, and dual-backend invariants.
   </a>
-  <a href="/routa/developer-guide/testing">
+  <a href="/Loom-team/developer-guide/testing">
     <strong>Testing</strong>
     Understand the validation flow and fitness tiers when changing or running Routa yourself.
   </a>
-  <a href="/routa/developer-guide/local-overlay-sync">
+  <a href="/Loom-team/developer-guide/local-overlay-sync">
     <strong>Local Overlay Sync</strong>
     Keep a self-hosted Routa checkout upgradeable when you also carry local-only patches and
     upstream PR branches.
   </a>
-  <a href="/routa/deployment">
+  <a href="/Loom-team/deployment">
     <strong>Deployment</strong>
     Use this when you are taking the web surface or supporting services into a real environment.
   </a>

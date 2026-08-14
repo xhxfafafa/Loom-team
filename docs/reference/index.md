@@ -13,15 +13,15 @@ working with.
 These are the reference pages most readers should reach first:
 
 <div className="routa-doc-map">
-  <a href="/routa/product-specs/FEATURE_TREE">
+  <a href="/Loom-team/product-specs/FEATURE_TREE">
     <strong>Product Specs</strong>
     Use this when you need route, endpoint, or API surface inventory rather than narrative docs.
   </a>
-  <a href="/routa/configuration/providers-and-models">
+  <a href="/Loom-team/configuration/providers-and-models">
     <strong>Providers & Models</strong>
     Look up supported providers, model configuration, and specialist setup.
   </a>
-  <a href="/routa/reference/resources">
+  <a href="/Loom-team/reference/resources">
     <strong>Resources</strong>
     Open the curated link hub when you already know the area and want deeper supporting material.
   </a>
@@ -32,11 +32,11 @@ These are the reference pages most readers should reach first:
 These are useful when you are operating the repository or shipping Routa itself:
 
 <div className="routa-doc-map">
-  <a href="/routa/release-guide">
+  <a href="/Loom-team/release-guide">
     <strong>Release Guide</strong>
     Maintainer release flow, package distribution, and publication steps.
   </a>
-  <a href="/routa/coding-style">
+  <a href="/Loom-team/coding-style">
     <strong>Code Style</strong>
     Implementation and testing conventions for repository changes.
   </a>

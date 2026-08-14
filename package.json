@@ -91,6 +91,8 @@
     "test:cov:ts": "node --import tsx scripts/fitness/run-vitest-coverage.ts",
     "test:run:fast": "node --import tsx scripts/fitness/run-vitest-fast.ts",
     "test:run": "vitest run",
+    "validate:web": "node scripts/validate-web.mjs",
+    "validate:web:e2e": "node scripts/validate-web-e2e.mjs",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --project=chromium-headed",
     "test:e2e:desktop-shell": "node scripts/deprecated/run-desktop-shell-regression.mjs",

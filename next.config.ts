@@ -3,9 +3,6 @@ import type { NextConfig } from "next";
 const isWebStandaloneBuild = process.env.ROUTA_WEB_STANDALONE === "1";
 const isPageSnapshotServerBuild = process.env.ROUTA_PAGE_SNAPSHOT_SERVER === "1";
 
-// When set, proxy API requests to the Rust backend server (desktop mode without Node.js backend)
-const rustBackendUrl = process.env.ROUTA_RUST_BACKEND_URL;
-
 // Allow additional dev origins via ROUTA_ALLOWED_DEV_ORIGINS environment variable
 // Format: comma-separated list of IP addresses or hostnames (e.g., "192.168.1.210,10.0.0.5")
 const additionalDevOrigins = process.env.ROUTA_ALLOWED_DEV_ORIGINS
@@ -57,24 +54,6 @@ const nextConfig: NextConfig = {
             "./resources/specialists/**/*",
           ],
           "/*": ["./node_modules/better-sqlite3/**/*"],
-        },
-      }
-    : {}),
-  // Proxy /api/* to Rust backend when ROUTA_RUST_BACKEND_URL is set.
-  // Uses beforeFiles to override local Next.js API routes.
-  ...(rustBackendUrl
-    ? {
-        async rewrites() {
-          return {
-            beforeFiles: [
-              {
-                source: "/api/:path*",
-                destination: `${rustBackendUrl}/api/:path*`,
-              },
-            ],
-            afterFiles: [],
-            fallback: [],
-          };
         },
       }
     : {}),

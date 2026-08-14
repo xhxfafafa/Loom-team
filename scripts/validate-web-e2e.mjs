@@ -52,6 +52,8 @@ function runSync(label, cmd, args, opts = {}) {
 function startServer(dbPath) {
   console.log(`\nStarting Next.js server on port ${PORT}...`);
 
+  // detached: true makes the child a process-group leader so the finally
+  // block can kill the whole npx -> next -> next-server tree at once.
   const child = spawn("npx", ["next", "start", "-p", String(PORT)], {
     env: {
       ...process.env,
@@ -59,9 +61,21 @@ function startServer(dbPath) {
       ROUTA_DB_PATH: dbPath,
     },
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   });
 
   return child;
+}
+
+function killServerGroup(child) {
+  if (!child || child.pid == null) {
+    return;
+  }
+  try {
+    process.kill(-child.pid, "SIGTERM");
+  } catch {
+    // already gone
+  }
 }
 
 function waitForReady(child, timeoutMs = 60_000) {
@@ -104,7 +118,7 @@ async function main() {
     // Check .next exists
     if (!fs.existsSync(".next")) {
       console.error("[validate:web:e2e] .next directory not found. Run validate:web first.");
-      process.exit(1);
+      return 1;
     }
 
     // Start server
@@ -115,7 +129,7 @@ async function main() {
       console.log(`✓ Server ready on port ${PORT}`);
     } catch (err) {
       console.error(`✖ Server failed to start: ${err.message}`);
-      process.exit(1);
+      return 1;
     }
 
     // Run api:test:nextjs (run the underlying command directly to control BASE_URL)
@@ -130,7 +144,7 @@ async function main() {
     results.push(apiResult);
     if (apiResult.code !== 0) {
       console.error("Stopping after api:test:nextjs failure.");
-      process.exit(1);
+      return 1;
     }
 
     // Install Playwright chromium if needed
@@ -142,7 +156,7 @@ async function main() {
       console.error(`⚠ Playwright chromium install failed: ${err.message}`);
       console.error("Recording as environment limitation (§13). Skipping Playwright specs.");
       results.push({ label: "playwright-install", code: 0, elapsed: "0.0", note: "skipped (env limitation)" });
-      process.exit(0);
+      return 0;
     }
 
     // Run Playwright specs
@@ -170,15 +184,17 @@ async function main() {
     }
 
     const allGreen = results.every((r) => r.code === 0);
-    process.exit(allGreen ? 0 : 1);
+    return allGreen ? 0 : 1;
   } finally {
-    // Kill server
-    if (server) {
-      server.kill("SIGTERM");
-      // Give it a moment to shut down gracefully
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      if (server.exitCode === null) {
-        server.kill("SIGKILL");
+    // Kill the whole server process group (npx -> next -> next-server),
+    // then force-kill anything still alive so no orphan keeps the port.
+    killServerGroup(server);
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    if (server && server.pid != null) {
+      try {
+        process.kill(-server.pid, "SIGKILL");
+      } catch {
+        // already gone
       }
     }
     // Cleanup temp dir
@@ -190,4 +206,9 @@ async function main() {
   }
 }
 
-main();
+main()
+  .then((code) => process.exit(code))
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

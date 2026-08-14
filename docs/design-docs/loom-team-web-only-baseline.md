@@ -186,3 +186,30 @@ beforehand; `--no-verify`, force push and hard resets remain unused.
 `crates/routa-server/tests/rust_api_task_artifacts.rs::api_a2a_rpc_supports_spec_task_methods`
 (expected 200, got 404 on `POST /api/a2a/rpc`); all other Rust workspace tests pass;
 fails identically in the source repo at ff6ac33c.
+
+## Phase 4b porting decisions
+
+### B6 — Harness fluency: NOT ported (recorded decision)
+
+The §5.3 porting table does not include the harness-fluency engine, and investigation
+confirms there is no Web execution path that needs it:
+
+- The scoring engine is Rust-only (`cargo run -p routa-cli -- fitness fluency`, detectors
+  and snapshots in `crates/routa-cli`, model at `docs/fitness/harness-fluency.model.yaml`).
+  Consumers: `npm run fitness:fluency` (package.json, dev CLI only) and the deprecated
+  forwarder `tools/harness-fluency` (self-described shim onto routa-cli). No CI workflow,
+  husky hook, or entrix gate runs it.
+- Web-facing pieces are passive data serving, not execution:
+  `/api/fitness/specs` serves the static `harness-fluency*.yaml` model/profile files;
+  `/api/fitness/report` serves `docs/fitness/reports/harness-fluency*-latest.json`
+  snapshots and tolerates their absence.
+- `docs/harness/automations.yml` defines `weekly-harness-fluency` targeting specialist
+  `harness-fluency`, but no such specialist exists in the Web specialist registry, so the
+  automation has no executable binding at baseline either.
+- `src/core/fitness/repo-root.ts` uses `harness-fluency.model.yaml` only as a repo-marker
+  heuristic; the marker file itself stays, the heuristic is revisited in Phase 4c.
+
+Disposition: no TypeScript port. The Rust engine, the `fitness:fluency` script and the
+`tools/harness-fluency` shim are deleted in Phase 4c with the crates; the stale fluency
+references (automation entry, report route profile) are converged in Phase 5 per the
+migration plan. Historical snapshot files and the YAML model remain as data.

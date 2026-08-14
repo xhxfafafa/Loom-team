@@ -65,6 +65,13 @@ Phase 0 probe server. Restartable with the same command; no data impact.
    kanban 88.9% (< 95%), mcp-tools 2.2%. Baseline images were captured in a different rendering
    environment; CI validates under xvfb with `--ci`. Not treated as a migration blocker; the
    snapshot suite remains available as a regression signal after Web-only changes.
+   Phase 7 re-run (2026-08-14, `npm run validate:web`): same failure signature — home 0.0%,
+   mcp-tools 2.2%, kanban 78.9%, workspace 81.0% (< 90%); traces 93.5% and session-detail 100%
+   pass. Confirmed format drift, not a UI regression: the committed baselines were generated
+   2026-03-25 by `playwright-cli` (aria-snapshot lines carry `[ref=eN]` annotations, e.g.
+   `- generic [active] [ref=e1]:`) while the current Playwright emits a different shape
+   (`- banner:`), so multiset line similarity collapses mechanically; kanban/workspace deltas
+   additionally track dev-database content drift since Phase 0. Phase 7 made no UI code changes.
 4. **Broken Rust test left behind by an upstream slimming commit — `rust_test_pass` FAILS at
    baseline.** `cargo test -p routa-server --test rust_api_task_artifacts
    api_a2a_rpc_supports_spec_task_methods` fails deterministically (reproduced twice, also in
@@ -256,3 +263,88 @@ tested, then goes with the routa-cli crate in Phase 4c.
 What remains true from the original entry: no CI workflow, husky hook, or entrix gate
 runs fluency; the `weekly-harness-fluency` automation targets a specialist that does not
 exist in the Web registry; the report/spec routes are passive data serving.
+
+## Phase 7 retention audit table (Web-only migration)
+
+Final canonical sweep (doc §final, line 769):
+
+```
+rg -n "__TAURI__|ROUTA_DESKTOP|ROUTA_RUST_BACKEND_URL|127\.0\.0\.1:3210|apps/desktop|routa-server|cargo run|routa-cli" . -g '!node_modules/**' -g '!.git/**' -g '!.next/**'
+```
+
+Result: **zero hits in production code, active configuration, and CI** after commit
+C12 (docs/harness surface configs). All remaining hits are classified below. Per doc
+§3.2/§3.3, no mass Routa-identifier rename happens in this migration round; full
+rebrand is a separate later phase. Each retained item lists its deletion condition.
+
+### A. Test-fixture sample data (Rust-era path strings inside tests of alive features)
+
+These strings are inert sample data in tests for Web features that are alive
+(kanban context-preload/agent-trigger, feature-explorer session analysis, MCP tool
+executor, review triggers, hook-runtime review, architecture-rule DSL, canvas
+compiler). Rewriting them would be a cosmetic change to passing tests; keeping them
+preserves test intent and git blame. Deletion condition: none required — they may be
+modernized opportunistically when the owning test is touched for other reasons.
+
+| File | Hits |
+| --- | --- |
+| src/core/kanban/__tests__/context-preload.test.ts | 15 |
+| src/app/workspace/[workspaceId]/feature-explorer/__tests__/feature-explorer-page-client.session-analysis.test.tsx | 15 |
+| src/app/workspace/[workspaceId]/feature-explorer/__tests__/session-analysis.test.ts | 10 |
+| tools/hook-runtime/src/__tests__/review.test.ts | 6 |
+| src/app/api/feature-explorer/__tests__/shared.test.ts | 4 |
+| src/core/kanban/__tests__/agent-trigger.test.ts | 3 |
+| src/app/workspace/[workspaceId]/kanban/__tests__/kanban-tab-detail-and-prompts.test.tsx | 3 |
+| src/app/api/tasks/[taskId]/__tests__/route.test.ts | 3 |
+| scripts/__tests__/architecture-rule-dsl.test.ts | 3 |
+| src/core/tools/__tests__/agent-tools-extended.test.ts | 2 |
+| src/core/mcp/__tests__/mcp-tool-executor.test.ts | 2 |
+| src/core/harness/__tests__/task-adaptive-tool.test.ts | 2 |
+| src/core/github/__tests__/review-trigger-pr-review.test.ts | 2 |
+| src/client/components/__tests__/harness-automation-panel.test.tsx | 1 |
+| src/app/workspace/[workspaceId]/feature-explorer/__tests__/feature-explorer-page-client.test.tsx | 1 |
+| src/app/api/spec/surface-index/__tests__/route.test.ts | 1 |
+| e2e/feature-explorer-session-analysis.spec.ts | 15 |
+
+Related: src/client/canvas-runtime/__tests__/compiler.test.ts contains inline mock
+identifiers of the removed office-widget modules (kept in C9 — they are compile
+fixtures for the canvas compiler, not imports of deleted code).
+
+### B. Naming/identifier legacy (§3.2 no mass rename; §3.3 rebrand = separate phase)
+
+| Item | Location | Reason retained | Deletion condition |
+| --- | --- | --- | --- |
+| `desktop-*` component names | src/client/components/desktop-{app-shell,layout,shell-header,sidebar}.tsx (+ stories) | Pure naming; components are the live Web app shell. Renaming touches every mount/test/story. | Full rebrand phase (§3.3), with codemod + tests. |
+| `ROUTA_` env-var prefix | next.config.ts, src/**, scripts/** (~50 vars, e.g. ROUTA_DATA_DIR, ROUTA_ACP_RUNNER_URL) | Production-facing contract; renaming silently breaks existing deployments. | Breaking-change release with documented env migration guide. |
+| `entrixFitness` i18n label ("Entrix Fitness") | src/i18n/locales/{en,zh}.ts | User-visible label of a live Harness page; entrix runtime is gone but the label rename is branding scope. | Rebrand phase; trivial two-file change. |
+| package.json branding | `"name": "routa-js"`, description, homepage/bugs → phodal/routa | npm-package identity; renaming affects lockfiles/publish metadata. | Rebrand phase together with repo/product naming decision. |
+| "Contributing to Routa" title | CONTRIBUTING.md | Branding class; body is already Web-only. | Rebrand phase. |
+| "design decisions specific to Routa" prose | docs/references/README.md | Branding class. | Rebrand phase. |
+
+### C. Structural duplicates and standalone debug utilities
+
+| Item | Location | Reason retained | Deletion condition |
+| --- | --- | --- | --- |
+| Dual feature-tree generators | scripts/docs/feature-tree-generator.ts + src/core/spec/feature-tree-generator.ts | Both alive: runtime Feature Explorer UI uses the src/core/spec module; the scripts module serves CLI/docs regeneration and delegates to src/core/spec for --save/--json. Both keep the rustApis plumbing shape (fed empty arrays) so surface-index consumers and persisted schemas are untouched. | Consolidation is a refactor with its own design review; not required by the migration. |
+| scripts/debug-task-changes-perf.ts | scripts/ | Standalone TS perf-profiling script for the alive tasks-changes API; zero package.json/CI consumers but not desktop/Rust residue. | Delete when task-changes perf work concludes, or adopt into a `debug:*` script. |
+
+### D. Docs-history files (factual records of the dual-backend era)
+
+Historical records are not rewritten. Total sweep hits: docs/issues/* 185,
+docs/releases/* 20, docs/reviews/* 7, docs/exec-plans/* 6, docs/references/
+harness-trace-learning-technical.md 6, migration + baseline design docs 64
+(self-referential), other docs 15 (docs/REFACTOR.md, docs/features/
+merge-plan-windows-compat-i18n.md, docs/routa-product-scope-and-performance-audit-brief.md,
+docs/fitness/poc/fitness-v2-schema.md, docs/design-docs/workspace-centric-redesign.md,
+docs/design-docs/architecture-rule-dsl.md), root CHANGELOG.md + routa-desktop.md 4.
+
+Deletion condition: none — history. docs/references/harness-trace-learning-technical.md
+describes the former Rust fluency implementation; the live engine is the TypeScript
+port in src/core/fitness/fluency/ (see B6 record above). A superseding note may be
+added when the reference set is next curated.
+
+### E. api-contract coverage gap (baseline-inherited, not a migration regression)
+
+31 Next-only routes are absent from tests/api-contract/api-contract.yaml (baseline
+count from Phase 0). Expanding contract coverage is feature work, not migration
+cleanup; tracked as technical debt rather than fixed here.

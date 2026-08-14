@@ -61,12 +61,10 @@ const eslintConfig = [
     ignores: [
       ".worktrees/**",
       ".next/**",
-      ".next-desktop/**",
       ".next-page-snapshots/**",
       ".docusaurus/**",
       ".venv-security-review/**",
       "**/.next/**",
-      "**/.next-desktop/**",
       "**/.next-page-snapshots/**",
       "**/.docusaurus/**",
       "node_modules/**",

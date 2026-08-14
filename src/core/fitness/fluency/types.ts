@@ -18,14 +18,13 @@ export const MAX_REGEX_INPUT_LENGTH = 20_000;
 export const MAX_RECOMMENDATIONS = 5;
 
 export const ALLOWED_COMMAND_EXECUTABLES = [
-  "cargo", "entrix", "git", "node", "npm", "npx", "pnpm", "python", "python3", "uv",
+  "cargo", "git", "node", "npm", "npx", "pnpm", "python", "python3", "uv",
 ] as const;
 
 export const DEFAULT_GLOB_IGNORE: readonly string[] = [
   "**/.git/**",
   "**/.next/**",
   "**/.next-*/**",
-  "**/.next-desktop/**",
   "**/_next/**",
   "**/.nuxt/**",
   "**/.pnpm-store/**",

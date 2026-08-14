@@ -10,7 +10,7 @@ assignees: ""
 
 ## Environment
 
-- Runtime: web / desktop / both
+- Runtime: web
 - OS:
 - Version / commit:
 

@@ -36,8 +36,8 @@
   <circle cx="168" cy="852" r="132" fill="#ECFDF5" opacity="0.55"/>
   <circle cx="1186" cy="836" r="86" fill="#FEF3C7" opacity="0.45"/>
 
-  <text x="84" y="88" class="title">Routa.js Architecture</text>
-  <text x="84" y="118" class="subtitle">ACP-centric view of the current implementation: product surface → runtime surfaces → orchestration core → provider families → execution substrates</text>
+  <text x="84" y="88" class="title">Loom-team Architecture</text>
+  <text x="84" y="118" class="subtitle">ACP-centric view of the Web-only implementation: product surface → single web backend → orchestration core → provider families → execution substrates</text>
   <rect x="84" y="138" width="1272" height="4" rx="2" fill="url(#heroLine)"/>
 
   <rect x="84" y="144" width="1272" height="88" rx="16" fill="#FFFFFF" stroke="#E2E8F0" filter="url(#panelShadow)"/>
@@ -46,26 +46,18 @@
   <text x="128" y="172" class="tag" fill="#1D4ED8">PRODUCT</text>
   <text x="112" y="202" class="section">Product Surface</text>
   <text x="112" y="222" class="body">Workspace / Session / Kanban / Team / Settings / Traces</text>
-  <text x="720" y="202" class="body">Shared domain model</text>
-  <text x="720" y="222" class="body">across Web and Desktop</text>
+  <text x="720" y="202" class="body">One domain model served by</text>
+  <text x="720" y="222" class="body">a single Next.js backend</text>
 
-  <rect x="84" y="274" width="610" height="182" rx="16" fill="#FFFFFF" stroke="#E2E8F0" filter="url(#panelShadow)"/>
+  <rect x="84" y="274" width="1272" height="182" rx="16" fill="#FFFFFF" stroke="#E2E8F0" filter="url(#panelShadow)"/>
   <rect x="84" y="274" width="8" height="182" rx="4" fill="#3B82F6"/>
-  <rect x="112" y="292" width="74" height="24" rx="10" fill="#EFF6FF"/>
-  <text x="128" y="308" class="tag" fill="#1D4ED8">WEB</text>
-  <text x="112" y="342" class="section">Web Runtime</text>
-  <text x="112" y="370" class="body">Next.js pages and route handlers in `src/app/`</text>
-  <text x="112" y="394" class="body">REST / ACP / MCP / A2A / AG-UI / A2UI / SSE</text>
-  <text x="112" y="418" class="body">`RoutaSystem` wires stores, tools, and automation</text>
-
-  <rect x="746" y="274" width="610" height="182" rx="16" fill="#FFFFFF" stroke="#E2E8F0" filter="url(#panelShadow)"/>
-  <rect x="746" y="274" width="8" height="182" rx="4" fill="#10B981"/>
-  <rect x="774" y="292" width="104" height="24" rx="10" fill="#ECFDF5"/>
-  <text x="790" y="308" class="tag" fill="#047857">DESKTOP</text>
-  <text x="774" y="342" class="section">Desktop Runtime</text>
-  <text x="774" y="370" class="body">Tauri shell plus Axum server powered by Rust `AppState`</text>
-  <text x="774" y="394" class="body">REST / ACP / MCP / RPC / sandbox / worktree / filesystem</text>
-  <text x="774" y="418" class="body">Local-first SQLite, Docker, and native process execution</text>
+  <rect x="112" y="292" width="170" height="24" rx="10" fill="#EFF6FF"/>
+  <text x="128" y="308" class="tag" fill="#1D4ED8">WEB (SINGLE BACKEND)</text>
+  <text x="112" y="342" class="section">Web Backend</text>
+  <text x="112" y="370" class="body">Next.js pages and route handlers in `src/app/`, TypeScript domain core in `src/core/`</text>
+  <text x="112" y="394" class="body">REST / ACP / MCP / A2A / AG-UI / A2UI / SSE — contract in `api-contract.yaml`</text>
+  <text x="112" y="418" class="body">`RoutaSystem` wires stores, tools, and automation; SQLite local-first, Postgres in production</text>
+  <text x="112" y="440" class="body">ACP runtime, sandbox, worktree, scanner, trace, and fitness engines run in TypeScript/Node</text>
 
   <rect x="168" y="494" width="1104" height="210" rx="16" fill="#FFFFFF" stroke="#E2E8F0" filter="url(#panelShadow)"/>
   <rect x="168" y="494" width="8" height="210" rx="4" fill="#F59E0B"/>

@@ -1,11 +1,11 @@
 ---
 status: canonical
-purpose: Canonical architecture overview for Routa.js runtime boundaries, domain model, protocol stack, and cross-backend invariants.
+purpose: Canonical architecture overview for the Loom-team Web-only runtime boundaries, domain model, protocol stack, and invariants.
 principles:
   - Workspace-first scope over hidden global state
-  - Dual-backend semantic parity between Next.js and Rust
+  - Single Next.js backend for UI, API, and agent runtime
   - Protocol-oriented orchestration over provider-specific coupling
-  - Local-first execution for desktop and development flows
+  - Local-first development (SQLite) with production Postgres deployment
   - Durable system boundaries over endpoint-by-endpoint duplication
 update_policy:
   - Keep this file focused on stable architecture and invariants.
@@ -13,21 +13,20 @@ update_policy:
   - Put design intent and transition rationale in docs/design-docs/.
 ---
 
-# Routa.js Architecture
+# Loom-team Architecture
 
-Routa.js is a workspace-first multi-agent coordination platform with two runtime surfaces:
+Loom-team is a workspace-first multi-agent coordination platform with a single runtime surface:
 
-- Web: Next.js app and API in `src/`
-- Desktop: Tauri app in `apps/desktop/` backed by Axum in `crates/routa-server/`
+- Web: Next.js app and API in `src/`, with the TypeScript domain core in `src/core/`
 
-The project is intentionally not "two separate products". Web and desktop differ in deployment model and storage, but they are expected to preserve the same domain semantics, API shape, and agent-coordination behavior.
+This is the Web-only edition of the product (see [loom-team-web-only-migration.md](./design-docs/loom-team-web-only-migration.md)). The former Tauri desktop shell and the Rust backend crates were removed; the Web-facing capabilities they provided (ACP runtime management, sandbox policy, worktree and file operations, fitness engines) were ported to TypeScript/Node under `src/core/` and `scripts/fitness/`.
 
 ## Core Principles
 
 - Workspace-first: workspaces are the top-level coordination boundary for sessions, tasks, notes, boards, codebases, worktrees, and memories.
-- Dual-backend parity: Next.js and Rust expose the same product concepts and should stay aligned with `api-contract.yaml`.
+- Single backend, one contract: the Next.js backend is the only runtime and implements `api-contract.yaml`, the single source of truth for the API surface.
 - Protocol-oriented orchestration: REST, MCP, ACP, and SSE are all first-class integration surfaces.
-- Local-first execution: desktop mode favors SQLite, local agent binaries, local worktrees, and trace files.
+- Local-first execution: SQLite persistence, local agent binaries, local worktrees, and trace files for development; Postgres for production deployment.
 - Provider abstraction: different agent CLIs and runtimes are normalized behind adapter layers instead of leaking provider-specific protocol details through the system.
 
 ## Repository Shape
@@ -36,13 +35,9 @@ The project is intentionally not "two separate products". Web and desktop differ
 |---|---|
 | `src/app/` | Next.js App Router pages and API routes |
 | `src/client/` | Client components, hooks, view models, A2UI helpers |
-| `src/core/` | TypeScript domain logic: stores, ACP/MCP, kanban automation, workflows, notes, tools |
-| `apps/desktop/` | Tauri shell and desktop packaging |
-| `crates/routa-core/` | Shared Rust domain/runtime foundation: stores, ACP manager, sandbox, skills, events |
-| `crates/routa-server/` | Axum HTTP API for desktop/local server mode |
-| `crates/routa-cli/` | CLI entrypoints and ACP serving commands |
-| `crates/routa-rpc/` | RPC contract helpers |
-| `crates/routa-scanner/` | Codebase scanning utilities |
+| `src/core/` | TypeScript domain logic: stores, ACP/MCP, kanban automation, workflows, notes, tools, fitness |
+| `scripts/fitness/` | TypeScript fitness-function runners and gate helpers |
+| `api-contract.yaml` | OpenAPI contract: single source of truth for the backend API |
 | `docs/` | Durable architecture, design intent, plans, fitness guidance |
 
 ## Runtime Topology
@@ -56,31 +51,25 @@ The project is intentionally not "two separate products". Web and desktop differ
   - `ROUTA_DB_DRIVER=sqlite` or local Node runtime -> SQLite-backed stores
   - fallback -> in-memory stores
 - Real-time updates are delivered mainly through SSE endpoints and in-process event broadcasting.
+- Capabilities that used to live in the Rust backend (ACP process and runtime management, sandbox policy resolution, worktree and file operations, codebase scanning, trace parsing, fitness evaluation) now live in the TypeScript domain core (`src/core/acp/`, `src/core/sandbox/`, `src/core/trace/`, `src/core/fitness/`, and related modules).
 
-### Desktop Runtime
+## Architecture Model
 
-- Tauri hosts the UI and starts the embedded Axum server from `crates/routa-server/src/lib.rs`.
-- Shared application state is built in `crates/routa-core/src/state.rs`.
-- The Rust backend owns local SQLite persistence, ACP runtime management, Docker-assisted agent execution, sandbox management, and local file/worktree operations.
-- Tauri static export placeholders are a routing implementation detail, not part of the domain model.
-
-## Shared Architecture Model
-
-Both runtimes follow the same layered shape even though the concrete implementation differs:
+The runtime follows one layered shape:
 
 ```text
 Presentation
   React pages, workspace views, session detail, kanban, settings, traces
 
 API / Transport
-  Next.js route handlers or Axum routers
+  Next.js route handlers
 
 Protocol Adapters
   REST, MCP, ACP, SSE, JSON-RPC normalization
 
 Domain Services
   orchestration, kanban automation, workflow execution, notes, review, scheduling,
-  trace, harness, worker dispatch
+  trace, harness, fitness, worker dispatch
 
 Stores / Registries
   workspace, task, session, note, codebase, worktree, schedule, artifact, skill
@@ -114,7 +103,7 @@ Important invariant:
 
 - A session represents a live or historical agent execution thread.
 - Sessions are workspace-scoped and power the session detail page, trace views, and automation status.
-- Session history may live in database rows and/or JSONL traces depending on runtime.
+- Session history may live in database rows and/or JSONL traces.
 - ACP is the primary execution transport for agent CLIs, but some providers require adapter translation.
 
 ### Task And Kanban
@@ -132,16 +121,17 @@ Important invariant:
 
 ### Trace And Review
 
-- Traces record session lifecycle, messages, tool calls, file changes, and VCS context for audit and debugging (`src/core/trace/`, `crates/routa-core/src/trace/`).
+- Traces record session lifecycle, messages, tool calls, file changes, and VCS context for audit and debugging (`src/core/trace/`).
 - Trace data is a first-class debugging and attribution mechanism, not an incidental log stream.
 - Review provides multi-phase code review with findings, severity, and validation context (`src/core/review/`).
 
 ### Harness And Worker
 
 - Harness detects repository signals, script entrypoints, and spec sources to power governance and quality analysis (`src/core/harness/`).
-- `crates/harness-monitor` is documented as a four-layer harness loop of `Context -> Run -> Observe -> Govern`; stable records remain `Task / Run / Workspace / EvalSnapshot / PolicyDecision / Evidence`, and CLI/TUI still consume one shared run assessment path.
+- The harness loop model (`Context -> Run -> Observe -> Govern`) is documented in [docs/harness/](./harness/); stable records remain `Task / Run / Workspace / EvalSnapshot / PolicyDecision / Evidence`.
+- Fitness functions are enforced by the TypeScript fitness engine (`src/core/fitness/`, `scripts/fitness/`) and by `npm run validate:web` / `npm run validate:web:e2e` in CI.
 - Workers abstract local and Docker-based execution environments (`src/core/worker/`).
-- Sandbox policy resolution in Rust enforces workspace-aware Docker constraints (`crates/routa-core/src/sandbox/`).
+- Sandbox policy resolution enforces workspace-aware Docker constraints in TypeScript (`src/core/sandbox/`).
 
 ### Note, Memory, Artifact
 
@@ -150,11 +140,9 @@ Important invariant:
 - Workspace delivery memory is a product domain for evidence-backed contextual records and must use explicit product surfaces such as `/api/workspace-memory`, `/api/agent-memory`, or `/api/memory-pack` when those layers are implemented.
 - Artifacts are structured outputs exchanged between agents, workflows, or coordination tools.
 
-## System Factories And Shared State
+## System Factory And Shared State
 
-### TypeScript `RoutaSystem`
-
-`src/core/routa-system.ts` is the central assembly point for the Next.js runtime. It wires:
+`src/core/routa-system.ts` is the central assembly point for the runtime. It wires:
 
 - stores for agents, conversations, tasks, notes, workspaces, codebases, worktrees, schedules, kanban boards, background tasks, workflow runs, and artifacts
 - `EventBus` for in-process coordination
@@ -162,20 +150,7 @@ Important invariant:
 - note broadcasting and CRDT document management
 - permission storage used by runtime permission delegation flows
 
-This file is the TypeScript equivalent of a service container. New domain services should usually be introduced here rather than instantiated ad hoc inside route handlers.
-
-### Rust `AppState`
-
-`crates/routa-core/src/state.rs` plays the same role for the Axum server. It wires:
-
-- core stores including workspace, codebase, worktree, task, note, kanban, conversation, artifact, schedule, and ACP session stores
-- `AcpManager`, binary/runtime/warmup managers, and ACP path resolution
-- `SkillRegistry`
-- `EventBus`
-- `SandboxManager`
-- Docker detection and process management
-
-This keeps desktop/server execution local-first while preserving the same domain vocabulary as the web runtime.
+This file is the service container. New domain services should usually be introduced here rather than instantiated ad hoc inside route handlers.
 
 ## Protocol Stack
 
@@ -210,14 +185,14 @@ Current provider/runtime concerns include:
 - Docker-backed OpenCode execution paths
 - runtime installation, warmup, and registry discovery
 
-The Rust ACP subsystem lives under `crates/routa-core/src/acp/`, while the web runtime keeps corresponding process and route logic under `src/core/acp/` and `src/app/api/acp/`.
+The ACP subsystem lives under `src/core/acp/` with routes under `src/app/api/acp/`.
 
 ## Real-Time And Eventing
 
 There are two main real-time mechanisms:
 
 - transport-level streaming: mainly SSE for session, note, and protocol updates
-- in-process eventing: `EventBus` in both TypeScript and Rust runtimes
+- in-process eventing: `EventBus` in the TypeScript runtime
 
 These support:
 
@@ -229,34 +204,15 @@ These support:
 
 ## Persistence Model
 
-### Web
-
-- Primary persistent target is Postgres when `DATABASE_URL` is configured.
-- SQLite is supported for local Node development.
+- Primary persistent target is Postgres when `DATABASE_URL` is configured (production).
+- SQLite is the local-first development store (`ROUTA_DB_DRIVER=sqlite`).
 - In-memory mode remains available for tests and lightweight runtime scenarios.
-
-### Desktop
-
-- SQLite is the normal persistent store.
 - Filesystem state is also part of persistence: session JSONL traces, repos, worktrees, agent binaries, and local config.
 
 ### Traces And History
 
-- Session and trace history may be stored in database records, JSONL files, or both depending on runtime.
+- Session and trace history may be stored in database records, JSONL files, or both.
 - Trace data is a first-class debugging and attribution mechanism, not an incidental log stream.
-
-## Rust API Surface
-
-The Axum router in `crates/routa-server/src/api/mod.rs` shows the breadth of the desktop/server backend. In addition to the core workspace/session/task APIs, it includes:
-
-- ACP registry, runtime, and Docker routes
-- Kanban and worktree routes
-- MCP server management
-- clone, files, and GitHub import/search helpers
-- schedules, polling, webhooks, workflows, and background tasks
-- sandbox and review endpoints
-
-This breadth is intentional: the desktop backend is not a thin transport shim. It is a full local coordination runtime.
 
 ## Current Transitional Areas
 
@@ -264,7 +220,6 @@ The repository is still finishing the workspace-centric normalization. The durab
 
 - some paths still fall back to `"default"` when workspace scope is omitted
 - some bootstrap/runtime flows still assume a default workspace exists
-- not every persistence-backed implementation is fully symmetric yet across TypeScript and Rust
 - some workflow-run persistence remains in-memory even when other stores are persistent
 
 Treat `"default"` as transition scaffolding, not as the target domain model.
@@ -279,7 +234,7 @@ Current ADRs:
 
 | ADR | Decision |
 |---|---|
-| [0001](./adr/0001-dual-backend-semantic-parity.md) | Web and desktop share domain semantics via api-contract.yaml |
+| [0001](./adr/0001-dual-backend-semantic-parity.md) | Superseded: Web and desktop shared domain semantics via api-contract.yaml; the Web-only migration removed the desktop backend |
 | [0002](./adr/0002-provider-normalization-via-acp.md) | All agent runtimes normalized to ACP through adapter layers |
 | [0003](./adr/0003-workspace-first-scope.md) | Workspaces are the top-level coordination boundary |
 | [0004](./adr/0004-kanban-driven-automation.md) | Kanban lanes trigger ACP sessions with queued concurrency |

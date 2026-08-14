@@ -5,17 +5,15 @@ title: Project Structure
 # Project Structure
 
 This page is for advanced users, self-hosters, and contributors who need to understand how the
-different Routa runtime pieces fit together. If you are just trying to start using Routa, go
-back to [Quick Start](/quick-start) or [Platforms](/platforms).
+different Loom-team runtime pieces fit together. If you are just trying to start using
+Loom-team, go back to [Quick Start](/quick-start) or [Platforms](/platforms).
 
-Routa is a workspace-first multi-agent coordination platform with two main runtime surfaces:
+Loom-team is a workspace-first multi-agent coordination platform with a single runtime surface:
 
-- `Web`: Next.js app and API in `src/`
-- `Desktop`: Tauri app in `apps/desktop/` backed by Axum in `crates/routa-server/`
+- `Web`: Next.js app and API in `src/`, with the TypeScript domain core in `src/core/`
 
-The project is intentionally not "two separate products". Web and desktop differ in deployment
-model and storage, but they are expected to preserve the same domain semantics, API shape, and
-agent-coordination behavior.
+This is the Web-only edition of the product. The former desktop shell and Rust backend were
+removed; the Web-facing capabilities they provided now live in the TypeScript domain core.
 
 ## Main Paths
 
@@ -23,11 +21,9 @@ agent-coordination behavior.
 |---|---|
 | `src/app/` | Next.js App Router pages and API routes |
 | `src/client/` | Client components, hooks, and UI protocol helpers |
-| `src/core/` | TypeScript domain logic, stores, ACP/MCP, Kanban, workflows, trace, review, and harness logic |
-| `apps/desktop/` | Tauri shell and packaging |
-| `crates/routa-core/` | Shared Rust runtime foundation |
-| `crates/routa-server/` | Axum backend used by desktop and local server mode |
-| `crates/routa-cli/` | CLI commands and ACP-serving entrypoints |
+| `src/core/` | TypeScript domain logic, stores, ACP/MCP, Kanban, workflows, trace, review, fitness, and harness logic |
+| `scripts/fitness/` | TypeScript fitness-function runners and gate helpers |
+| `api-contract.yaml` | OpenAPI contract: single source of truth for the backend API |
 | `docs/` | Canonical public docs, design docs, ADRs, release docs, and repository guidance |
 
 ## Canonical Docs

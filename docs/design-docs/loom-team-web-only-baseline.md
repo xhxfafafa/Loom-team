@@ -189,27 +189,27 @@ fails identically in the source repo at ff6ac33c.
 
 ## Phase 4b porting decisions
 
-### B6 — Harness fluency: NOT ported (recorded decision)
+### B6 — Harness fluency: port to TypeScript (record supersedes the original no-port entry)
 
-The §5.3 porting table does not include the harness-fluency engine, and investigation
-confirms there is no Web execution path that needs it:
+The original B6 entry recorded a no-port decision based on the §5.3 porting table, which
+does not list the fluency engine. Follow-up investigation found that reading incomplete:
 
-- The scoring engine is Rust-only (`cargo run -p routa-cli -- fitness fluency`, detectors
-  and snapshots in `crates/routa-cli`, model at `docs/fitness/harness-fluency.model.yaml`).
-  Consumers: `npm run fitness:fluency` (package.json, dev CLI only) and the deprecated
-  forwarder `tools/harness-fluency` (self-described shim onto routa-cli). No CI workflow,
-  husky hook, or entrix gate runs it.
-- Web-facing pieces are passive data serving, not execution:
-  `/api/fitness/specs` serves the static `harness-fluency*.yaml` model/profile files;
-  `/api/fitness/report` serves `docs/fitness/reports/harness-fluency*-latest.json`
-  snapshots and tolerates their absence.
-- `docs/harness/automations.yml` defines `weekly-harness-fluency` targeting specialist
-  `harness-fluency`, but no such specialist exists in the Web specialist registry, so the
-  automation has no executable binding at baseline either.
-- `src/core/fitness/repo-root.ts` uses `harness-fluency.model.yaml` only as a repo-marker
-  heuristic; the marker file itself stays, the heuristic is revisited in Phase 4c.
+- `/api/fitness/analyze` (564-line POST route) spawns
+  `cargo run -p routa-cli -- fitness fluency --format json --profile <profile>` and is
+  consumed by `src/client/components/fitness-analysis-panel.tsx`, mounted on the live
+  `/settings/fluency` page (`src/app/settings/fluency/fluency-settings-page-client.tsx`).
+  This is a Rust-backed Web capability in the sense of migration doc §5.3, and the
+  Harness/Fitness pages are protected by the doc ("Rust 依赖先移植，任何产品删减需另行授权").
+- Phase 5 of the migration doc explicitly lists `fitness:fluency` under 必须逐项处置 with
+  target "切到 TypeScript/Node 实现", and Phase 4c requires routa-cli's Web-consumed
+  capabilities to be ported before the crate is deleted.
 
-Disposition: no TypeScript port. The Rust engine, the `fitness:fluency` script and the
-`tools/harness-fluency` shim are deleted in Phase 4c with the crates; the stale fluency
-references (automation entry, report route profile) are converged in Phase 5 per the
-migration plan. Historical snapshot files and the YAML model remain as data.
+Disposition (corrected): the fluency engine (model, detectors, scoring, snapshots,
+report) is ported to TypeScript under `src/core/fitness/` in Phase 4b, `/api/fitness/analyze`
+is rewired to it with its JSON contract preserved, and the `fitness:fluency` npm script
+points at the Node implementation. The Rust engine stays in place until the port is
+tested, then goes with the routa-cli crate in Phase 4c.
+
+What remains true from the original entry: no CI workflow, husky hook, or entrix gate
+runs fluency; the `weekly-harness-fluency` automation targets a specialist that does not
+exist in the Web registry; the report/spec routes are passive data serving.

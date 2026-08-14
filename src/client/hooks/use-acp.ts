@@ -24,7 +24,6 @@ import {
   AcpConnectionIssue,
 } from "../acp-client";
 import {
-  getDesktopApiBaseUrl,
   logRuntime,
   shouldSuppressTeardownError,
   toErrorMessage,
@@ -342,9 +341,7 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
       connectingRef.current = true;
       setState((s) => ({ ...s, loading: true, error: null }));
 
-      // In Tauri desktop static mode, use the embedded Rust server URL
-      const effectiveBaseUrl = baseUrl || getDesktopApiBaseUrl();
-      const client = new BrowserAcpClient(effectiveBaseUrl);
+      const client = new BrowserAcpClient(baseUrl);
 
       await client.initialize();
 

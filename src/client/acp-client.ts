@@ -708,7 +708,7 @@ export class BrowserAcpClient {
       this.eventSource = null;
     }
 
-    const url = new URL(resolveApiPath("api/acp", this.baseUrl || window.location.origin));
+    const url = new URL(resolveApiPath("api/acp", this.baseUrl), window.location.origin);
     url.searchParams.set("sessionId", sessionId);
     if (this.lastEventId) {
       url.searchParams.set("lastEventId", this.lastEventId);

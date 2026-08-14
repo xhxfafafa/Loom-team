@@ -22,7 +22,6 @@ const {
   installFromGithubCatalogMock,
   logRuntimeMock,
   toErrorMessageMock,
-  getDesktopApiBaseUrlMock,
 } = vi.hoisted(() => ({
   constructorBaseUrls: [] as string[],
   listMock: vi.fn<() => Promise<SkillSummary[]>>(),
@@ -36,7 +35,6 @@ const {
   installFromGithubCatalogMock: vi.fn<(skills: string[], repo?: string, path?: string) => Promise<CatalogInstallResult>>(),
   logRuntimeMock: vi.fn(),
   toErrorMessageMock: vi.fn((error: unknown) => error instanceof Error ? error.message : String(error)),
-  getDesktopApiBaseUrlMock: vi.fn(() => "/desktop"),
 }));
 
 vi.mock("../../skill-client", () => ({
@@ -57,7 +55,6 @@ vi.mock("../../skill-client", () => ({
 }));
 
 vi.mock("../../utils/diagnostics", () => ({
-  getDesktopApiBaseUrl: getDesktopApiBaseUrlMock,
   logRuntime: logRuntimeMock,
   toErrorMessage: toErrorMessageMock,
 }));
@@ -125,7 +122,7 @@ describe("useSkills", () => {
     });
 
     expect(constructorBaseUrls.length).toBeGreaterThan(0);
-    expect(constructorBaseUrls.every((baseUrl) => baseUrl === "/desktop")).toBe(true);
+    expect(constructorBaseUrls.every((baseUrl) => baseUrl === "")).toBe(true);
 
     await act(async () => {
       await result.current.loadRepoSkills("/repo/app");

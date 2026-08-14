@@ -7,7 +7,6 @@ import { getToolEventLabel } from "@/client/components/chat-panel/tool-call-name
 import { type NoteData } from "@/client/hooks/use-notes";
 import {
   desktopAwareFetch,
-  getDesktopApiBaseUrl,
   shouldSuppressTeardownError,
 } from "@/client/utils/diagnostics";
 import type { ParsedTask } from "@/client/utils/task-block-parser";
@@ -712,7 +711,7 @@ export function useSessionCrafters(params: UseSessionCraftersParams): UseSession
       metadata: { ...existingMetadata, taskStatus: "IN_PROGRESS" },
     });
 
-    const providerClient = new BrowserAcpClient(getDesktopApiBaseUrl());
+    const providerClient = new BrowserAcpClient();
     let childSessionId: string | null = null;
     let crafterAgentId: string | null = null;
 

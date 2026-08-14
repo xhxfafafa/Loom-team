@@ -20,7 +20,7 @@ import {
 } from "./color-system";
 import { useTranslation } from "@/i18n";
 import type { TranslationDictionary } from "@/i18n/types";
-import { desktopAwareFetch, getDesktopApiBaseUrl } from "@/client/utils/diagnostics";
+import { desktopAwareFetch } from "@/client/utils/diagnostics";
 import { Plus, RefreshCw, SquarePen, Trash2, Link2, Circle, CircleOff } from "lucide-react";
 
 
@@ -126,8 +126,7 @@ export function GitHubWebhookPanel() {
 
   // Detect server URL for webhook registration
   useEffect(() => {
-    const backendBase = getDesktopApiBaseUrl();
-    setServerUrl(backendBase || window.location.origin);
+    setServerUrl(window.location.origin);
   }, []);
 
   const loadData = useCallback(async () => {

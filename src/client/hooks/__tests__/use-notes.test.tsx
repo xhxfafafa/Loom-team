@@ -3,13 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   desktopAwareFetchMock,
-  getDesktopApiBaseUrlMock,
   logRuntimeMock,
   shouldSuppressTeardownErrorMock,
   toErrorMessageMock,
 } = vi.hoisted(() => ({
   desktopAwareFetchMock: vi.fn(),
-  getDesktopApiBaseUrlMock: vi.fn(() => "http://desktop"),
   logRuntimeMock: vi.fn(),
   shouldSuppressTeardownErrorMock: vi.fn(() => false),
   toErrorMessageMock: vi.fn((error: unknown) => error instanceof Error ? error.message : String(error)),
@@ -17,7 +15,6 @@ const {
 
 vi.mock("../../utils/diagnostics", () => ({
   desktopAwareFetch: desktopAwareFetchMock,
-  getDesktopApiBaseUrl: getDesktopApiBaseUrlMock,
   logRuntime: logRuntimeMock,
   shouldSuppressTeardownError: shouldSuppressTeardownErrorMock,
   toErrorMessage: toErrorMessageMock,
@@ -101,7 +98,7 @@ describe("useNotes", () => {
     });
 
     expect(MockEventSource.instances).toHaveLength(1);
-    expect(MockEventSource.instances[0]?.url).toBe("http://desktop/api/notes/events?workspaceId=ws-1");
+    expect(MockEventSource.instances[0]?.url).toBe("/api/notes/events?workspaceId=ws-1");
 
     act(() => {
       MockEventSource.instances[0]?.onopen?.();

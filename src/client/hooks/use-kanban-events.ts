@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { getDesktopApiBaseUrl } from "../utils/diagnostics";
 import { resolveApiPath } from "../config/backend";
 
 const FITNESS_INVALIDATE_THROTTLE_MS = 750;
@@ -30,9 +29,8 @@ export function useKanbanEvents({ workspaceId, onInvalidate }: UseKanbanEventsOp
       eventSourceRef.current.close();
     }
 
-    const base = getDesktopApiBaseUrl();
     const es = new EventSource(
-      resolveApiPath(`api/kanban/events?workspaceId=${encodeURIComponent(workspaceId)}`, base),
+      resolveApiPath(`api/kanban/events?workspaceId=${encodeURIComponent(workspaceId)}`),
     );
     eventSourceRef.current = es;
 

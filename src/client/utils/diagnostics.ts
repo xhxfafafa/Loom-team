@@ -46,17 +46,6 @@ export function logRuntime(level: LogLevel, scope: string, message: string, meta
 }
 
 /**
- * API base URL for the current runtime.
- *
- * The app is Web-only; requests are same-origin, so this always resolves to
- * an empty string. Kept temporarily so existing call sites stay stable
- * while the request layer converges to plain same-origin fetches.
- */
-export function getDesktopApiBaseUrl(): string {
-  return "";
-}
-
-/**
  * Fetch helper for API routes.
  *
  * Historically this wrapper also routed requests to an embedded desktop

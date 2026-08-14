@@ -49,4 +49,11 @@ describe("resolveApiPath", () => {
     expect(resolveApiPath("/tasks", "ftp://example.com")).toBe("/api/tasks");
     expect(resolveApiPath("/tasks", "")).toBe("/api/tasks");
   });
+
+  it("stays same-origin regardless of stored or query-string backend hints", () => {
+    localStorage.setItem("routa.backendBaseUrl", "http://elsewhere.example.com");
+    window.history.replaceState(null, "", "/?backend=http://query.example.com");
+
+    expect(resolveApiPath("/tasks")).toBe("/api/tasks");
+  });
 });

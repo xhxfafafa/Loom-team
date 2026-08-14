@@ -1,17 +1,17 @@
 /**
  * Type definitions for module dependency graph analysis.
- * Matches the output from routa-cli graph analyze command.
+ * Matches the output of the TypeScript dependency graph analyzer
+ * (src/core/graph/dependency-graph-analyzer.ts), which performs
+ * file-level (fast) analysis.
  */
 
-export type NodeKind = "file" | "package" | "class" | "function" | "method" | "module";
+export type NodeKind =
+  | "file"
+  | "external_crate"
+  | "external_package"
+  | "unresolved_module";
 
-export type EdgeKind = 
-  | "uses"
-  | "imports"
-  | "made_of"
-  | "depends_on"
-  | "extends"
-  | "implements";
+export type EdgeKind = "uses" | "imports";
 
 export type GraphLanguage = "rust" | "typescript" | "java" | "auto";
 

@@ -1,5 +1,6 @@
 /**
- * Utility to convert DependencyGraph (from routa-cli) to ReactFlow format.
+ * Utility to convert DependencyGraph (from the TypeScript graph
+ * analyzer) to ReactFlow format.
  * Includes automatic layout using Dagre algorithm.
  */
 
@@ -38,10 +39,6 @@ function getEdgeStyle(kind: EdgeKind): { animated: boolean; style: React.CSSProp
   const styles: Record<EdgeKind, { animated: boolean; style: React.CSSProperties }> = {
     imports: { animated: true, style: { stroke: "#3b82f6", strokeWidth: 2 } },
     uses: { animated: false, style: { stroke: "#8b5cf6", strokeWidth: 1.5 } },
-    extends: { animated: false, style: { stroke: "#10b981", strokeWidth: 2, strokeDasharray: "5,5" } },
-    implements: { animated: false, style: { stroke: "#f59e0b", strokeWidth: 2, strokeDasharray: "3,3" } },
-    depends_on: { animated: false, style: { stroke: "#6b7280", strokeWidth: 1 } },
-    made_of: { animated: false, style: { stroke: "#ec4899", strokeWidth: 1 } },
   };
   return styles[kind] || { animated: false, style: { stroke: "#6b7280", strokeWidth: 1 } };
 }

@@ -102,6 +102,16 @@ Phase 0 probe server. Restartable with the same command; no data impact.
    kanban suite inside `api:test:nextjs` (part of 86/86), and the vitest Kanban unit suites
    (green in `test:run`). Disposition: recorded per §13; the specs stay in the repo and remain
    runnable via `npm run test:e2e` where a provider and seeded workspace are available.
+6. **`e2e/desktop-shell-visual.spec.ts` restored in Phase 5 after an incorrect deletion; golden
+   images are absent at source baseline.** Commit 43cb9a36 deleted this spec, its runner, and the
+   two hard-gated design-system fitness metrics that invoke it. The migration doc's retain/delete
+   matrix states this spec is in fact a Web viewport regression suite and must be kept, so it was
+   restored via revert (8ecdaf71). The spec's `toHaveScreenshot` golden images
+   (`e2e/desktop-shell-visual.spec.ts-snapshots/*.png`) do not exist in the source repo either
+   (verified: no such directory, no PNG tracked under `e2e/` at ff6ac33c), so a fresh checkout on
+   either side fails the first run while Playwright writes actuals (second run compares against
+   them). The metrics are deep-tier, not in the normal CI tier. Disposition: inherited behavior,
+   recorded per §13; the rename to a Web-neutral name is deferred to Phase 6 per the doc.
 
 ## Tauri/desktop reference baseline counts (target repo @ ff6ac33c)
 

@@ -112,6 +112,15 @@ Phase 0 probe server. Restartable with the same command; no data impact.
    either side fails the first run while Playwright writes actuals (second run compares against
    them). The metrics are deep-tier, not in the normal CI tier. Disposition: inherited behavior,
    recorded per §13; the rename to a Web-neutral name is deferred to Phase 6 per the doc.
+7. **Phase 6 completed the web-shell rename promised in exception 6.** The spec is now
+   `e2e/web-shell-visual.spec.ts`, the runner `scripts/run-web-shell-regression.mjs` (moved out
+   of `scripts/deprecated/`), the npm scripts `test:e2e:web-shell` / `test:e2e:web-shell:update`,
+   and the fitness metric `desktop_shell_route_regression` is now `web_shell_route_regression`.
+   Playwright derives the snapshot directory from the spec filename, so golden paths are now
+   `e2e/web-shell-visual.spec.ts-snapshots/*.png`; no goldens existed before the rename, so the
+   exception 6 first-run failure mode is unchanged. The `desktop-shell-*` `data-testid` selectors
+   inside the spec were intentionally kept: they match the internal desktop-* shell component
+   names that §3.2 preserves.
 
 ## Tauri/desktop reference baseline counts (target repo @ ff6ac33c)
 

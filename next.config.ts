@@ -1,6 +1,5 @@
 import type { NextConfig } from "next";
 
-const isStaticBuild = process.env.ROUTA_BUILD_STATIC === "1";
 const isDesktopServerBuild = process.env.ROUTA_DESKTOP_SERVER_BUILD === "1";
 const isDesktopStandaloneBuild = process.env.ROUTA_DESKTOP_STANDALONE === "1";
 const isPageSnapshotServerBuild = process.env.ROUTA_PAGE_SNAPSHOT_SERVER === "1";
@@ -65,12 +64,6 @@ const nextConfig: NextConfig = {
           ],
           "/*": ["./node_modules/better-sqlite3/**/*"],
         },
-      }
-    : {}),
-  ...(isStaticBuild
-    ? {
-        output: "export",
-        images: { unoptimized: true },
       }
     : {}),
   // Proxy /api/* to Rust backend when ROUTA_RUST_BACKEND_URL is set.

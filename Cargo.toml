@@ -8,7 +8,6 @@ members = [
     "crates/routa-scanner",
     "crates/trace-parser",
     "crates/entrix",
-    "crates/harness-monitor",
 ]
 
 [workspace.package]

@@ -86,7 +86,7 @@
     "hooks:sync": "node --import tsx tools/hook-runtime/src/install.ts",
     "hook:prepush": "node --import tsx tools/hook-runtime/src/cli.ts",
     "codemod:lucide-icons": "node --import tsx tools/codemods/replace-inline-svg-with-lucide.ts --write",
-    "fitness:fluency": "cargo run -p routa-cli -- fitness fluency",
+    "fitness:fluency": "node --import tsx scripts/fitness/harness-fluency.ts",
     "test:arch:backend-core": "node --import tsx scripts/fitness/check-backend-architecture.ts",
     "test:arch:dsl": "node --import tsx scripts/fitness/architecture-rule-dsl.ts --json",
     "scripts:test:arch-dsl": "vitest run scripts/__tests__/architecture-rule-dsl.test.ts",

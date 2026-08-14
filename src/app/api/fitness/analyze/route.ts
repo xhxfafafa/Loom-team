@@ -1,4 +1,3 @@
-import { spawn } from "child_process";
 import { NextRequest, NextResponse } from "next/server";
 import {
   isFitnessContextError,
@@ -6,6 +5,10 @@ import {
   resolveFitnessRepoRoot,
   type FitnessContext,
 } from "@/core/fitness/repo-root";
+import {
+  runFluencyAnalysis,
+  type HarnessFluencyReport,
+} from "@/core/fitness/fluency";
 
 const FITNESS_PROFILES = ["generic", "agent_orchestrator"] as const;
 const FITNESS_MODES = ["deterministic", "hybrid", "ai"] as const;
@@ -32,14 +35,6 @@ type FitnessAnalyzeResponse = {
   generatedAt: string;
   requestedProfiles: FitnessProfile[];
   profiles: FitnessProfileResult[];
-};
-
-type FitnessCommandResult = {
-  status: ApiProfileStatus;
-  durationMs: number;
-  report?: FitnessReport;
-  console: FitnessConsole;
-  error?: string;
 };
 
 type FitnessConsole = {
@@ -259,235 +254,141 @@ function parseAnalyzeContext(body: unknown): FitnessContext {
   };
 }
 
-function extractJsonOutput(raw: string): string {
-  const candidate = raw.trim();
-  if (!candidate) {
-    throw new Error("Command produced no output");
-  }
-
-  try {
-    JSON.parse(candidate);
-    return candidate;
-  } catch {
-    // Fall back to extracting the last JSON object when logs are printed before JSON.
-  }
-
-  const lastOpen = candidate.lastIndexOf("{");
-  if (lastOpen < 0) {
-    throw new Error("Unable to locate JSON output");
-  }
-
-  for (let index = lastOpen; index >= 0; index -= 1) {
-    if (candidate[index] !== "{") continue;
-    const snippet = candidate.slice(index).trim();
-    if (!snippet.endsWith("}")) continue;
-    try {
-      JSON.parse(snippet);
-      return snippet;
-    } catch {
-      // keep searching
-    }
-  }
-
-  throw new Error("Unable to parse command JSON output");
-}
-
-function removeReportJsonFromStdout(stdout: string, reportText: string) {
-  if (!stdout || !reportText) return stdout;
-  const index = stdout.lastIndexOf(reportText);
-  if (index < 0) return stdout;
-  return `${stdout.slice(0, index)}${stdout.slice(index + reportText.length)}`;
-}
-
 function buildConsoleTranscript(params: {
-  command: string;
-  args: string[];
-  stdout: string;
-  stderr: string;
+  profile: string;
+  mode: FitnessMode;
+  compareLast: boolean;
+  noSave: boolean;
   durationMs: number;
-  exitCode?: number | null;
-  signal?: string | null;
-  reportText?: string;
+  report: HarnessFluencyReport;
 }): FitnessConsole {
-  const { command, args, stdout, stderr, durationMs, exitCode, signal, reportText } = params;
-  const cleanedStdout = removeReportJsonFromStdout(stdout, reportText ?? "").trim();
-  const cleanedStderr = stderr.trim();
-  const lines = [`$ ${[command, ...args].join(" ")}`, ""];
+  const { profile, mode, compareLast, noSave, durationMs, report } = params;
 
-  if (cleanedStdout) {
-    lines.push("stdout:");
-    lines.push(cleanedStdout);
-    lines.push("");
-  } else if (reportText) {
-    lines.push("stdout:");
-    lines.push("[No step-by-step stdout logs. This command only emitted the final JSON report, which was parsed into the Fluency report view.]");
-    lines.push("");
+  const command = "node";
+  const args = ["src/core/fitness/fluency", "--profile", profile];
+  if (mode !== "deterministic") {
+    args.push("--mode", mode);
   }
+  if (compareLast) args.push("--compare-last");
+  if (noSave) args.push("--no-save");
 
-  if (cleanedStderr) {
-    lines.push("stderr:");
-    lines.push(cleanedStderr);
-    lines.push("");
-  }
-
-  if (signal) {
-    lines.push(`[signal: ${signal}]`);
-  } else if (typeof exitCode === "number") {
-    lines.push(`[exit ${exitCode} · ${(durationMs / 1000).toFixed(1)}s]`);
-  } else {
-    lines.push(`[completed · ${(durationMs / 1000).toFixed(1)}s]`);
-  }
+  const summaryLines = [
+    "$ " + [command, ...args].join(" "),
+    "",
+    "stdout:",
+    "Harness fluency analysis completed for profile: " + profile,
+    "  Overall level: " + report.overallLevelName + " (" + report.overallLevel + ")",
+    "  Current readiness: " + Math.round(report.currentLevelReadiness * 100) + "%",
+    "  Criteria evaluated: " + report.criteria.length,
+    "  Blocking criteria: " + report.blockingCriteria.length,
+    "",
+    "[exit 0 · " + (durationMs / 1000).toFixed(1) + "s]",
+  ];
 
   return {
     command,
     args,
-    data: `${lines.join("\n")}\n`,
-    stdout,
-    stderr,
-    reportText,
-    exitCode,
-    signal,
+    data: summaryLines.join("\n") + "\n",
+    stdout: "",
+    stderr: "",
+    exitCode: 0,
+    signal: null,
   };
 }
 
-async function runFitnessProfile(
+function buildErrorConsoleTranscript(params: {
+  profile: string;
+  mode: FitnessMode;
+  compareLast: boolean;
+  noSave: boolean;
+  durationMs: number;
+  error: string;
+}): FitnessConsole {
+  const { profile, mode, compareLast, noSave, durationMs, error } = params;
+
+  const command = "node";
+  const args = ["src/core/fitness/fluency", "--profile", profile];
+  if (mode !== "deterministic") {
+    args.push("--mode", mode);
+  }
+  if (compareLast) args.push("--compare-last");
+  if (noSave) args.push("--no-save");
+
+  const summaryLines = [
+    "$ " + [command, ...args].join(" "),
+    "",
+    "stderr:",
+    error,
+    "",
+    "[exit 1 · " + (durationMs / 1000).toFixed(1) + "s]",
+  ];
+
+  return {
+    command,
+    args,
+    data: summaryLines.join("\n") + "\n",
+    stdout: "",
+    stderr: error,
+    exitCode: 1,
+    signal: null,
+  };
+}
+
+function runFitnessProfile(
   repoRoot: string,
   profile: FitnessProfile,
   compareLast: boolean,
   noSave: boolean,
   mode: FitnessMode,
-): Promise<FitnessCommandResult> {
+): {
+  status: ApiProfileStatus;
+  durationMs: number;
+  report?: FitnessReport;
+  console: FitnessConsole;
+  error?: string;
+} {
   const startTime = Date.now();
-  const args = [
-    "run",
-    "-p",
-    "routa-cli",
-    "--",
-    "fitness",
-    "fluency",
-    "--format",
-    "json",
-    "--profile",
-    profile,
-  ];
 
-  if (mode !== "deterministic") {
-    args.push("--mode", mode);
-  }
-
-  if (compareLast) {
-    args.push("--compare-last");
-  }
-  if (noSave) {
-    args.push("--no-save");
-  }
-
-  return await new Promise<FitnessCommandResult>((resolve) => {
-    const command = "cargo";
-    const proc = spawn("cargo", args, {
-      cwd: repoRoot,
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: 300_000,
+  try {
+    const report = runFluencyAnalysis({
+      repoRoot,
+      profile,
+      mode,
+      compareLast,
+      noSave,
     });
 
-    let stdout = "";
-    let stderr = "";
-
-    proc.stdout?.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-
-    proc.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-
-    proc.on("error", (error) => {
-      const durationMs = Date.now() - startTime;
-      resolve({
-        status: "error",
+    const durationMs = Date.now() - startTime;
+    return {
+      status: "ok",
+      durationMs,
+      report: report as unknown as FitnessReport,
+      console: buildConsoleTranscript({
+        profile,
+        mode,
+        compareLast,
+        noSave,
         durationMs,
-        console: buildConsoleTranscript({
-          command,
-          args,
-          stdout,
-          stderr,
-          durationMs,
-        }),
-        error: toMessage(error),
-      });
-    });
-
-    proc.on("close", (code, signal) => {
-      const durationMs = Date.now() - startTime;
-
-      if (signal) {
-        resolve({
-          status: "error",
-          durationMs,
-          console: buildConsoleTranscript({
-            command,
-            args,
-            stdout,
-            stderr,
-            durationMs,
-            signal,
-          }),
-          error: `Command terminated by signal: ${signal}`,
-        });
-        return;
-      }
-
-      if (code !== 0) {
-        resolve({
-          status: "error",
-          durationMs,
-          console: buildConsoleTranscript({
-            command,
-            args,
-            stdout,
-            stderr,
-            durationMs,
-            exitCode: code,
-          }),
-          error: `Command failed (exit ${code}): ${stderr || "no stderr output"}`,
-        });
-        return;
-      }
-
-      try {
-        const reportText = extractJsonOutput(stdout);
-        const report = JSON.parse(reportText) as FitnessReport;
-        resolve({
-          status: "ok",
-          durationMs,
-          report,
-          console: buildConsoleTranscript({
-            command,
-            args,
-            stdout,
-            stderr,
-            durationMs,
-            exitCode: code,
-            reportText,
-          }),
-        });
-      } catch (error) {
-        resolve({
-          status: "error",
-          durationMs,
-          console: buildConsoleTranscript({
-            command,
-            args,
-            stdout,
-            stderr,
-            durationMs,
-            exitCode: code,
-          }),
-          error: toMessage(error),
-        });
-      }
-    });
-  });
+        report,
+      }),
+    };
+  } catch (error) {
+    const durationMs = Date.now() - startTime;
+    const message = toMessage(error);
+    return {
+      status: "error",
+      durationMs,
+      console: buildErrorConsoleTranscript({
+        profile,
+        mode,
+        compareLast,
+        noSave,
+        durationMs,
+        error: message,
+      }),
+      error: message,
+    };
+  }
 }
 
 function buildResponse(
@@ -495,8 +396,8 @@ function buildResponse(
   payload: AnalyzePayload,
   repoRoot: string,
 ) {
-  const tasks = profiles.map(async (profile) => {
-    const result = await runFitnessProfile(
+  const tasks = profiles.map((profile) => {
+    const result = runFitnessProfile(
       repoRoot,
       profile,
       payload.compareLast,
@@ -521,11 +422,11 @@ function buildResponse(
     return entry;
   });
 
-  return Promise.all(tasks).then((collected) => ({
+  return Promise.resolve({
     generatedAt: new Date().toISOString(),
     requestedProfiles: profiles,
-    profiles: collected,
-  }));
+    profiles: tasks,
+  });
 }
 
 export async function POST(request: NextRequest) {

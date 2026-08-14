@@ -117,7 +117,7 @@ Translations are in `src/i18n/locales/{en,zh}.ts` under `settings.harness.archit
 
 - ✅ **UI**: Fully integrated in Harness console
 - ✅ **API**: `/api/fitness/architecture` endpoint
-- ✅ **CLI**: TypeScript and Rust commands
+- ✅ **CLI**: TypeScript fitness script
 - ✅ **Fitness**: Registered as `architecture_quality` dimension (weight: 0, advisory mode)
 - ✅ **DSL**: Cross-language YAML format
 - ✅ **Docs**: Published to GitHub Pages
@@ -127,8 +127,8 @@ Translations are in `src/i18n/locales/{en,zh}.ts` under `settings.harness.archit
 ### Source Code
 - `src/client/components/harness-architecture-quality-panel.tsx` - UI panel
 - `src/app/api/fitness/architecture/route.ts` - API endpoint
-- `scripts/fitness/check-backend-architecture.ts` - Compatibility wrapper for the Rust CLI
-- `crates/routa-cli/src/commands/fitness/arch_dsl.rs` - Primary graph executor
+- `scripts/fitness/check-backend-architecture.ts` - Backend-core suite runner (TypeScript port of the former Rust CLI command)
+- `src/core/graph/dependency-graph-analyzer.ts` - Primary graph executor (TypeScript fast-mode engine)
 
 ### Configuration
 - `architecture/rules/backend-core.archdsl.yaml` - Rule definitions

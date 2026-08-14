@@ -17,14 +17,6 @@ npm install --legacy-peer-deps
 npm run dev
 ```
 
-### Desktop
-
-```bash
-npm install --legacy-peer-deps
-npm --prefix apps/desktop install
-npm run tauri:dev
-```
-
 ## Development expectations
 
 - Follow the lint and test rules in [AGENTS.md](AGENTS.md).

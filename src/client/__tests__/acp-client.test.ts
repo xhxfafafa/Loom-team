@@ -61,7 +61,7 @@ describe("BrowserAcpClient", () => {
     });
 
     const first = MockEventSource.instances[0];
-    expect(first.url).toContain("/api/acp?sessionId=session-1");
+    expect(first.url).toBe(`${window.location.origin}/api/acp?sessionId=session-1`);
     expect(first.url).not.toContain("lastEventId=");
 
     first.emitMessage({

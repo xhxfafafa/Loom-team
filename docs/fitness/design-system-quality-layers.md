@@ -37,6 +37,13 @@ metrics:
     tier: normal
     description: "组件层治理：Storybook 必须使用统一框架、统一 stories 目录，以及核心组件状态覆盖"
 
+  - name: design_system_component_visual
+    command: npm run test:e2e:desktop-shell 2>&1
+    pattern: "\\d+\\s+passed"
+    hard_gate: true
+    tier: deep
+    description: "组件层：desktop shell 关键 chrome 的 Playwright 视觉回归"
+
   - name: design_system_experience_accessibility
     command: npm run test:accessibility 2>&1
     pattern: "accessibility smoke passed"
@@ -99,8 +106,11 @@ metrics:
 
 - 命令：
   - `npm run storybook:governance`
+  - `npm run test:e2e:desktop-shell`
 - 覆盖：
   - `DesktopAppShell` / `DesktopLayout` / `DesktopSidebar` / `WorkspaceTabBar` / `WorkspacePageHeader` / `CompactStat` / `OverviewCard` / `TracesPageHeader` / `TracesViewTabs` / `Button` 的统一 Storybook story contract
+  - `desktop-shell-header`
+  - `desktop-shell-sidebar`
   - `workspace-tab-bar`
   - `kanban-page-header`
   - `traces-page-header`
@@ -134,7 +144,9 @@ npm run lint:css
 npm run lint:color-system
 npm run lint:color-system:strict -- src/client/components/button.tsx src/client/components/home-input.tsx
 npm run storybook:governance
+npm run test:e2e:desktop-shell
 npm run test:accessibility
+entrix run --dry-run
 ```
 
 ## 已知边界

@@ -95,6 +95,8 @@
     "validate:web:e2e": "node scripts/validate-web-e2e.mjs",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --project=chromium-headed",
+    "test:e2e:desktop-shell": "node scripts/deprecated/run-desktop-shell-regression.mjs",
+    "test:e2e:desktop-shell:update": "node scripts/deprecated/run-desktop-shell-regression.mjs --update-snapshots",
     "test:e2e:specialist": "playwright test e2e/specialist-selection.spec.ts",
     "test:e2e:specialist:headed": "playwright test e2e/specialist-selection.spec.ts --project=chromium-headed",
     "test:e2e:debug": "playwright test --debug",

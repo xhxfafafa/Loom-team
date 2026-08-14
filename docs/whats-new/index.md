@@ -16,8 +16,7 @@ This section is the fastest way to see what changed recently in Loom-team.
   </a>
   <a href="/Loom-team/releases/v0.14.0-changelog">
     <strong>Technical Changelog</strong>
-    Read the commit-grouped changelog generated from `release:changelog` when you want the raw
-    release delta.
+    Read the commit-grouped technical changelog when you want the raw release delta.
   </a>
   <a href="/Loom-team/blog">
     <strong>Blog</strong>

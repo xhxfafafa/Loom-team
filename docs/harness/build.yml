@@ -11,9 +11,6 @@ overview:
       - pnpm-lock.yaml
       - package-lock.json
       - yarn.lock
-      - Cargo.toml
-      - apps/desktop/package.json
-      - apps/desktop/src-tauri/Cargo.toml
     limit: 6
   - id: targets
     label: Targets
@@ -24,11 +21,6 @@ overview:
           - fileExists: next.config.ts
           - scriptNameMatches: "^dev$"
           - scriptNameMatches: "^build$"
-      - label: Tauri desktop
-        whenAny:
-          - fileExists: apps/desktop/src-tauri/Cargo.toml
-          - scriptNameMatches: "tauri"
-          - scriptNameMatches: "desktop"
       - label: Docker image
         whenAny:
           - fileExists: Dockerfile
@@ -36,10 +28,6 @@ overview:
       - label: Static export
         whenAny:
           - scriptNameMatches: "static"
-      - label: Rust workspace
-        whenAny:
-          - fileExists: Cargo.toml
-          - fileExists: apps/desktop/src-tauri/Cargo.toml
   - id: config-evidence
     label: Config & evidence
     source: files
@@ -56,7 +44,6 @@ overview:
     paths:
       - out
       - dist
-      - target
     limit: 4
 entrypointGroups:
   - id: dev
@@ -65,7 +52,6 @@ entrypointGroups:
     scriptNamePatterns:
       - "^dev$"
       - ".*:dev$"
-      - "^start:desktop:.*"
       - "^docs:dev$"
   - id: build
     label: Build flow
@@ -79,5 +65,4 @@ entrypointGroups:
     category: bundle
     scriptNamePatterns:
       - "^build:.*"
-      - "^tauri:build$"
       - "^release:.*"

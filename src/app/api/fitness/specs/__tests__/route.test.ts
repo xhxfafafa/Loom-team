@@ -45,7 +45,7 @@ describe("/api/fitness/specs route", () => {
     expect(codeQuality).toMatchObject({
       name: "code-quality.md",
       weight: 18,
-      metricCount: 15,
+      metricCount: 14,
     });
     expect(codeQuality.metrics.map((metric: { name: string }) => metric.name)).not.toEqual(expect.arrayContaining([
       "scripts_root_file_count_guard",

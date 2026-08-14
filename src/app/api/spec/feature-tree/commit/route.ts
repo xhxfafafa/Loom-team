@@ -9,8 +9,7 @@ import {
   normalizeFitnessContextValue,
   resolveFitnessRepoRoot,
 } from "@/core/fitness/repo-root";
-import type { FeatureTreeMetadata } from "@/core/spec/feature-tree-generator";
-import { commitFeatureTreeViaCli } from "@/core/spec/feature-tree-cli";
+import { type FeatureTreeMetadata, generateFeatureTree } from "@/core/spec/feature-tree-generator";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -84,10 +83,13 @@ export async function POST(request: NextRequest) {
       metadata = body.metadata;
     }
 
-    const result = await commitFeatureTreeViaCli({
+    // "Commit" is the write-through mode of the TypeScript generator: scan,
+    // merge the supplied metadata, and persist the artifacts (dryRun=false).
+    const result = await generateFeatureTree({
       repoRoot,
       ...(scanRoot ? { scanRoot } : {}),
       metadata,
+      dryRun: false,
     });
     return NextResponse.json(result);
   } catch (error) {

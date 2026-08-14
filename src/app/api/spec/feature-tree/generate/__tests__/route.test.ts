@@ -3,9 +3,9 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // ── Mocks ──────────────────────────────────────────────────────────
 
-const mockGenerateFeatureTreeViaCli = vi.fn();
-vi.mock("@/core/spec/feature-tree-cli", () => ({
-  generateFeatureTreeViaCli: (...args: unknown[]) => mockGenerateFeatureTreeViaCli(...args),
+const mockGenerateFeatureTree = vi.fn();
+vi.mock("@/core/spec/feature-tree-generator", () => ({
+  generateFeatureTree: (...args: unknown[]) => mockGenerateFeatureTree(...args),
 }));
 
 const mockResolveFitnessRepoRoot = vi.fn();
@@ -34,7 +34,7 @@ describe("POST /api/spec/feature-tree/generate", () => {
       apisCount: 3,
     };
     mockResolveFitnessRepoRoot.mockResolvedValue("/tmp/repo");
-    mockGenerateFeatureTreeViaCli.mockResolvedValue(fakeResult);
+    mockGenerateFeatureTree.mockResolvedValue(fakeResult);
 
     const req = new NextRequest("http://localhost/api/spec/feature-tree/generate", {
       method: "POST",
@@ -46,7 +46,7 @@ describe("POST /api/spec/feature-tree/generate", () => {
 
     expect(res.status).toBe(200);
     expect(body).toEqual(fakeResult);
-    expect(mockGenerateFeatureTreeViaCli).toHaveBeenCalledWith({
+    expect(mockGenerateFeatureTree).toHaveBeenCalledWith({
       repoRoot: "/tmp/repo",
       dryRun: false,
     });
@@ -54,7 +54,7 @@ describe("POST /api/spec/feature-tree/generate", () => {
 
   it("passes dryRun option through", async () => {
     mockResolveFitnessRepoRoot.mockResolvedValue("/tmp/repo");
-    mockGenerateFeatureTreeViaCli.mockResolvedValue({ pagesCount: 0, apisCount: 0 });
+    mockGenerateFeatureTree.mockResolvedValue({ pagesCount: 0, apisCount: 0 });
 
     const req = new NextRequest("http://localhost/api/spec/feature-tree/generate", {
       method: "POST",
@@ -63,7 +63,7 @@ describe("POST /api/spec/feature-tree/generate", () => {
 
     const res = await POST(req);
     expect(res.status).toBe(200);
-    expect(mockGenerateFeatureTreeViaCli).toHaveBeenCalledWith({
+    expect(mockGenerateFeatureTree).toHaveBeenCalledWith({
       repoRoot: "/tmp/repo",
       dryRun: true,
     });
@@ -95,7 +95,7 @@ describe("POST /api/spec/feature-tree/generate", () => {
 
   it("returns 500 when generation throws", async () => {
     mockResolveFitnessRepoRoot.mockResolvedValue("/tmp/repo");
-    mockGenerateFeatureTreeViaCli.mockRejectedValue(new Error("scan failed"));
+    mockGenerateFeatureTree.mockRejectedValue(new Error("scan failed"));
 
     const req = new NextRequest("http://localhost/api/spec/feature-tree/generate", {
       method: "POST",

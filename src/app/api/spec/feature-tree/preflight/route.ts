@@ -6,7 +6,7 @@ import {
   normalizeFitnessContextValue,
   resolveFitnessRepoRoot,
 } from "@/core/fitness/repo-root";
-import { preflightFeatureTreeViaCli } from "@/core/spec/feature-tree-cli";
+import { preflightFeatureTree } from "@/core/spec/feature-tree-generator";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    return NextResponse.json(await preflightFeatureTreeViaCli(repoRoot));
+    return NextResponse.json(preflightFeatureTree(repoRoot));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });

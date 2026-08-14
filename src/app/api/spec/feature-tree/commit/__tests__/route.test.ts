@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockCommitFeatureTreeViaCli = vi.fn();
-vi.mock("@/core/spec/feature-tree-cli", () => ({
-  commitFeatureTreeViaCli: (...args: unknown[]) => mockCommitFeatureTreeViaCli(...args),
+const mockGenerateFeatureTree = vi.fn();
+vi.mock("@/core/spec/feature-tree-generator", () => ({
+  generateFeatureTree: (...args: unknown[]) => mockGenerateFeatureTree(...args),
 }));
 
 const mockResolveFitnessRepoRoot = vi.fn();
@@ -50,7 +50,7 @@ describe("POST /api/spec/feature-tree/commit", () => {
     };
 
     mockResolveFitnessRepoRoot.mockResolvedValue("/tmp/repo");
-    mockCommitFeatureTreeViaCli.mockResolvedValue(fakeResult);
+    mockGenerateFeatureTree.mockResolvedValue(fakeResult);
 
     const req = new NextRequest("http://localhost/api/spec/feature-tree/commit", {
       method: "POST",
@@ -62,15 +62,16 @@ describe("POST /api/spec/feature-tree/commit", () => {
 
     expect(res.status).toBe(200);
     expect(body).toEqual(fakeResult);
-    expect(mockCommitFeatureTreeViaCli).toHaveBeenCalledWith({
+    expect(mockGenerateFeatureTree).toHaveBeenCalledWith({
       repoRoot: "/tmp/repo",
       metadata,
+      dryRun: false,
     });
   });
 
   it("prefers an explicit scanRoot", async () => {
     mockResolveFitnessRepoRoot.mockResolvedValue("/tmp/repo");
-    mockCommitFeatureTreeViaCli.mockResolvedValue({ pagesCount: 0, apisCount: 0 });
+    mockGenerateFeatureTree.mockResolvedValue({ pagesCount: 0, apisCount: 0 });
 
     const req = new NextRequest("http://localhost/api/spec/feature-tree/commit", {
       method: "POST",
@@ -79,10 +80,11 @@ describe("POST /api/spec/feature-tree/commit", () => {
 
     const res = await POST(req);
     expect(res.status).toBe(200);
-    expect(mockCommitFeatureTreeViaCli).toHaveBeenCalledWith({
+    expect(mockGenerateFeatureTree).toHaveBeenCalledWith({
       repoRoot: "/tmp/repo",
       scanRoot: "/tmp/repo/custom-root",
       metadata: null,
+      dryRun: false,
     });
   });
 
@@ -111,7 +113,7 @@ describe("POST /api/spec/feature-tree/commit", () => {
 
     expect(res.status).toBe(400);
     expect(body.error).toBe("scanRoot must be inside the repository");
-    expect(mockCommitFeatureTreeViaCli).not.toHaveBeenCalled();
+    expect(mockGenerateFeatureTree).not.toHaveBeenCalled();
   });
 
   it("rejects scanRoot that resolves outside repo via symlink", async () => {
@@ -132,7 +134,7 @@ describe("POST /api/spec/feature-tree/commit", () => {
 
     expect(res.status).toBe(400);
     expect(body.error).toBe("scanRoot must be inside the repository");
-    expect(mockCommitFeatureTreeViaCli).not.toHaveBeenCalled();
+    expect(mockGenerateFeatureTree).not.toHaveBeenCalled();
   });
 
   it("rejects invalid metadata without features array", async () => {
@@ -148,6 +150,6 @@ describe("POST /api/spec/feature-tree/commit", () => {
 
     expect(res.status).toBe(400);
     expect(body.error).toBe("Invalid metadata: must contain a features array");
-    expect(mockCommitFeatureTreeViaCli).not.toHaveBeenCalled();
+    expect(mockGenerateFeatureTree).not.toHaveBeenCalled();
   });
 });

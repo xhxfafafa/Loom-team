@@ -53,7 +53,7 @@ npm run api:schema:report
 
 ## 端点覆盖状态
 
-详见 [rust-api-test.md](rust-api-test.md) 中的端点矩阵。
+详见 [web-api-test.md](web-api-test.md) 中的端点矩阵。
 
 ## 变更规则
 
@@ -63,7 +63,7 @@ npm run api:schema:report
 2. 在 Next.js 中实现 (`src/app/api/`)
 3. 在 Rust 中实现 (`crates/routa-server/src/api/`)
 4. 运行 `npm run api:check` 验证一致性
-5. 更新 `rust-api-test.md` 添加测试条目
+5. 更新 `web-api-test.md` 添加测试条目
 
 ### 修改现有端点
 

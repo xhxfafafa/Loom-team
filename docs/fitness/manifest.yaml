@@ -9,6 +9,6 @@ evidence_files:
   - docs/fitness/design-system-quality-layers.md
   - docs/fitness/design-system-shell.md
   - docs/fitness/web-qa-e2e-matrix.md
-  - docs/fitness/rust-api-test.md
+  - docs/fitness/web-api-test.md
   - docs/fitness/runtime/observability.md
   - docs/fitness/runtime/performance.md

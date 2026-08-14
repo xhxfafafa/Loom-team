@@ -23,7 +23,7 @@ overview:
       - playwright.tauri.config.ts
       - tests/api-contract/run.ts
       - docs/fitness/unit-test.md
-      - docs/fitness/rust-api-test.md
+      - docs/fitness/web-api-test.md
       - docs/fitness/web-qa-e2e-matrix.md
     limit: 8
   - id: artifacts

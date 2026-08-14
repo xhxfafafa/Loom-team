@@ -83,8 +83,6 @@
     "test:arch:backend-core": "node --import tsx scripts/fitness/check-backend-architecture.ts",
     "test:arch:dsl": "node --import tsx scripts/fitness/architecture-rule-dsl.ts --json",
     "scripts:test:arch-dsl": "vitest run scripts/__tests__/architecture-rule-dsl.test.ts",
-    "api:validate": "node --import tsx scripts/fitness/validate-api-parity.ts",
-    "api:validate:full": "node --import tsx scripts/fitness/validate-api-parity.ts --runtime",
     "docs:specialists:generate": "node --import tsx scripts/docs/generate-specialist-docs.ts --save",
     "snapshots:generate": "node scripts/generate-snapshots.mjs",
     "snapshots:validate": "node scripts/fitness/validate-snapshots.mjs",

@@ -128,23 +128,23 @@ metrics:
 - [x] notes 流程
   - status: `VERIFIED`
   - required: create/list/get/delete 的成功/失败闭环
-  - evidence: `docs/fitness/rust-api-test.md`
+  - evidence: `docs/fitness/web-api-test.md`
 - [x] tasks 流程
   - status: `VERIFIED`
   - required: create/update/status/list/delete + 无效状态更新
-  - evidence: `docs/fitness/rust-api-test.md`
+  - evidence: `docs/fitness/web-api-test.md`
 - [x] codebase/files 流程
   - status: `VERIFIED`
   - required: create/update/delete/search + 文件元数据一致性
-  - evidence: `docs/fitness/rust-api-test.md`
+  - evidence: `docs/fitness/web-api-test.md`
 - [x] agents 流程
   - status: `VERIFIED`
   - required: list/get/create/delete + invalid status handling
-  - evidence: `docs/fitness/rust-api-test.md`
+  - evidence: `docs/fitness/web-api-test.md`
 - [x] sessions 流程
   - status: `VERIFIED`
   - required: get/list/polling + 生命周期错误场景
-  - evidence: `docs/fitness/rust-api-test.md`
+  - evidence: `docs/fitness/web-api-test.md`
 
 ## 一致性要求
 - 同一业务行为修改，必须在本文件添加 `status=VERIFIED` 条目并写明测试文件路径。
@@ -171,7 +171,7 @@ metrics:
 
 ## This Batch
 - 新增：`crates/routa-server/tests/rust_api_end_to_end.rs`
-- 入口文件：`docs/fitness/rust-api-test.md`
+- 入口文件：`docs/fitness/web-api-test.md`
 - 下一个批次：补 `acp / agents / sessions / polling` 用例与健康检查场景
 
 ## Team Run Deletion (Web)

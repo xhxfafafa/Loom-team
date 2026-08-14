@@ -16,7 +16,7 @@ describe("api contract cli", () => {
     const result = runScript("scripts/fitness/check-api-parity.ts");
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("All contract endpoints are implemented by both backends");
+    expect(result.stdout).toContain("All contract endpoints are implemented by the Web backend");
     expect(result.stdout).toContain("Extra in Next.js");
   });
 
@@ -25,11 +25,10 @@ describe("api contract cli", () => {
 
     expect(result.status).toBe(0);
     const parsed = JSON.parse(result.stdout) as {
-      summary: { contractEndpoints: number; missingInNextjs: number; missingInRust: number };
+      summary: { contractEndpoints: number; missingInNextjs: number };
     };
     expect(parsed.summary.contractEndpoints).toBeGreaterThan(0);
     expect(parsed.summary.missingInNextjs).toBe(0);
-    expect(parsed.summary.missingInRust).toBe(0);
   });
 
   it("emits schema validation JSON report", () => {

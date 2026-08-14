@@ -350,7 +350,7 @@ The implementation should remain concentrated in these areas:
 - `api-contract.yaml`
 - `resources/specialists/team/agent-lead.yaml`
 - `docs/design-docs/execution-modes.md`, updating the statement that every Team run has mandatory independent verification
-- `docs/fitness/rust-api-test.md`, registering the changed HTTP behavior before implementation evidence is claimed
+- `docs/fitness/web-api-test.md`, registering the changed HTTP behavior before implementation evidence is claimed
 
 `crates/routa-cli/src/commands/team.rs` remains behaviorally unchanged. It omits `teamChainId` and therefore continues to run as legacy Full Delivery.
 

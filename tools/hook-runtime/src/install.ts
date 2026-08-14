@@ -11,7 +11,6 @@ const HUSKY_BIN_PATH = path.join(path.dirname(require.resolve("husky")), "bin.js
 const REQUIRED_PROJECT_HOOK_FILES = [
   "pre-commit",
   "pre-push",
-  "post-commit",
   "prepare-commit-msg",
   "commit-msg",
 ] as const;

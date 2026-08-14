@@ -1,7 +1,7 @@
 /**
  * File budget checker — CLI wrapper around the file budget logic from automations.ts.
  *
- * Replaces `cargo run -q -p routa-cli -- harness budget` for the Web-only repo.
+ * Web-only replacement for the former Rust CLI's `harness budget` command.
  *
  * Usage:
  *   node --import tsx scripts/fitness/check-file-budget.ts [options]

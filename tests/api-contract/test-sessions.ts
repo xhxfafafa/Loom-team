@@ -4,14 +4,14 @@
  * Tests the /api/sessions and /api/skills endpoints.
  * These are read-only endpoints that should be safe to test.
  *
- * Note on `teamChainId` parity: this suite cannot create Team sessions
- * (session creation is not read-only), so field-level Web/Rust parity for
+ * Note on `teamChainId` coverage: this suite cannot create Team sessions
+ * (session creation is not read-only), so field-level coverage for
  * `teamChainId` on /api/sessions and /api/sessions/{id} is locked by unit
- * tests on both sides instead:
+ * tests instead (the former Rust serializer tests were superseded during the
+ * Web-only migration):
  * - Web: src/app/api/sessions/__tests__/route.test.ts and
  *   src/app/api/sessions/[sessionId]/__tests__/route.test.ts
- * - Rust: crates/routa-server/src/application/sessions.rs serializer tests
- * Legacy/omitted values are falsy on both backends and resolve to
+ * Legacy/omitted values are falsy and resolve to
  * `full_delivery` via the shared interpretation rules.
  */
 

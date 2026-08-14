@@ -1,8 +1,7 @@
 /**
  * Public API for the harness fluency fitness engine.
  *
- * This module is the TypeScript port of the Rust harness fluency engine
- * (crates/routa-cli/src/commands/fitness/fluency/).
+ * This module is the TypeScript port of the former Rust harness fluency engine.
  *
  * ## Known limitations vs the Rust engine:
  *

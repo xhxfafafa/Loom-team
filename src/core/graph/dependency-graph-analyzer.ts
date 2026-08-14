@@ -1,9 +1,9 @@
 /**
- * TypeScript port of the routa-cli fast-mode dependency graph engine
- * (`crates/routa-cli/src/commands/graph/analyze.rs`, AnalysisDepth::Fast).
+ * TypeScript port of the former Rust CLI's fast-mode dependency graph engine
+ * (AnalysisDepth::Fast).
  *
  * Produces the same JSON shape the Rust CLI emitted for
- * `routa graph analyze --depth fast -f json`: file-level nodes plus
+ * `graph analyze --depth fast -f json`: file-level nodes plus
  * import/use edges with resolution metadata. Symbol-level "normal"
  * depth was only ever exercised by the Rust CLI itself; the Web graph
  * view always requests depth=fast, so both depths map to the

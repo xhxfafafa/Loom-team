@@ -3,7 +3,7 @@
 /**
  * Backend-core architecture suite runner (TypeScript).
  *
- * Web-only port of `routa-cli fitness arch-dsl --report backend-core-suite`.
+ * Web-only port of the former Rust CLI's `fitness arch-dsl --report backend-core-suite` command.
  * Loads the architecture DSL, executes the requested suite against the
  * TypeScript dependency graph analyzer (file-level fast mode), and emits
  * the same camelCase suite report the Rust CLI produced:

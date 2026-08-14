@@ -4,7 +4,7 @@
  * Harness Fluency CLI (TypeScript port).
  *
  * This script is the Node entry point for the harness fluency fitness engine,
- * replacing the previous `cargo run -p routa-cli -- fitness fluency` invocation.
+ * replacing the previous Rust CLI `fitness fluency` invocation.
  *
  * Usage:
  *   node --import tsx scripts/fitness/harness-fluency.ts [options]

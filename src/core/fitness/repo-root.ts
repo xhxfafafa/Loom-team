@@ -21,7 +21,7 @@ export function normalizeFitnessContextValue(value: unknown): string | undefined
 
 export function isRoutaRepoRoot(repoRoot: string): boolean {
   // Web-native markers: fluency model config AND (Next.js config OR routa-system module).
-  // The old `crates/routa-cli` marker was removed in Phase 4c (Web-only migration).
+  // The old Rust CLI marker was removed in Phase 4c (Web-only migration).
   const hasFluencyModel = fs.existsSync(
     path.join(repoRoot, "docs", "fitness", "harness-fluency.model.yaml"),
   );

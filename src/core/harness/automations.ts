@@ -52,13 +52,13 @@ type AutomationConfigFile = {
   definitions?: AutomationDefinitionConfig[];
 };
 
-type FileBudgetOverride = {
+export type FileBudgetOverride = {
   path?: string;
   max_lines?: number;
   reason?: string;
 };
 
-type FileBudgetConfig = {
+export type FileBudgetConfig = {
   default_max_lines?: number;
   include_roots?: string[];
   extensions?: string[];
@@ -67,7 +67,7 @@ type FileBudgetConfig = {
   overrides?: FileBudgetOverride[];
 };
 
-type LongFileFinding = {
+export type LongFileFinding = {
   relativePath: string;
   lineCount: number;
   budgetLimit: number;
@@ -81,9 +81,9 @@ type DetectHarnessAutomationsOptions = {
 };
 
 const AUTOMATION_CONFIG_RELATIVE_PATH = path.join("docs", "harness", "automations.yml");
-const FILE_BUDGETS_RELATIVE_PATH = path.join("docs", "fitness", "file_budgets.json");
+export const FILE_BUDGETS_RELATIVE_PATH = path.join("docs", "fitness", "file_budgets.json");
 const ISSUE_SCANNER_RELATIVE_PATH = path.join(".github", "scripts", "issue-scanner.py");
-const DEFAULT_FILE_BUDGETS: FileBudgetConfig = {
+export const DEFAULT_FILE_BUDGETS: FileBudgetConfig = {
   default_max_lines: 1600,
   include_roots: ["src", "apps", "crates"],
   extensions: [".ts", ".tsx", ".rs"],
@@ -189,7 +189,7 @@ function classifySeverity(excessLines: number): HarnessAutomationSeverity {
   return "low";
 }
 
-function walkFiles(dir: string, collected: string[]) {
+export function walkFiles(dir: string, collected: string[]) {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -209,7 +209,7 @@ function walkFiles(dir: string, collected: string[]) {
   }
 }
 
-async function loadFileBudgets(repoRoot: string, warnings: string[]) {
+export async function loadFileBudgets(repoRoot: string, warnings: string[]) {
   const absolutePath = joinRepoPath(repoRoot, FILE_BUDGETS_RELATIVE_PATH);
   if (!fs.existsSync(absolutePath)) {
     warnings.push(`Missing ${FILE_BUDGETS_RELATIVE_PATH}; using default long-file budget thresholds.`);
@@ -234,7 +234,7 @@ async function loadFileBudgets(repoRoot: string, warnings: string[]) {
   }
 }
 
-function shouldIncludeFile(relativePath: string, config: FileBudgetConfig) {
+export function shouldIncludeFile(relativePath: string, config: FileBudgetConfig) {
   const normalizedPath = relativePath.replace(/\\/g, "/");
   const extension = path.extname(normalizedPath).toLowerCase();
   const includeRoots = config.include_roots ?? DEFAULT_FILE_BUDGETS.include_roots ?? [];
@@ -252,7 +252,7 @@ function shouldIncludeFile(relativePath: string, config: FileBudgetConfig) {
   return !excludedParts.some((part) => normalizedPath.includes(part));
 }
 
-function resolveBudget(relativePath: string, extension: string, config: FileBudgetConfig) {
+export function resolveBudget(relativePath: string, extension: string, config: FileBudgetConfig) {
   const override = (config.overrides ?? []).find((candidate) => normalizeString(candidate.path) === relativePath);
   if (override && typeof override.max_lines === "number") {
     return {
@@ -267,7 +267,7 @@ function resolveBudget(relativePath: string, extension: string, config: FileBudg
   };
 }
 
-async function detectLongFileFindings(repoRoot: string, warnings: string[]) {
+export async function detectLongFileFindings(repoRoot: string, warnings: string[]) {
   const config = await loadFileBudgets(repoRoot, warnings);
   const candidates: string[] = [];
   for (const root of config.include_roots ?? DEFAULT_FILE_BUDGETS.include_roots ?? []) {

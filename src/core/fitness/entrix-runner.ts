@@ -1,5 +1,3 @@
-import { spawn } from "child_process";
-
 import type {
   EntrixDimensionReport,
   EntrixDimensionSummary,
@@ -11,18 +9,7 @@ import type {
   EntrixRunSummary,
   EntrixRunTier,
 } from "./entrix-run-types";
-
-type EntrixCommandStrategy = "entrix_binary" | "cargo_runner";
-
-type EntrixCommandResult = {
-  command: string;
-  args: string[];
-  stdout: string;
-  stderr: string;
-  exitCode: number | null;
-  durationMs: number;
-  error?: string;
-};
+import { executeNodeFitnessRun } from "./node-fitness-engine";
 
 type EntrixMetricRecord = {
   name?: string;
@@ -55,34 +42,6 @@ function trimSnippet(value: string | undefined, maxLength = 240): string | null 
   const trimmed = value.trim().replace(/\s+/g, " ");
   if (!trimmed) return null;
   return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength - 1)}…` : trimmed;
-}
-
-function buildEntrixCommandCandidates(
-  _tier: EntrixRunTier,
-  _scope: EntrixRunScope,
-): EntrixCommandStrategy[] {
-  return [
-    "entrix_binary",
-    "cargo_runner",
-  ];
-}
-
-function buildEntrixArgs(tier: EntrixRunTier, scope: EntrixRunScope): string[] {
-  return ["run", "--tier", tier, "--scope", scope, "--json"];
-}
-
-function describeEntrixCommand(
-  strategy: EntrixCommandStrategy,
-  tier: EntrixRunTier,
-  scope: EntrixRunScope,
-): Pick<EntrixCommandResult, "command" | "args"> {
-  const entrixArgs = buildEntrixArgs(tier, scope);
-  switch (strategy) {
-    case "entrix_binary":
-      return { command: "entrix", args: entrixArgs };
-    case "cargo_runner":
-      return { command: "cargo", args: ["run", "-q", "-p", "entrix", "--", ...entrixArgs] };
-  }
 }
 
 function extractJsonOutput(raw: string): string {
@@ -220,113 +179,34 @@ export function summarizeEntrixReport(report: unknown): EntrixRunSummary {
   };
 }
 
-async function runEntrixCommand(
-  strategy: EntrixCommandStrategy,
-  tier: EntrixRunTier,
-  scope: EntrixRunScope,
-  repoRoot: string,
-): Promise<EntrixCommandResult> {
-  const startedAt = Date.now();
-  const invocation = describeEntrixCommand(strategy, tier, scope);
-
-  return await new Promise<EntrixCommandResult>((resolve) => {
-    // Keep child-process execution on a strict allowlist so callers cannot
-    // influence the spawned binary or shell behavior.
-    const child = strategy === "entrix_binary"
-      ? spawn("entrix", buildEntrixArgs(tier, scope), {
-        cwd: repoRoot,
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: 300_000,
-      })
-      : spawn("cargo", ["run", "-q", "-p", "entrix", "--", ...buildEntrixArgs(tier, scope)], {
-        cwd: repoRoot,
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: 300_000,
-      });
-
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout?.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
-
-    child.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-
-    child.on("error", (error) => {
-      resolve({
-        command: invocation.command,
-        args: invocation.args,
-        stdout,
-        stderr,
-        exitCode: null,
-        durationMs: Date.now() - startedAt,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-
-    child.on("close", (code) => {
-      resolve({
-        command: invocation.command,
-        args: invocation.args,
-        stdout,
-        stderr,
-        exitCode: typeof code === "number" ? code : null,
-        durationMs: Date.now() - startedAt,
-      });
-    });
-  });
-}
-
 export async function executeEntrixRun(params: {
   repoRoot: string;
   tier: EntrixRunTier;
   scope: EntrixRunScope;
 }): Promise<EntrixRunResponse> {
-  const candidates = buildEntrixCommandCandidates(params.tier, params.scope);
-  let lastError = "Entrix command did not start";
+  const nodeResult = await executeNodeFitnessRun({
+    repoRoot: params.repoRoot,
+    tier: params.tier,
+    scope: params.scope,
+  });
 
-  for (const candidate of candidates) {
-    const result = await runEntrixCommand(candidate, params.tier, params.scope, params.repoRoot);
-    const missingBinary = result.error?.includes("ENOENT") ?? false;
-    if (missingBinary) {
-      lastError = result.error ?? lastError;
-      continue;
-    }
+  // The rawReport is snake_case, compatible with normalizeEntrixReport
+  const rawReport = nodeResult.rawReport;
+  const normalizedReport = normalizeEntrixReport(rawReport);
+  const summary = summarizeEntrixReport(rawReport);
 
-    try {
-      const jsonOutput = extractJsonOutput(result.stdout);
-      const report = JSON.parse(jsonOutput) as unknown;
-      const normalizedReport = normalizeEntrixReport(report);
-      const summary = summarizeEntrixReport(normalizedReport);
-      return {
-        generatedAt: new Date().toISOString(),
-        repoRoot: params.repoRoot,
-        tier: params.tier,
-        scope: params.scope,
-        command: result.command,
-        args: result.args,
-        durationMs: result.durationMs,
-        exitCode: result.exitCode,
-        report: normalizedReport,
-        summary: { ...summary, durationMs: result.durationMs },
-      };
-    } catch (error) {
-      const details = result.stderr.trim() || result.stdout.trim() || result.error;
-      throw new Error(
-        [
-          `Entrix run failed for ${result.command}`,
-          error instanceof Error ? error.message : String(error),
-          details ? `details: ${details}` : null,
-        ].filter(Boolean).join(" | "),
-        { cause: error },
-      );
-    }
-  }
-
-  throw new Error(lastError);
+  return {
+    generatedAt: nodeResult.generatedAt,
+    repoRoot: nodeResult.repoRoot,
+    tier: nodeResult.tier,
+    scope: nodeResult.scope,
+    command: nodeResult.command,
+    args: nodeResult.args,
+    durationMs: nodeResult.durationMs,
+    exitCode: nodeResult.exitCode,
+    report: normalizedReport,
+    summary: { ...summary, durationMs: nodeResult.durationMs },
+  };
 }
 
 /**

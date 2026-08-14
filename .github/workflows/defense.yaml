@@ -5,12 +5,13 @@
 #   - 控制爆炸半径：通过权限和行为约束限定 AI 的操作范围
 #   - 反熵增机制：设立质量门槛与技术债检查，将 AI 的解空间限制在安全边界内
 #
-# Hard Gates（任一失败直接阻断）:
-#   - ts_test_pass: TypeScript 测试必须 100% 通过
-#   - rust_test_pass: Rust 测试必须 100% 通过
-#   - api_contract_parity: API 契约必须一致
-#   - lint_pass: Lint 必须 0 错误
-#   - no_critical_vulnerabilities: 无严重安全漏洞
+# Web-only gates (no Rust/Tauri):
+#   - eslint: Lint must pass with 0 errors
+#   - tsc: TypeScript type check must pass
+#   - vitest: All tests must pass (fast + full tiers)
+#   - fitness dimensions: 10 dimensions via Node fitness engine
+#   - api_contract: OpenAPI schema validation + Next.js contract parity
+#   - security scans: npm audit, Semgrep SAST, Trivy, Hadolint
 
 name: 'Defense'
 
@@ -35,7 +36,6 @@ permissions:
   security-events: write
 
 env:
-  CARGO_TERM_COLOR: always
   NODE_ENV: test
 
 jobs:
@@ -203,31 +203,10 @@ jobs:
             label: UI Consistency
           - dimension: observability
             label: Observability
-          - dimension: performance
-            label: Performance
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
-
-      - name: Install Rust system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev \
-            patchelf
-
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -238,27 +217,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-
-      - name: Install entrix
-        run: pip install entrix
-
       - name: Run fitness dimension
         id: fitness
         run: |
           mkdir -p .artifacts
-          entrix run \
-            --parallel \
+          node --import tsx scripts/fitness/run-fitness.ts \
+            --dimension "${{ matrix.dimension }}" \
             --tier normal \
             --scope ci \
             --min-score 0 \
-            --dimension "${{ matrix.dimension }}" \
+            --parallel \
             --output ".artifacts/fitness-report-${{ matrix.dimension }}.json"
 
       - name: Summary

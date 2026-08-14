@@ -18,7 +18,7 @@ import { execSync } from "child_process";
 import { globSync } from "glob";
 import yaml from "js-yaml";
 
-import { buildRegex } from "./support.js";
+import { buildRegex } from "./support";
 import {
   ALLOWED_COMMAND_EXECUTABLES,
   DEFAULT_GLOB_IGNORE,
@@ -28,7 +28,7 @@ import {
   type DetectorDefinition,
   type FluencyCriterion,
   type PathSegment,
-} from "./types.js";
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Evaluation context (caches file reads across criteria)

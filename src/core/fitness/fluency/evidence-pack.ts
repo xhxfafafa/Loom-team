@@ -15,7 +15,7 @@ import type {
   EvidencePack,
   FluencyCriterion,
   FluencyMode,
-} from "./types.js";
+} from "./types";
 
 const MAX_EVIDENCE_FILES = 3;
 const MAX_EXCERPT_CHARS = 2000;

@@ -3,7 +3,7 @@
  * Ported from Rust support.rs.
  */
 
-import { MAX_REGEX_PATTERN_LENGTH, type LevelChange } from "./types.js";
+import { MAX_REGEX_PATTERN_LENGTH, type LevelChange } from "./types";
 
 /**
  * Build a RegExp from a pattern and flags string, matching the Rust engine's

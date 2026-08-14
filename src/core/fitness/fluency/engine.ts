@@ -16,16 +16,16 @@
  *   depends on the routa_core Rust library for CODEOWNERS parsing.
  */
 
-import { buildHarnessabilityBaseline, type BaselineInputs } from "./baseline.js";
-import { EvaluationContext, evaluateCriterion } from "./detector.js";
-import { buildEvidencePacks } from "./evidence-pack.js";
-import { loadFluencyModel } from "./model.js";
+import { buildHarnessabilityBaseline, type BaselineInputs } from "./baseline";
+import { EvaluationContext, evaluateCriterion } from "./detector";
+import { buildEvidencePacks } from "./evidence-pack";
+import { loadFluencyModel } from "./model";
 import {
   buildComparison,
   canCompareReports,
   loadPreviousSnapshot,
   persistSnapshot,
-} from "./snapshot.js";
+} from "./snapshot";
 import type {
   CapabilityGroupResult,
   CellResult,
@@ -37,8 +37,8 @@ import type {
   FluencyModel,
   HarnessFluencyReport,
   Recommendation,
-} from "./types.js";
-import { CELL_PASS_THRESHOLD, MAX_RECOMMENDATIONS } from "./types.js";
+} from "./types";
+import { CELL_PASS_THRESHOLD, MAX_RECOMMENDATIONS } from "./types";
 
 // ---------------------------------------------------------------------------
 // Public API

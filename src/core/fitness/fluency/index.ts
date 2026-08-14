@@ -27,19 +27,19 @@
 
 import * as path from "path";
 
-import { evaluateHarnessFluency } from "./engine.js";
+import { evaluateHarnessFluency } from "./engine";
 
-export { evaluateHarnessFluency } from "./engine.js";
-export { formatTextReport } from "./report.js";
-export { loadFluencyModel } from "./model.js";
+export { evaluateHarnessFluency } from "./engine";
+export { formatTextReport } from "./report";
+export { loadFluencyModel } from "./model";
 export {
   buildComparison,
   canCompareReports,
   loadPreviousSnapshot,
   persistSnapshot,
-} from "./snapshot.js";
-export { buildEvidencePacks } from "./evidence-pack.js";
-export { buildHarnessabilityBaseline } from "./baseline.js";
+} from "./snapshot";
+export { buildEvidencePacks } from "./evidence-pack";
+export { buildHarnessabilityBaseline } from "./baseline";
 
 // Re-export types
 export type {
@@ -72,7 +72,7 @@ export type {
   Recommendation,
   ReportComparison,
   ReportFraming,
-} from "./types.js";
+} from "./types";
 
 // Re-export constants
 export {
@@ -80,7 +80,7 @@ export {
   MAX_RECOMMENDATIONS,
   MAX_REGEX_INPUT_LENGTH,
   MAX_REGEX_PATTERN_LENGTH,
-} from "./types.js";
+} from "./types";
 
 /**
  * Run a fluency analysis with the standard profile-based configuration.
@@ -100,7 +100,7 @@ export function runFluencyAnalysis(options: {
   compareLast?: boolean;
   noSave?: boolean;
   framing?: "fluency" | "harnessability";
-}): import("./types.js").HarnessFluencyReport {
+}): import("./types").HarnessFluencyReport {
   const profile = options.profile;
   const modelPath = profile === "agent_orchestrator"
     ? path.join(options.repoRoot, "docs/fitness/harness-fluency.profile.agent_orchestrator.yaml")

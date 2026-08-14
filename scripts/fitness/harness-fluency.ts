@@ -30,12 +30,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { isDirectExecution } from "../lib/cli.js";
+import { isDirectExecution } from "../lib/cli";
 import {
   evaluateHarnessFluency,
   formatTextReport,
-} from "../../src/core/fitness/fluency/index.js";
-import type { EvaluateOptions } from "../../src/core/fitness/fluency/types.js";
+} from "../../src/core/fitness/fluency/index";
+import type { EvaluateOptions } from "../../src/core/fitness/fluency/types";
 
 type OutputFormat = "json" | "text";
 type CliArgs = {

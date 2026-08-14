@@ -12,7 +12,7 @@ import type {
   FluencyLevel,
   HarnessabilityBaseline,
   Recommendation,
-} from "./types.js";
+} from "./types";
 
 const MAX_BASELINE_GAPS = 3;
 const MAX_BASELINE_ACTIONS = 3;

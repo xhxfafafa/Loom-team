@@ -6,11 +6,11 @@
  * The framing (fluency vs harnessability) changes several labels.
  */
 
-import { formatPercent, levelChangeLabel } from "./support.js";
+import { formatPercent, levelChangeLabel } from "./support";
 import type {
   AutonomyBand,
   HarnessFluencyReport,
-} from "./types.js";
+} from "./types";
 
 export function formatTextReport(report: HarnessFluencyReport): string {
   const isHarnessability = report.framing === "harnessability";

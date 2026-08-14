@@ -17,7 +17,7 @@ import type {
   HarnessFluencyReport,
   LevelChange,
   ReportComparison,
-} from "./types.js";
+} from "./types";
 
 /**
  * Load a previous snapshot from disk. Returns null if the file doesn't exist.

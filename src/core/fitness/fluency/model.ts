@@ -12,7 +12,7 @@ import * as path from "path";
 
 import yaml from "js-yaml";
 
-import { buildRegex } from "./support.js";
+import { buildRegex } from "./support";
 import type {
   DetectorDefinition,
   EvidenceMode,
@@ -23,7 +23,7 @@ import type {
   FluencyLevel,
   FluencyModel,
   PathSegment,
-} from "./types.js";
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Public API

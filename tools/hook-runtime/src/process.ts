@@ -1,6 +1,4 @@
 import { spawn } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
 
 export type CommandResult = {
   command: string;
@@ -138,44 +136,4 @@ export function runCommand(command: string, options: RunCommandOptions = {}): Pr
       });
     });
   });
-}
-
-function repoRootFromCwd(cwd: string): string {
-  return cwd;
-}
-
-export function resolveEntrixShellCommand(args: string[], cwd = process.cwd()): string {
-  const repoRoot = repoRootFromCwd(cwd);
-  const debugBinary = path.join(repoRoot, "target", "debug", process.platform === "win32" ? "entrix.exe" : "entrix");
-  if (fs.existsSync(debugBinary)) {
-    return [shellQuote(debugBinary), ...args.map(shellQuote)].join(" ");
-  }
-  return [
-    "cargo",
-    "run",
-    "-q",
-    "-p",
-    "entrix",
-    "--",
-    ...args.map(shellQuote),
-  ].join(" ");
-}
-
-export function resolveEntrixExec(cwd = process.cwd()): { command: string; args: string[] } {
-  const repoRoot = repoRootFromCwd(cwd);
-  const debugBinary = path.join(repoRoot, "target", "debug", process.platform === "win32" ? "entrix.exe" : "entrix");
-  if (fs.existsSync(debugBinary)) {
-    return {
-      command: debugBinary,
-      args: [],
-    };
-  }
-  return {
-    command: "cargo",
-    args: ["run", "-q", "-p", "entrix", "--"],
-  };
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
 }

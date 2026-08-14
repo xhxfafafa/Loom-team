@@ -663,8 +663,6 @@ const zh: TranslationDictionary = {
     cloneHint: "仓库将被克隆并用作 Agent 工作目录。",
     localRepositoryPath: "本地文件夹路径",
     localPathPlaceholder: "/Users/you/project 或 ~/project",
-    browseFolder: "浏览...",
-    selectFolderDialogTitle: "选择本地文件夹",
     loadingProject: "加载项目中...",
     useLocalProject: "使用本地项目",
     localProjectHint: "可打开任意可读取的本地文件夹，Git 版本管理为可选能力。",

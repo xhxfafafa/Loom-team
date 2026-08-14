@@ -92,7 +92,6 @@ describe("WebPlatformBridge", () => {
       body: JSON.stringify({ hello: "world" }),
     });
     expect(bridge.env.isDesktop()).toBe(false);
-    expect(bridge.env.isTauri()).toBe(false);
     expect(bridge.env.isElectron()).toBe(false);
     expect(bridge.env.currentDir()).toBe(process.cwd());
     expect(bridge.env.osPlatform()).toBe(process.platform);

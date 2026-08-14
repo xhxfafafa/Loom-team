@@ -667,8 +667,6 @@ const en: TranslationDictionary = {
     cloneHint: "The repo will be cloned and used as the agent working directory.",
     localRepositoryPath: "Local Folder Path",
     localPathPlaceholder: "/Users/you/project or ~/project",
-    browseFolder: "Browse...",
-    selectFolderDialogTitle: "Select a local folder",
     loadingProject: "Loading Project...",
     useLocalProject: "Use Local Project",
     localProjectHint: "Any readable local folder can be opened. Git version control is optional.",

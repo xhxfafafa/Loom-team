@@ -2,30 +2,25 @@
  * Platform Abstraction Layer — Entry Point
  *
  * Provides a unified API for platform-specific capabilities.
- * Uses a registration pattern so that platform-specific bridges
- * (Tauri, Electron) are only loaded by their respective apps,
- * avoiding bundling issues in the web build.
+ * Uses a registration pattern so that alternative bridges can be
+ * injected without the web build needing to know about them.
+ *
+ * The app is Web-only; the default bridge is `WebPlatformBridge`.
  *
  * Usage:
  *   import { getPlatformBridge } from "@/core/platform";
  *   const bridge = getPlatformBridge();
- *   
+ *
  *   // Check capabilities
  *   if (bridge.process.isAvailable()) {
  *     const handle = bridge.process.spawn("git", ["status"]);
  *   }
- *   
+ *
  *   // Use platform-appropriate dialogs
  *   const file = await bridge.dialog.open({ filters: [{ name: "JSON", extensions: ["json"] }] });
- *   
- *   // Platform detection
- *   if (bridge.env.isTauri()) { ... }
- *   if (bridge.env.isServerless()) { ... }
  *
- * Registration (in Tauri app entry):
- *   import { registerPlatformBridge } from "@/core/platform";
- *   import { TauriPlatformBridge } from "@/core/platform/tauri-bridge";
- *   registerPlatformBridge(new TauriPlatformBridge());
+ *   // Platform detection
+ *   if (bridge.env.isServerless()) { ... }
  */
 
 export type { 
@@ -58,10 +53,6 @@ export type {
 
 export { WebPlatformBridge } from "./web-bridge";
 
-// NOTE: TauriPlatformBridge is NOT exported from this barrel file.
-// Import it directly from "@/core/platform/tauri-bridge" in the desktop app.
-// This prevents webpack from bundling Tauri packages into the web build.
-
 import type { IPlatformBridge } from "./interfaces";
 import { WebPlatformBridge } from "./web-bridge";
 
@@ -73,17 +64,8 @@ const GLOBAL_KEY = "__routa_platform_bridge__";
  * Register a custom platform bridge.
  *
  * Call this at app startup before any other code accesses the bridge.
- * This is the mechanism for desktop apps (Tauri, Electron) to inject
- * their bridge implementation without the web build needing to know
- * about their dependencies.
- *
- * @example
- * // In Tauri app entry point:
- * import { registerPlatformBridge } from "@/core/platform";
- * import { TauriPlatformBridge } from "@/core/platform/tauri-bridge";
- * const bridge = new TauriPlatformBridge();
- * await bridge.initialize();
- * registerPlatformBridge(bridge);
+ * The app is Web-only, so the default bridge is `WebPlatformBridge`;
+ * this hook exists for future or alternative bridge implementations.
  */
 export function registerPlatformBridge(bridge: IPlatformBridge): void {
   const g = globalThis as Record<string, unknown>;
@@ -124,43 +106,6 @@ export function getServerBridge(): IPlatformBridge {
 }
 
 // ─── Platform Detection Helpers ───────────────────────────────────────────
-
-/**
- * Detect current platform at runtime.
- */
-function detectPlatform(): "tauri" | "electron" | "web" {
-  if (typeof window !== "undefined") {
-    if ("__TAURI_INTERNALS__" in window) return "tauri";
-    try {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("runtime") === "tauri") {
-        localStorage.setItem("routa.runtime", "tauri");
-        return "tauri";
-      }
-      if (localStorage.getItem("routa.runtime") === "tauri") return "tauri";
-    } catch {
-      // Ignore storage/query failures and continue with structural detection.
-    }
-    if ("electronAPI" in window) return "electron";
-  }
-  return "web";
-}
-
-/** Check if running in Tauri desktop environment */
-export function isTauri(): boolean {
-  return detectPlatform() === "tauri";
-}
-
-/** Check if running in Electron desktop environment */
-export function isElectron(): boolean {
-  return detectPlatform() === "electron";
-}
-
-/** Check if running in a desktop environment (Tauri or Electron) */
-export function isDesktop(): boolean {
-  const p = detectPlatform();
-  return p === "tauri" || p === "electron";
-}
 
 /** Check if running in a serverless environment */
 export function isServerless(): boolean {

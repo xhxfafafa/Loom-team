@@ -2,7 +2,7 @@
  * Platform Abstraction Interfaces
  *
  * Defines the contracts for platform-specific capabilities.
- * Each platform (Web/Vercel, Tauri, Electron) provides its own implementation.
+ * The app is Web-only; the Web/Vercel implementation is the default.
  *
  * Design reference: intent Electron Bridge pattern — a unified interface
  * that abstracts IPC, dialogs, shell, and events across platforms.
@@ -10,7 +10,7 @@
 
 // ─── Platform Types ───────────────────────────────────────────────────────
 
-export type PlatformType = "web" | "tauri" | "electron";
+export type PlatformType = "web" | "electron";
 
 // ─── Process Management ───────────────────────────────────────────────────
 
@@ -35,7 +35,7 @@ export interface IProcessHandle {
   stdout: ReadableStreamLike | null;
   stderr: ReadableStreamLike | null;
   exitCode: number | null;
-  /** Resolves when the process has been spawned and pid is available (Tauri async spawn). */
+  /** Resolves when the process has been spawned and pid is available. */
   ready?: Promise<void>;
   kill(signal?: string): void;
   on(event: "exit", handler: (code: number | null, signal: string | null) => void): void;
@@ -54,8 +54,6 @@ export interface ReadableStreamLike {
 /**
  * Platform process management.
  * - Web/Vercel: Not available (isAvailable = false), throws on spawn/exec
- * - Tauri: Uses Tauri Shell Plugin / sidecar
- * - Electron: Uses Node.js child_process
  */
 export interface IPlatformProcess {
   /** Whether process spawning is available on this platform */
@@ -86,8 +84,6 @@ export interface DirEntry {
 /**
  * Platform file system operations.
  * - Web/Vercel: Limited (read-only or API-backed)
- * - Tauri: Uses @tauri-apps/plugin-fs
- * - Electron: Uses Node.js fs
  */
 export interface IPlatformFs {
   readTextFile(path: string): Promise<string>;
@@ -113,8 +109,7 @@ export type DatabaseType = "postgres" | "sqlite" | "memory";
 /**
  * Platform database provider.
  * - Web/Vercel: Neon Postgres (drizzle-orm/neon-http)
- * - Tauri: SQLite (drizzle-orm/better-sqlite3 or Tauri SQL plugin)
- * - Electron: SQLite
+ * - Local/Dev: SQLite (drizzle-orm/better-sqlite3)
  * - Dev/Test: InMemory
  */
 export interface IPlatformDb {
@@ -149,8 +144,6 @@ export interface MessageDialogOptions {
 /**
  * Platform native dialog.
  * - Web: Browser file input / window.confirm
- * - Tauri: @tauri-apps/plugin-dialog
- * - Electron: electron.dialog
  */
 export interface IPlatformDialog {
   open(options?: OpenDialogOptions): Promise<string | string[] | null>;
@@ -163,8 +156,6 @@ export interface IPlatformDialog {
 /**
  * Platform shell operations (open URLs, open file in default app).
  * - Web: window.open()
- * - Tauri: @tauri-apps/plugin-shell
- * - Electron: shell.openExternal
  */
 export interface IPlatformShell {
   openUrl(url: string): Promise<void>;
@@ -191,8 +182,6 @@ export interface ITerminalHandle {
 /**
  * Platform terminal management for ACP terminal operations.
  * - Web/Vercel: Not available
- * - Tauri: Tauri Shell Plugin
- * - Electron: node-pty or child_process
  */
 export interface IPlatformTerminal {
   isAvailable(): boolean;
@@ -221,7 +210,7 @@ export interface GitStatus {
 /**
  * Platform git operations.
  * - Web/Vercel: Limited or uses GitHub API
- * - Tauri/Electron: Local git CLI via process.exec
+ * - Local: git CLI via process.exec
  */
 export interface IPlatformGit {
   isAvailable(): boolean;
@@ -247,11 +236,8 @@ export interface IPlatformEnv {
   /** Running in serverless environment (Vercel, AWS Lambda, etc.) */
   isServerless(): boolean;
 
-  /** Running as desktop app (Tauri or Electron) */
+  /** Running as desktop app (Electron) */
   isDesktop(): boolean;
-
-  /** Running in Tauri */
-  isTauri(): boolean;
 
   /** Running in Electron */
   isElectron(): boolean;
@@ -280,8 +266,6 @@ export type UnlistenFn = () => void;
 /**
  * Platform event system for IPC-like communication.
  * - Web: CustomEvent / EventSource (SSE)
- * - Tauri: @tauri-apps/api event system
- * - Electron: ipcRenderer
  */
 export interface IPlatformEvents {
   listen(event: string, handler: EventHandler): UnlistenFn;
@@ -306,7 +290,7 @@ export interface IPlatformBridge {
   /** Which platform this bridge represents */
   platform: PlatformType;
 
-  /** IPC-style invoke (Tauri: invoke, Electron: ipcRenderer.invoke, Web: fetch) */
+  /** IPC-style invoke (Electron: ipcRenderer.invoke, Web: fetch) */
   invoke<T = unknown>(channel: string, data?: unknown): Promise<T>;
 
   /** Event system */

@@ -1,8 +1,7 @@
 /**
  * RoutaRpcClient — JSON-RPC 2.0 client for Routa.js
  *
- * Transport-aware: uses Tauri IPC (`rpc_call`) when available (bypasses HTTP),
- * otherwise falls back to `POST /api/rpc` over HTTP.
+ * Web-only transport: `POST /api/rpc` over HTTP.
  *
  * Usage:
  * ```ts
@@ -13,7 +12,6 @@
  * ```
  */
 
-import { isTauriRuntime } from "./utils/diagnostics";
 import { resolveApiPath } from "./config/backend";
 
 // ---------------------------------------------------------------------------
@@ -69,23 +67,6 @@ function nextId(): number {
   return ++_idCounter;
 }
 
-async function tauriInvoke(request: JsonRpcRequest): Promise<JsonRpcResponse> {
-   
-  const win = window as any;
-
-  // Try __TAURI_INTERNALS__ first (Tauri v2 internal API)
-  if (win.__TAURI_INTERNALS__?.invoke) {
-    return win.__TAURI_INTERNALS__.invoke("rpc_call", { request }) as Promise<JsonRpcResponse>;
-  }
-
-  // Fallback to __TAURI__.core.invoke (older style)
-  if (win.__TAURI__?.core?.invoke) {
-    return win.__TAURI__.core.invoke("rpc_call", { request }) as Promise<JsonRpcResponse>;
-  }
-
-  throw new Error("Tauri invoke not available");
-}
-
 async function httpPost(
   request: JsonRpcRequest,
   baseUrl?: string,
@@ -110,11 +91,7 @@ export class RoutaRpcClient {
   }
 
   /**
-   * Call a JSON-RPC method.
-   *
-   * In Tauri desktop mode this goes through IPC directly to the Rust
-   * RpcRouter (no HTTP). In browser/web mode it falls back to
-   * `POST /api/rpc`.
+   * Call a JSON-RPC method via `POST /api/rpc`.
    */
   async call<T = unknown>(
     method: string,
@@ -129,11 +106,7 @@ export class RoutaRpcClient {
 
     let response: JsonRpcResponse;
     try {
-      if (isTauriRuntime()) {
-        response = await tauriInvoke(request);
-      } else {
-        response = await httpPost(request, this.baseUrl);
-      }
+      response = await httpPost(request, this.baseUrl);
     } catch (err) {
       if (err instanceof RpcError) throw err;
       throw new RpcError(

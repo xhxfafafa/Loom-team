@@ -473,10 +473,6 @@ class WebEnv implements IPlatformEnv {
     return false;
   }
 
-  isTauri(): boolean {
-    return false;
-  }
-
   isElectron(): boolean {
     return false;
   }

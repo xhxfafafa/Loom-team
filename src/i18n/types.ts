@@ -668,8 +668,6 @@ export interface TranslationDictionary extends ExtendedTranslationDictionarySect
     cloneHint: string;
     localRepositoryPath: string;
     localPathPlaceholder: string;
-    browseFolder: string;
-    selectFolderDialogTitle: string;
     loadingProject: string;
     useLocalProject: string;
     localProjectHint: string;

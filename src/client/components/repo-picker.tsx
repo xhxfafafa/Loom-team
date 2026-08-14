@@ -15,7 +15,7 @@ import { createPortal } from "react-dom";
 import { BranchSelector } from "./branch-selector";
 import { dangerGhostButtonClassName, dangerSurfaceClassName } from "./color-system";
 import { useTranslation } from "@/i18n";
-import { Check, ChevronDown, Copy, Download, PieChart, Search, X, GitBranch, Book, Folder, FolderOpen, RefreshCcw } from "lucide-react";
+import { Check, ChevronDown, Copy, Download, PieChart, Search, X, GitBranch, Book, Folder, RefreshCcw } from "lucide-react";
 
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -137,16 +137,6 @@ function isLikelyLocalPath(text: string): boolean {
   );
 }
 
-/**
- * Native file dialogs are available only inside the Tauri renderer. Keep this
- * check in the client component instead of importing the platform bridge:
- * that bridge includes Node.js-only web/server implementations.
- */
-function isTauriRenderer(): boolean {
-  return typeof window !== "undefined" && (
-    "__TAURI__" in window || "__TAURI_INTERNALS__" in window
-  );
-}
 // ─── Component ──────────────────────────────────────────────────────────
 export function RepoPicker({
   value,
@@ -433,28 +423,6 @@ export function RepoPicker({
     },
     [localFolderErrorMessage, onChange, t]
   );
-
-  // ── Native folder picker (desktop only) ───────────────────────────
-
-  const handleBrowseFolder = useCallback(async () => {
-    try {
-      // The plugin is loaded only when the desktop-only action is used. This
-      // keeps Node.js server bridge modules out of the browser dependency graph.
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: t.repoPicker.selectFolderDialogTitle,
-      });
-      if (typeof selected === "string" && selected.trim()) {
-        setLocalPath(selected);
-        setLocalRepoError(null);
-        void handleSelectLocalRepo(selected);
-      }
-    } catch {
-      // Dialog cancelled or unavailable; manual path entry remains possible.
-    }
-  }, [handleSelectLocalRepo, t]);
 
   // ── Clear selection ────────────────────────────────────────────────
 
@@ -825,18 +793,6 @@ export function RepoPicker({
                     onKeyDown={handleLocalPathKeyDown}
                     autoFocus
                   />
-                  {isTauriRenderer() && (
-                    <button
-                      type="button"
-                      onClick={() => void handleBrowseFolder()}
-                      disabled={loadingLocalRepo}
-                      title={t.repoPicker.selectFolderDialogTitle}
-                      className="flex shrink-0 items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                    >
-                      <FolderOpen className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}/>
-                      {t.repoPicker.browseFolder}
-                    </button>
-                  )}
                 </div>
               </div>
 

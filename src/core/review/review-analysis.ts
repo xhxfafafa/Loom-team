@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 import { getSpecialistById, buildSpecialistFirstPrompt } from "../orchestration/specialist-prompts";
-import { gitExec, safeExecSync } from "../utils/safe-exec";
+import { gitExec } from "../utils/safe-exec";
 import {
   buildHistoricalRelatedFiles,
 } from "./historical-related-files";
@@ -97,7 +97,7 @@ export function buildReviewAnalysisPayload(options: ReviewAnalyzeOptions = {}): 
     diff: truncate(gitExec(["diff", "--unified=3", diffRange], { cwd: repoRoot }), 40_000),
     configSnippets: loadConfigSnippets(repoRoot),
     reviewRules: loadReviewRules(repoRoot, options.rulesFile),
-    graphReviewContext: loadGraphReviewContext(repoRoot, base),
+    graphReviewContext: loadGraphReviewContext(),
     historicalRelatedFiles: buildHistoricalRelatedFiles({
       repoRoot,
       diffRange,
@@ -129,14 +129,17 @@ function loadReviewRules(repoRoot: string, rulesFile?: string): string | undefin
   return truncate(fs.readFileSync(targetPath, "utf-8"), 8_000);
 }
 
-function loadGraphReviewContext(repoRoot: string, base: string): unknown {
-  try {
-    const raw = safeExecSync("entrix", ["graph", "review-context", "--base", base, "--json"], { cwd: repoRoot });
-    const parsed = parseJsonLoose(raw);
-    return parsed ?? undefined;
-  } catch {
-    return undefined;
-  }
+/**
+ * Graph review context is intentionally unavailable in the Web-only build.
+ *
+ * The review pipeline previously shelled out to the Rust `entrix` binary
+ * (`entrix graph review-context --base <base> --json`) and treated any
+ * failure as "no context". The Rust toolchain is being removed, and the
+ * review workers already tolerate a missing context, so this returns
+ * `undefined` explicitly instead of spawning a binary that will not exist.
+ */
+function loadGraphReviewContext(): unknown {
+  return undefined;
 }
 
 async function runReviewSpecialist(params: {

@@ -183,11 +183,13 @@ export async function executeEntrixRun(params: {
   repoRoot: string;
   tier: EntrixRunTier;
   scope: EntrixRunScope;
+  dimension?: string;
 }): Promise<EntrixRunResponse> {
   const nodeResult = await executeNodeFitnessRun({
     repoRoot: params.repoRoot,
     tier: params.tier,
     scope: params.scope,
+    dimension: params.dimension,
   });
 
   // The rawReport is snake_case, compatible with normalizeEntrixReport

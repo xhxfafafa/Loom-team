@@ -31,6 +31,7 @@
     "dev:clean": "node scripts/dev/next-dev-cache.mjs clean",
     "dev:diagnose": "node scripts/dev/next-dev-cache.mjs diagnose",
     "acp:runner": "node --import tsx scripts/fitness/start-acp-runner.ts",
+    "fitness:run": "node --import tsx scripts/fitness/run-fitness.ts",
     "build": "cross-env NODE_OPTIONS='--max-old-space-size=8192' next build",
     "canvas:sdk:generate": "node scripts/canvas/generate-sdk-prompt-artifacts.mjs",
     "build:docker": "cross-env NODE_OPTIONS='--max-old-space-size=8192' ROUTA_WEB_STANDALONE=1 next build && node scripts/build/build-docker.mjs",

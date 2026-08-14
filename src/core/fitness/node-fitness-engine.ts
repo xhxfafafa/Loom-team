@@ -90,17 +90,32 @@ function buildRawReport(report: FitnessReport): Record<string, unknown> {
  * @param repoRoot - Repository root directory
  * @param tier - Run tier (fast/normal/deep)
  * @param scope - Execution scope (local/ci/staging/prod_observation)
+ * @param dimension - Optional single dimension name to run (filters config.dimensions)
  * @returns Complete run result with report and exit code
  */
 export async function executeNodeFitnessRun(params: {
   repoRoot: string;
   tier: MetricTier;
   scope: ExecutionScope;
+  dimension?: string;
 }): Promise<NodeFitnessRunResult> {
   const startedAt = Date.now();
 
   // 1. Load configuration
   const config: FitnessConfig = loadFitnessConfig(params.repoRoot);
+
+  // 1b. Optionally filter to a single dimension
+  let dimensions = config.dimensions;
+  if (params.dimension) {
+    const match = dimensions.find((d) => d.name === params.dimension);
+    if (!match) {
+      const available = dimensions.map((d) => d.name).join(", ");
+      throw new Error(
+        `Unknown fitness dimension: "${params.dimension}". Available dimensions: ${available}`,
+      );
+    }
+    dimensions = [match];
+  }
 
   // 2. Filter and collect metrics per dimension
   const dimensionMetrics: Array<{
@@ -108,7 +123,7 @@ export async function executeNodeFitnessRun(params: {
     metrics: MetricDefinition[];
   }> = [];
 
-  for (const dim of config.dimensions) {
+  for (const dim of dimensions) {
     const tierFiltered = filterByTier(dim.metrics, params.tier);
     const scopeFiltered = filterByScope(tierFiltered, params.scope);
 
@@ -146,7 +161,9 @@ export async function executeNodeFitnessRun(params: {
     tier: params.tier,
     scope: params.scope,
     command: "node",
-    args: ["--import", "tsx", "src/core/fitness/node-fitness-engine.ts"],
+    args: params.dimension
+      ? ["--import", "tsx", "src/core/fitness/node-fitness-engine.ts", "--dimension", params.dimension]
+      : ["--import", "tsx", "src/core/fitness/node-fitness-engine.ts"],
     durationMs,
     exitCode,
     report: { ...report, ...rawReport } as NodeFitnessRunResult["report"],

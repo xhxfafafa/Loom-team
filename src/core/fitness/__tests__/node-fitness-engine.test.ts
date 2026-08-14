@@ -181,4 +181,43 @@ metrics:
     expect(codeQuality?.total).toBe(2);
     expect(codeQuality?.passed).toBe(1);
   });
+
+  it("filters to a single dimension when dimension param is set", async () => {
+    const result = await executeNodeFitnessRun({
+      repoRoot: tempDir,
+      tier: "fast",
+      scope: "local",
+      dimension: "security",
+    });
+
+    const dims = result.rawReport.dimensions as Array<{ name: string }>;
+    expect(dims.length).toBe(1);
+    expect(dims[0]?.name).toBe("security");
+
+    // runMetrics should only be called once (for security dimension)
+    expect(mockRunMetrics).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws a clear error for an unknown dimension name", async () => {
+    await expect(
+      executeNodeFitnessRun({
+        repoRoot: tempDir,
+        tier: "fast",
+        scope: "local",
+        dimension: "nonexistent_dimension",
+      }),
+    ).rejects.toThrow(/Unknown fitness dimension.*nonexistent_dimension/);
+  });
+
+  it("runs all dimensions when dimension param is omitted", async () => {
+    const result = await executeNodeFitnessRun({
+      repoRoot: tempDir,
+      tier: "fast",
+      scope: "local",
+    });
+
+    const dims = result.rawReport.dimensions as Array<{ name: string }>;
+    expect(dims.length).toBe(2);
+    expect(dims.map((d) => d.name).sort()).toEqual(["code_quality", "security"]);
+  });
 });

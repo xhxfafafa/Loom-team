@@ -4,7 +4,6 @@ members = [
     "crates/feature-trace",
     "crates/routa-core",
     "crates/routa-scanner",
-    "crates/trace-parser",
     "crates/entrix",
 ]
 

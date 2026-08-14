@@ -4,7 +4,7 @@ title: Common Workflows
 
 # Common Workflows
 
-These are the most common ways to use Routa once installation is done and one provider is
+These are the most common ways to use Loom-team once installation is done and one provider is
 working.
 
 ## Understand A New Codebase
@@ -31,7 +31,7 @@ Use this path when the task is clear and does not need workflow stages yet.
 1. Open a workspace.
 2. Make one provider available.
 3. Start a [Session](/use-routa/sessions).
-4. Give Routa one concrete implementation request.
+4. Give Loom-team one concrete implementation request.
 5. Review the result, then either keep iterating in the same session or start a fresh one.
 
 This is the default path for:
@@ -73,7 +73,7 @@ This is the best fit when:
 
 ## Adjust Setup Without Losing Momentum
 
-Use this path when Routa is installed, but execution is blocked by configuration.
+Use this path when Loom-team is installed, but execution is blocked by configuration.
 
 1. Open [Configuration](/configuration).
 2. Make one provider available.

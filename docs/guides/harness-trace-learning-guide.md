@@ -477,12 +477,12 @@ Evidence: 5/5 runs successful with this order.
 
 - [Harness Trace Learning - Feature Overview](../features/harness-trace-learning.md)
 - [Harness Trace Learning - Phase 2 Design](../design-docs/harness-trace-learning-phase2.md)
-- [Fitness Function Rulebook](https://github.com/phodal/routa/blob/main/docs/fitness/README.md)
+- [Fitness Function Rulebook](https://github.com/xhxfafafa/Loom-team/blob/main/docs/fitness/README.md)
 - [Harness Fitness Blog](/blog/harness-fitness-function)
 
 ## Feedback
 
 Found a bug or have a feature request?
 
-- [Open an issue](https://github.com/phodal/routa/issues/new)
+- [Open an issue](https://github.com/xhxfafafa/Loom-team/issues/new)
 - Related: Issue [#294](https://github.com/phodal/routa/issues/294)

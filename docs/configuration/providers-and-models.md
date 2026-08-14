@@ -4,7 +4,7 @@ title: Providers and Models
 
 # Providers and Models
 
-Routa can execute work through local ACP-backed providers and API-backed provider connections.
+Loom-team can execute work through local ACP-backed providers and API-backed provider connections.
 
 ## Built-in Provider Types
 

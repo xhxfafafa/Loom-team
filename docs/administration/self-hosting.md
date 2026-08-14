@@ -4,13 +4,13 @@ title: Self-Hosting
 
 # Self-Hosting
 
-Routa can be used as a packaged Desktop app, but the web/runtime surface can also be run in your
-own environment.
+Loom-team is a Web-only product: one Next.js backend serves the UI, the API, and the agent
+runtime. Self-hosting means running that web app in your own environment.
 
 ## What Self-Hosting Means Today
 
-Today, self-hosting is primarily about running the Next.js web surface and, when needed, wiring
-it to a local or remote backend/runtime.
+Self-hosting is about running the Next.js web surface, choosing a persistence mode (SQLite or
+Postgres), and making sure the provider paths you rely on are available.
 
 ## Basic Local Flow
 
@@ -23,11 +23,19 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-If you want the web UI to point at a local backend:
+Local development uses SQLite by default (`ROUTA_DB_DRIVER=sqlite`), so no external database
+is required.
+
+## Production Deployment
+
+Build the standalone output and run it behind your preferred hosting:
 
 ```bash
-ROUTA_RUST_BACKEND_URL="http://127.0.0.1:3210" npm run dev
+npm run build:docker
 ```
+
+Docker Compose profiles cover SQLite and Postgres persistence. Set `DATABASE_URL` to use
+Postgres in production; without it, the runtime falls back to SQLite or in-memory stores.
 
 ## Operational Concerns
 
@@ -35,8 +43,8 @@ The main things to think about are:
 
 - which provider paths are available
 - which environment variables are set
-- whether the backend/runtime surface is reachable from the web UI
-- whether Docker-backed execution paths are available when required
+- whether agent runtimes (local CLIs or Docker-backed execution) are reachable from the host
+- which persistence mode fits your durability needs
 
 ## What This Is Not Yet
 

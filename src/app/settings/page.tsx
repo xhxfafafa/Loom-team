@@ -1,7 +1,7 @@
 /**
  * Settings Page - /settings
  *
- * Provides a full-page UI for all Routa settings:
+ * Provides a full-page UI for all Loom-team settings:
  * - Providers (default agent providers and model configurations)
  * - Specialists (custom agent configurations)
  * - Models (custom model definitions with aliases)

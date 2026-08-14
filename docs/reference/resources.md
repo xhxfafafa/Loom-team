@@ -20,8 +20,8 @@ path.
 ## Maintainer Resources
 
 - [Release Guide](/release-guide)
-- [GitHub Releases](https://github.com/phodal/routa/releases)
-- [Repository Map](https://github.com/phodal/routa/blob/main/README.md#repository-map)
+- [GitHub Releases](https://github.com/xhxfafafa/Loom-team/releases)
+- [Repository Map](https://github.com/xhxfafafa/Loom-team/blob/main/README.md#repository-map)
 - [Code Style](/coding-style)
-- [Contributing](https://github.com/phodal/routa/blob/main/CONTRIBUTING.md)
-- [Git Discipline](https://github.com/phodal/routa/blob/main/AGENTS.md#git-discipline)
+- [Contributing](https://github.com/xhxfafafa/Loom-team/blob/main/CONTRIBUTING.md)
+- [Git Discipline](https://github.com/xhxfafafa/Loom-team/blob/main/AGENTS.md#git-discipline)

@@ -4,7 +4,7 @@ title: Sessions
 
 # Sessions
 
-Sessions is the default working mode in Routa.
+Sessions is the default working mode in Loom-team.
 
 ## What Sessions Is For
 
@@ -26,7 +26,7 @@ workflow graph.
 2. Make one provider available.
 3. Attach a repository.
 4. Start a `Session`.
-5. Give Routa one concrete implementation task.
+5. Give Loom-team one concrete implementation task.
 
 ## Best Fit
 

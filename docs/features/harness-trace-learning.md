@@ -197,7 +197,7 @@ See [Harness Trace Learning - Phase 2 Design](../design-docs/harness-trace-learn
 
 ## Related
 
-- [Fitness Function Rulebook](https://github.com/phodal/routa/blob/main/docs/fitness/README.md)
+- [Fitness Function Rulebook](https://github.com/xhxfafafa/Loom-team/blob/main/docs/fitness/README.md)
 - [Harness Fitness Blog](/blog/harness-fitness-function)
 - [Architecture](../ARCHITECTURE.md)
 - Issue [#294](https://github.com/phodal/routa/issues/294) - Trace Learning

@@ -4,7 +4,7 @@ title: Git Workflow
 
 # Git Workflow
 
-Routa uses a strict baby-step commit model so changes stay reviewable and regressions stay
+Loom-team uses a strict baby-step commit model so changes stay reviewable and regressions stay
 traceable.
 
 ## Commit Rules
@@ -21,7 +21,7 @@ traceable.
 - Prefer issue-first work for non-trivial bugs or failures.
 - Do not open a PR with unverified source changes.
 - If public behavior, commands, or workflows change, update the docs in the same change set.
-- If you also run a local self-hosted Routa with long-lived local patches, keep those patches in a dedicated overlay branch rather than in your default PR branch. See [Local Overlay And Upstream Sync](/developer-guide/local-overlay-sync).
+- If you also run a local self-hosted Loom-team with long-lived local patches, keep those patches in a dedicated overlay branch rather than in your default PR branch. See [Local Overlay And Upstream Sync](/developer-guide/local-overlay-sync).
 
 ## Pull Request Expectations
 
@@ -32,5 +32,5 @@ traceable.
 
 ## Where The Rules Come From
 
-The canonical repository policy still lives in [AGENTS.md](https://github.com/phodal/routa/blob/main/AGENTS.md#git-discipline).
+The canonical repository policy still lives in [AGENTS.md](https://github.com/xhxfafafa/Loom-team/blob/main/AGENTS.md#git-discipline).
 Use this page as the public summary and that file as the full rule source.

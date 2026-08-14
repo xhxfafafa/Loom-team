@@ -4,30 +4,27 @@ title: Deployment Overview
 
 # Deployment
 
-Deployment in Routa currently spans two related concerns:
+Deployment in Loom-team covers one concern: running the Web runtime in your own environment.
 
-- shipping downloadable artifacts such as Desktop and CLI binaries
-- running or publishing the web/runtime surfaces in your own environment
+Loom-team is Web-only. The earlier Desktop and CLI distribution channels (GitHub Release
+downloads, npm/crates.io CLI packages) were removed in the Web-only migration; everything
+ships as the Next.js web app.
 
 ## Deployment Paths
 
 | Path | What it means today |
 | --- | --- |
-| Desktop distribution | packaged app builds published through GitHub Releases |
-| CLI distribution | package publishing through npm and crates.io |
-| Web runtime | local development or self-hosted deployment from source |
+| Local development | `npm run dev` with SQLite, no external dependencies |
+| Self-hosted deployment | Docker build (`npm run build:docker`) with SQLite or Postgres |
 
 ## Current Canonical Docs
 
+- [Self-Hosting](/administration/self-hosting)
 - [Release Guide](/release-guide)
 - [Changelog](/getting-started/changelog)
-- [GitHub Releases](https://github.com/phodal/routa/releases)
 
 ## What This Covers Today
 
-- Desktop distribution through GitHub Releases
-- CLI publishing through npm and crates.io
+- running the web app in your own environment
+- persistence choices (SQLite vs Postgres)
 - release and versioning workflows for maintainers
-
-This section is intentionally thin for now because the repository has stronger release docs than
-public self-hosting docs at the moment.

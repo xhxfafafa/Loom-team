@@ -4,8 +4,8 @@ title: Contributing
 
 # Contributing
 
-This page is only needed if you plan to contribute directly to Routa itself. If you are trying
-to use, configure, or self-host Routa, start with [Quick Start](/quick-start),
+This page is only needed if you plan to contribute directly to Loom-team itself. If you are trying
+to use, configure, or self-host Loom-team, start with [Quick Start](/quick-start),
 [Configuration](/configuration), or [Administration](/administration) instead.
 
 ## Before You Start
@@ -17,19 +17,11 @@ to use, configure, or self-host Routa, start with [Quick Start](/quick-start),
 
 ## Local Setup
 
-### Web
+Loom-team is Web-only; local development runs the Next.js app directly:
 
 ```bash
 npm install --legacy-peer-deps
 npm run dev
-```
-
-### Desktop
-
-```bash
-npm install --legacy-peer-deps
-npm --prefix apps/desktop install
-npm run tauri:dev
 ```
 
 ## Development Expectations
@@ -47,5 +39,5 @@ npm run tauri:dev
 
 ## Bugs And Security
 
-- Use [GitHub Issues](https://github.com/phodal/routa/issues) for bugs and feature requests.
-- Use [SECURITY.md](https://github.com/phodal/routa/blob/main/SECURITY.md) for security-sensitive reports.
+- Use [GitHub Issues](https://github.com/xhxfafafa/Loom-team/issues) for bugs and feature requests.
+- Use [SECURITY.md](https://github.com/xhxfafafa/Loom-team/blob/main/SECURITY.md) for security-sensitive reports.

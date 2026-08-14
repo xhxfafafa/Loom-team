@@ -5,19 +5,19 @@ hide_table_of_contents: true
 
 # Administration
 
-Administration covers the operational side of Routa: how you run it, publish it, and keep the
+Administration covers the operational side of Loom-team: how you run it, publish it, and keep the
 runtime surfaces usable for a team.
 
 ## What Administration Means Here
 
-This section is for maintainers, self-hosters, and anyone managing a Routa environment rather
+This section is for maintainers, self-hosters, and anyone managing a Loom-team environment rather
 than only using one session at a time.
 
 ## Main Topics
 
-- [Self-Hosting](/administration/self-hosting): running the web/runtime surfaces in your own environment
-- [Deployment](/deployment): distribution paths for Desktop, CLI, and Web
-- [Release Guide](/release-guide): publishing artifacts across crates.io, npm, and GitHub Releases
+- [Self-Hosting](/administration/self-hosting): running the web app in your own environment
+- [Deployment](/deployment): local development and self-hosted deployment paths
+- [Release Guide](/release-guide): publishing new versions through git tags and Docker builds
 - [Configuration](/configuration): providers, models, and environment variables that affect runtime behavior
 
 ## Most Common Admin Tasks
@@ -25,14 +25,14 @@ than only using one session at a time.
 <div className="routa-start-grid">
   <div className="routa-start-card">
     <span className="routa-start-card__badge">Hosting</span>
-    <h3>Self-Host Routa</h3>
+    <h3>Self-Host Loom-team</h3>
     <p>Run the browser and runtime surfaces in your own environment for a team.</p>
     <a className="routa-inline-link" href="/Loom-team/administration/self-hosting">Open Self-Hosting</a>
   </div>
   <div className="routa-start-card">
     <span className="routa-start-card__badge">Distribution</span>
     <h3>Publish Releases</h3>
-    <p>Use this when you need to ship Desktop, CLI, or Web artifacts.</p>
+    <p>Use this when you need to ship a new Web release.</p>
     <a className="routa-inline-link" href="/Loom-team/release-guide">Open Release Guide</a>
   </div>
   <div className="routa-start-card">

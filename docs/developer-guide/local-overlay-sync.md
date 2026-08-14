@@ -4,7 +4,7 @@ title: Local Overlay And Upstream Sync
 
 # Local Overlay And Upstream Sync
 
-This guide is for teams or agents who run Routa locally, need a few local-only fixes or
+This guide is for teams or agents who run Loom-team locally, need a few local-only fixes or
 operating tweaks, and still want upstream updates to remain easy.
 
 The goal is simple:
@@ -20,7 +20,7 @@ worktrees, and uncommitted local changes all become mixed into the same "real" e
 
 Use this pattern when all of the following are true:
 
-- you run Routa in your own environment
+- you run Loom-team in your own environment
 - you need local behavior that is not yet in upstream
 - you still plan to keep pulling upstream updates
 - agents or operators may open local fixes and upstream PRs from the same machine
@@ -136,7 +136,7 @@ If compare says there are no meaningful commits to contribute, do not open a dup
 
 ## Agent Operator Checklist
 
-If you use agents to manage the local Routa checkout, keep these rules explicit:
+If you use agents to manage the local Loom-team checkout, keep these rules explicit:
 
 - one clean upstream worktree must always exist
 - one overlay branch must be the only long-lived local patch layer

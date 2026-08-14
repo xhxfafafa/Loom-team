@@ -4,7 +4,7 @@ title: Core Concepts Overview
 
 # Core Concepts
 
-Routa is not a single chat window with extra buttons around it. It is a workspace-first
+Loom-team is not a single chat window with extra buttons around it. It is a workspace-first
 coordination system for software delivery.
 
 ## The Product Model
@@ -20,8 +20,8 @@ The stable concepts to understand first are:
 
 ## Best Next Reads
 
-- [How Routa Works](/core-concepts/how-routa-works)
-- [Use Routa](/use-routa)
+- [How Loom-team Works](/core-concepts/how-routa-works)
+- [Use Loom-team](/use-routa)
 - [Architecture](/ARCHITECTURE)
 - [Execution Modes](/design-docs/execution-modes)
 - [Architecture Decisions](/adr)
@@ -29,5 +29,5 @@ The stable concepts to understand first are:
 
 ## Why This Section Exists
 
-Getting started tells you how to run Routa. Core concepts tells you how to reason about it
+Getting started tells you how to run Loom-team. Core concepts tells you how to reason about it
 once it is running.

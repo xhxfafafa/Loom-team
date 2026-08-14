@@ -4,7 +4,7 @@ title: Team
 
 # Team
 
-Team is Routa's lead-driven coordination mode.
+Team is Loom-team's lead-driven coordination mode.
 
 ## What Team Is For
 

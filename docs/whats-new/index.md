@@ -5,7 +5,7 @@ hide_table_of_contents: true
 
 # What's New
 
-This section is the fastest way to see what changed recently in Routa.
+This section is the fastest way to see what changed recently in Loom-team.
 
 ## Start Here
 
@@ -38,12 +38,12 @@ This section is the fastest way to see what changed recently in Routa.
 
 ## Where Updates Show Up
 
-- [GitHub Releases](https://github.com/phodal/routa/releases): downloadable artifacts and published releases
+- [GitHub Releases](https://github.com/xhxfafafa/Loom-team/releases): published release tags and release notes
 - [Blog](/blog): longer product and design write-ups
 
 ## What To Read
 
 - Read curated release notes if you want user-facing product changes by version.
 - Read the generated technical changelog if you want the commit-grouped release delta and exact release range.
-- Read GitHub Releases if you want installers, binaries, or package artifacts.
+- Read GitHub Releases if you want the release history and version tags.
 - Read the blog if you want more context about architecture, workflow design, and product direction.

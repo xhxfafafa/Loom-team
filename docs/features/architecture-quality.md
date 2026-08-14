@@ -4,7 +4,7 @@ title: Architecture Quality
 
 # Architecture Quality
 
-Routa provides real-time architecture quality monitoring for TypeScript and Rust backend code through a unified Architecture DSL and graph-backed execution.
+Loom-team provides real-time architecture quality monitoring for the TypeScript codebase through a unified Architecture DSL and graph-backed execution.
 
 ## Overview
 
@@ -13,7 +13,7 @@ The Architecture Quality system helps you:
 - **Enforce boundaries** between core modules, API surface, and client code
 - **Detect cycles** in backend dependency graphs
 - **Track violations** over time with snapshot comparison
-- **Define rules once** and execute through the shared Rust graph runner
+- **Define rules once** and execute through the shared TypeScript graph runner
 
 ## Quick Start
 
@@ -45,19 +45,20 @@ npm run test:arch:backend-core -- --suite cycles
 npm run test:arch:backend-core -- --json
 ```
 
-### Rust CLI
+### DSL Inspection
 
 ```bash
-# Validate and inspect DSL rules
-cargo run -p routa-cli -- fitness arch-dsl --json
-
-# Parse and execute graph-backed rules
-cargo run -p routa-cli -- graph analyze --dir src/core --lang typescript
+# Validate and inspect DSL rules (JSON report)
+npm run test:arch:dsl -- --json
 ```
+
+The suite runner (`scripts/fitness/check-backend-architecture.ts`) executes graph-backed
+boundary and cycle rules against the TypeScript dependency graph analyzer in
+`src/core/graph/`.
 
 ## Architecture Rules
 
-Rules are defined in `architecture/rules/backend-core.archdsl.yaml` using the Routa Architecture DSL.
+Rules are defined in `architecture/rules/backend-core.archdsl.yaml` using the Loom-team Architecture DSL.
 
 ### Current Rules
 
@@ -168,14 +169,13 @@ Translation keys are in `src/i18n/locales/{en,zh}.ts` under `settings.harness.ar
 ## Known Limitations
 
 1. **Advisory mode only**: Currently runs as local check, not enforced in CI
-2. **TypeScript backend only**: Rust backend rules are defined but not yet fully integrated
-3. **Compatibility wrapper retained**: `npm run test:arch:backend-core` still goes through `scripts/fitness/check-backend-architecture.ts`, but that script now shells into the Rust CLI
+2. **TypeScript-only rules**: the DSL schema reserves multi-language support, but current rules target the TypeScript graph
+3. **TypeScript suite runner**: `npm run test:arch:backend-core` runs `scripts/fitness/check-backend-architecture.ts`, the Web-only port of the former CLI suite report
 
 ## Next Steps
 
 - Gradually increase rule weight as violations are fixed
 - Expand coverage to more fine-grained slice/layer rules
-- Integrate Rust backend architecture rules
 - Add rule authoring UI for custom constraints
 
 ## Related Documentation

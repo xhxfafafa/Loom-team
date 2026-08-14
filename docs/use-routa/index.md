@@ -1,11 +1,11 @@
 ---
-title: Use Routa Overview
+title: Use Loom-team Overview
 hide_table_of_contents: true
 ---
 
-# Use Routa
+# Use Loom-team
 
-This section explains how to choose the right working mode after Routa is installed and one
+This section explains how to choose the right working mode after Loom-team is installed and one
 provider is available.
 
 ## Working Modes

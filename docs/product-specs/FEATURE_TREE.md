@@ -1,6 +1,6 @@
 ---
 status: generated
-purpose: Auto-generated route and API surface index for Routa.js.
+purpose: Auto-generated route and API surface index for Loom-team.
 sources:
   - src/app/**/page.tsx
   - app/**/page.tsx
@@ -11,9 +11,8 @@ sources:
   - app/api/**/route.ts
   - src/pages/api/**/*
   - pages/api/**/*
-  - crates/routa-server/src/api/**/*.rs
 update_policy:
-  - "Regenerate with `routa feature-tree generate` or via the Feature Explorer UI."
+  - "Regenerate via the Feature Explorer UI (`/api/spec/feature-tree/generate`)."
   - "Hand-edit semantic `feature_metadata` fields in this frontmatter block."
   - "`feature_metadata.features[].source_files` is regenerated from declared pages/APIs."
   - "Do not hand-edit generated endpoint or route tables below."
@@ -220,13 +219,12 @@ feature_metadata:
         - src/client/hooks/use-harness-settings-data.ts
 ---
 
-# Routa.js — Product Feature Specification
+# Loom-team — Product Feature Specification
 
 Multi-agent coordination platform. This document is auto-generated from:
 - Frontend routes: `src/app/**/page.tsx`, `app/**/page.tsx`, `src/pages/**/*`, `pages/**/*`
 - Contract API: `api-contract.yaml`
 - Next.js API routes: `src/app/api/**/route.ts`, `app/api/**/route.ts`, `src/pages/api/**/*`, `pages/api/**/*`
-- Rust API routes: `crates/routa-server/src/api/**/*.rs`
 - Feature metadata: `feature_metadata` frontmatter in this file (`source_files` regenerated)
 
 ---
@@ -238,7 +236,7 @@ Multi-agent coordination platform. This document is auto-generated from:
 | Home | `/` | `src/app/page.tsx` | Workspace-first landing page for selecting a workspace, connecting providers, an |
 | Canvas | `/canvas/:id` | `src/app/canvas/[id]/page.tsx` | Viewer page for opening a saved canvas artifact by ID. |
 | Mcp Tools | `/mcp-tools` | `src/app/mcp-tools/page.tsx` | Shortcut route that redirects to the MCP tools settings experience for browsing  |
-| Settings Page | `/settings` | `src/app/settings/page.tsx` | Provides a full-page UI for all Routa settings: - Providers (default agent provi |
+| Settings Page | `/settings` | `src/app/settings/page.tsx` | Provides a full-page UI for all Loom-team settings: - Providers (default agent provi |
 | Settings / Agents | `/settings/agents` | `src/app/settings/agents/page.tsx` | Settings page for installing, discovering, and managing ACP-compatible agent run |
 | Settings / Fitness | `/settings/fitness` | `src/app/settings/fitness/page.tsx` | Compatibility route that forwards fitness configuration requests to the fluency  |
 | Settings / Fluency | `/settings/fluency` | `src/app/settings/fluency/page.tsx` | Settings page for repository fluency analysis, fitness snapshots, and harnessabi |

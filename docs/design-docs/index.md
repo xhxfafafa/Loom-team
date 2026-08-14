@@ -5,11 +5,11 @@ hide_table_of_contents: true
 
 # Design Docs
 
-Design docs explain why Routa is shaped the way it is. Read this section when product behavior,
+Design docs explain why Loom-team is shaped the way it is. Read this section when product behavior,
 system boundaries, or long-lived invariants matter more than install steps.
 
-If you are still trying to get Routa running, go back to [Quick Start](/quick-start),
-[Platforms](/platforms), or [Use Routa](/use-routa).
+If you are still trying to get Loom-team running, go back to [Quick Start](/quick-start),
+[Platforms](/platforms), or [Use Loom-team](/use-routa).
 
 ## Choose A Reading Path
 

@@ -5,7 +5,7 @@ hide_table_of_contents: true
 
 # Reference
 
-Reference docs are for looking things up after you already know what part of Routa you are
+Reference docs are for looking things up after you already know what part of Loom-team you are
 working with.
 
 ## Public Lookup
@@ -29,7 +29,7 @@ These are the reference pages most readers should reach first:
 
 ## Maintainer References
 
-These are useful when you are operating the repository or shipping Routa itself:
+These are useful when you are operating the repository or shipping Loom-team itself:
 
 <div className="routa-doc-map">
   <a href="/Loom-team/release-guide">
@@ -40,11 +40,11 @@ These are useful when you are operating the repository or shipping Routa itself:
     <strong>Code Style</strong>
     Implementation and testing conventions for repository changes.
   </a>
-  <a href="https://github.com/phodal/routa/blob/main/CONTRIBUTING.md">
+  <a href="https://github.com/xhxfafafa/Loom-team/blob/main/CONTRIBUTING.md">
     <strong>Contributing</strong>
-    Branch, PR, and contribution expectations for Routa itself.
+    Branch, PR, and contribution expectations for Loom-team itself.
   </a>
-  <a href="https://github.com/phodal/routa/blob/main/README.md#repository-map">
+  <a href="https://github.com/xhxfafafa/Loom-team/blob/main/README.md#repository-map">
     <strong>Repository Map</strong>
     Fast path-to-purpose inventory for repository areas.
   </a>
@@ -65,7 +65,7 @@ If you are still deciding where to start or how to use the product, these sectio
 better entry points:
 
 - [Getting Started](/getting-started) for onboarding and first-run choices
-- [Use Routa](/use-routa) for product workflows
+- [Use Loom-team](/use-routa) for product workflows
 - [Developer Guide](/developer-guide) for configuration, hosting, and deeper technical setup
 - [Design Docs](/design-docs) for durable implementation intent
 

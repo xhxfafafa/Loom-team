@@ -4,7 +4,7 @@ title: Kanban
 
 # Kanban
 
-Kanban is Routa's workflow-driven execution mode.
+Kanban is Loom-team's workflow-driven execution mode.
 
 ## What Kanban Is For
 
@@ -16,7 +16,7 @@ Choose Kanban when you want:
 
 ## How It Works
 
-Kanban is not just a board view. In Routa, lane transitions can create sessions, route work to
+Kanban is not just a board view. In Loom-team, lane transitions can create sessions, route work to
 specialists, and enforce delivery checks for stages like `review` and `done`.
 
 ## Best Fit
@@ -30,7 +30,7 @@ Kanban works best when:
 ## What Makes It Different
 
 The orchestration boundary in Kanban is the card and its lane state, not one conversation. That
-lets Routa apply policy, queueing, and stage-specific specialist behavior at the workflow layer.
+lets Loom-team apply policy, queueing, and stage-specific specialist behavior at the workflow layer.
 
 ## Read Next
 

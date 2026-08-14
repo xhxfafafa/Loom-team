@@ -867,7 +867,7 @@ export function buildFeatureTree(routes: RouteInfo[], apiFeatures: Record<string
   };
 
   return {
-    name: "Routa.js",
+    name: "Loom-team",
     description: "Multi-agent coordination platform",
     children: [routesNode, apiNode],
   };
@@ -1122,14 +1122,13 @@ export function renderMarkdown(
   const lines: string[] = [
     "---",
     "status: generated",
-    "purpose: Auto-generated route and API surface index for Routa.js.",
+    "purpose: Auto-generated route and API surface index for Loom-team.",
     "sources:",
     "  - src/app/**/page.tsx",
     "  - api-contract.yaml",
     "  - src/app/api/**/route.ts",
-    "  - crates/routa-server/src/api/**/*.rs",
     "update_policy:",
-    "  - \"Regenerate with `routa feature-tree generate` or via the Feature Explorer UI.\"",
+    "  - \"Regenerate via the Feature Explorer UI (`/api/spec/feature-tree/generate`).\"",
     "  - \"Hand-edit semantic `feature_metadata` fields in this frontmatter block.\"",
     "  - \"`feature_metadata.features[].source_files` is regenerated from declared pages/APIs.\"",
     "  - \"Do not hand-edit generated endpoint or route tables below.\"",
@@ -1148,7 +1147,6 @@ export function renderMarkdown(
     "- Frontend routes: `src/app/**/page.tsx`",
     "- Contract API: `api-contract.yaml`",
     "- Next.js API routes: `src/app/api/**/route.ts`",
-    "- Rust API routes: `crates/routa-server/src/api/**/*.rs`",
     "- Feature metadata: `feature_metadata` frontmatter in this file (`source_files` regenerated)",
     "",
     "---",

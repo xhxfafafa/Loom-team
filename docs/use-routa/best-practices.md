@@ -32,5 +32,5 @@ default to Team for simple implementation tasks.
 ## Keep Reference Material Out Of The Critical Path
 
 Users should reach their first useful run before they need product specs, design docs, or deep
-reference material. That is why [Getting Started](/getting-started) and [Use Routa](/use-routa)
+reference material. That is why [Getting Started](/getting-started) and [Use Loom-team](/use-routa)
 should stay simpler than internal repository documentation.

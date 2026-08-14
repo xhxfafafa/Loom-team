@@ -5,7 +5,7 @@ hide_table_of_contents: true
 
 # Configuration
 
-Configuration in Routa is mainly about making execution available and predictable.
+Configuration in Loom-team is mainly about making execution available and predictable.
 
 The most important configuration areas are:
 
@@ -53,7 +53,7 @@ In the product UI, the configuration surface currently centers on:
 - `Models`
 
 Those settings determine which provider is available, how a model endpoint is resolved, and
-which defaults Routa uses for roles like `ROUTA`, `CRAFTER`, `GATE`, and `DEVELOPER`.
+which defaults Loom-team uses for roles like `ROUTA`, `CRAFTER`, `GATE`, and `DEVELOPER`.
 
 ## Practical Rule
 

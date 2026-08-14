@@ -6,15 +6,15 @@
 
 All documentation is published to GitHub Pages and automatically updated:
 
-- **🚀 User Guide**: https://phodal.github.io/routa/features/architecture-quality
+- **🚀 User Guide**: https://xhxfafafa.github.io/Loom-team/features/architecture-quality
   - Quick start, CLI usage, UI features, examples
 
-- **📖 DSL Specification**: https://phodal.github.io/routa/design-docs/architecture-rule-dsl
+- **📖 DSL Specification**: https://xhxfafafa.github.io/Loom-team/design-docs/architecture-rule-dsl
   - Complete DSL schema, syntax, design principles
   - TypeScript and Rust implementation strategies
   - LLM generation guidelines
 
-- **🏠 Design Docs Index**: https://phodal.github.io/routa/design-docs
+- **🏠 Design Docs Index**: https://xhxfafafa.github.io/Loom-team/design-docs
   - Browse all design documents including Architecture Rule DSL
 
 ### Local Development
@@ -154,4 +154,4 @@ To add new architecture rules:
 
 ---
 
-**For full documentation, visit: https://phodal.github.io/routa/features/architecture-quality**
+**For full documentation, visit: https://xhxfafafa.github.io/Loom-team/features/architecture-quality**

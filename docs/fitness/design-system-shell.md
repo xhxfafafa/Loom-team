@@ -8,13 +8,6 @@ threshold:
   block: 0
 
 metrics:
-  - name: desktop_shell_route_regression
-    command: npm run test:e2e:desktop-shell 2>&1
-    pattern: '\d+\s+passed'
-    hard_gate: true
-    tier: deep
-    description: "桌面 shell 的关键路由、导航入口与视觉基线回归"
-
   - name: desktop_shell_token_wiring
     command: "rg -q -- '--dt-bg-primary|--dt-bg-secondary|--dt-border|--dt-accent' src/app/styles/desktop-theme.css && rg -q 'desktop-theme' 'src/client/components/desktop-layout.tsx' && rg -q 'desktop-theme' 'src/client/components/desktop-app-shell.tsx' && rg -q 'desktop-(bg|text|border|accent)' 'src/client/components/desktop-sidebar.tsx' && rg -q 'desktop-(bg|text|border|accent)' 'src/client/components/workspace-switcher.tsx' && echo 'desktop shell tokens wired'"
     pattern: "desktop shell tokens wired"
@@ -68,19 +61,8 @@ Desktop shell 的视觉 contract 以这几处为准：
 
 ### 1. 运行时回归
 
-- `/`
-- `/workspace/[workspaceId]`
-- `/workspace/[workspaceId]/kanban`
-- `/traces`
-
-这些关键入口至少要保证：
-
-- 页面能打开，主布局仍存在。
-- 导航入口无 dead-link。
-- 标题栏、侧边栏、主内容区的基本布局没有明显回退。
-
-这部分由 `desktop_shell_route_regression` 负责，是硬门禁。
-它现在不仅检查路由是否能打开，也要求关键 chrome 通过 Playwright screenshot baseline。
+> **已移除**: `desktop_shell_route_regression` 指标已随 `e2e/desktop-shell-visual.spec.ts` 一并移除（Phase 5）。
+> 桌面 shell 路由覆盖现由 Team/Kanban Playwright specs 承担（参见 validate:web:e2e）。
 
 ### 2. Token 接线没有断
 

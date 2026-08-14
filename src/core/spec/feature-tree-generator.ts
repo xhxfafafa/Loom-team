@@ -523,141 +523,6 @@ function scanNextjsPagesApiRoutes(repoRoot: string, scanRoot: string): Implement
     a.domain.localeCompare(b.domain) || a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
 }
 
-function extractMethods(handlerChain: string): string[] {
-  const methods: string[] = [];
-  for (const method of ["get", "post", "put", "delete", "patch"]) {
-    if (new RegExp(`(?:^|[\\s.:])${method}\\(`).test(handlerChain)) methods.push(method.toUpperCase());
-  }
-  return methods;
-}
-
-function extractRouteCalls(content: string): Array<{ subPath: string; handlerChain: string }> {
-  const results: Array<{ subPath: string; handlerChain: string }> = [];
-  const prefix = ".route(";
-  let index = 0;
-
-  while (index < content.length) {
-    const routeIndex = content.indexOf(prefix, index);
-    if (routeIndex === -1) break;
-    let cursor = routeIndex + prefix.length;
-    while (cursor < content.length && /\s/.test(content[cursor] ?? "")) cursor += 1;
-    if (content[cursor] !== "\"") { index = cursor + 1; continue; }
-    cursor += 1;
-    let subPath = "";
-    while (cursor < content.length && content[cursor] !== "\"") { subPath += content[cursor]; cursor += 1; }
-    cursor += 1;
-    while (cursor < content.length && /[\s,]/.test(content[cursor] ?? "")) cursor += 1;
-    let depth = 1;
-    const handlerStart = cursor;
-    while (cursor < content.length && depth > 0) {
-      if (content[cursor] === "(") depth += 1;
-      else if (content[cursor] === ")") depth -= 1;
-      if (depth > 0) cursor += 1;
-    }
-    results.push({ subPath, handlerChain: content.slice(handlerStart, cursor) });
-    index = cursor + 1;
-  }
-  return results;
-}
-
-function extractNestCalls(content: string): Array<{ basePath: string; modulePath: string; functionName: string }> {
-  const results: Array<{ basePath: string; modulePath: string; functionName: string }> = [];
-  const regex = /\.nest\("([^"]+)",\s*([\w:]+)::(\w+)\([^)]*\)\)/g;
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(content)) !== null) {
-    results.push({ basePath: match[1] ?? "", modulePath: match[2] ?? "", functionName: match[3] ?? "" });
-  }
-  return results;
-}
-
-function joinRustRoutePaths(basePath: string, subPath: string): string {
-  const normalizedBase = basePath.replace(/\/+$/, "");
-  const normalizedSubPath = subPath === "/" ? "" : subPath;
-  return `${normalizedBase}${normalizedSubPath || ""}` || "/";
-}
-
-function listRustSourceFiles(dir: string): string[] {
-  if (!fs.existsSync(dir)) return [];
-  const files: string[] = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) files.push(...listRustSourceFiles(fullPath));
-    else if (entry.isFile() && entry.name.endsWith(".rs")) files.push(fullPath);
-  }
-  return files.sort();
-}
-
-function readRustApiModule(repoRoot: string, moduleName: string): { content: string; sourceFiles: string[] } | null {
-  const rustApiDir = path.join(repoRoot, "crates", "routa-server", "src", "api");
-  const moduleFile = path.join(rustApiDir, `${moduleName}.rs`);
-  const moduleDir = path.join(rustApiDir, moduleName);
-  const files: string[] = [];
-  if (fs.existsSync(moduleFile)) files.push(moduleFile);
-  files.push(...listRustSourceFiles(moduleDir));
-  if (files.length === 0) return null;
-  return { content: files.map((f) => fs.readFileSync(f, "utf8")).join("\n"), sourceFiles: files.map((f) => toRepoRelative(repoRoot, f)) };
-}
-
-function recordImplementationApiRoute(
-  routes: Map<string, ImplementationApiRoute>,
-  route: Omit<ImplementationApiRoute, "domain"> & { domain?: string },
-): void {
-  const key = `${route.method} ${route.path}`;
-  const existing = routes.get(key);
-  const sourceFiles = [...new Set(route.sourceFiles)].sort();
-  if (!existing) {
-    routes.set(key, { method: route.method, path: route.path, domain: route.domain ?? domainFromApiPath(route.path), sourceFiles });
-    return;
-  }
-  routes.set(key, { ...existing, sourceFiles: [...new Set([...existing.sourceFiles, ...sourceFiles])].sort() });
-}
-
-function collectRustApiRoutes(params: {
-  repoRoot: string; content: string; basePath: string; sourceFiles: string[];
-  visitedRouters: Set<string>; routes: Map<string, ImplementationApiRoute>;
-}): void {
-  const { repoRoot, content, basePath, sourceFiles, visitedRouters, routes } = params;
-  for (const { subPath, handlerChain } of extractRouteCalls(content)) {
-    const fullPath = joinRustRoutePaths(basePath, subPath);
-    for (const method of extractMethods(handlerChain)) {
-      recordImplementationApiRoute(routes, { method, path: fullPath, sourceFiles });
-    }
-  }
-  for (const nest of extractNestCalls(content)) {
-    const moduleName = nest.modulePath.split("::").filter(Boolean).at(-1);
-    if (!moduleName) continue;
-    const visitKey = `${basePath}::${nest.basePath}::${nest.modulePath}::${nest.functionName}`;
-    if (visitedRouters.has(visitKey)) continue;
-    visitedRouters.add(visitKey);
-    const apiModule = readRustApiModule(repoRoot, moduleName);
-    if (!apiModule) continue;
-    collectRustApiRoutes({ repoRoot, content: apiModule.content, basePath: joinRustRoutePaths(basePath, nest.basePath), sourceFiles: apiModule.sourceFiles, visitedRouters, routes });
-  }
-}
-
-function scanRustApiRoutes(repoRoot: string, scanRoot: string): ImplementationApiRoute[] {
-  const rustApiDir = path.join(scanRoot, "crates", "routa-server", "src", "api");
-  const rustApiMod = path.join(rustApiDir, "mod.rs");
-  const rustLib = path.join(scanRoot, "crates", "routa-server", "src", "lib.rs");
-  const routes = new Map<string, ImplementationApiRoute>();
-  const visitedRouters = new Set<string>();
-
-  if (fs.existsSync(rustApiMod)) {
-    collectRustApiRoutes({ repoRoot, content: fs.readFileSync(rustApiMod, "utf8"), basePath: "", sourceFiles: [toRepoRelative(repoRoot, rustApiMod)], visitedRouters, routes });
-  }
-  for (const directFile of [rustApiMod, rustLib]) {
-    if (!fs.existsSync(directFile)) continue;
-    const content = fs.readFileSync(directFile, "utf8");
-    for (const { subPath, handlerChain } of extractRouteCalls(content)) {
-      if (!subPath.startsWith("/api/")) continue;
-      for (const method of extractMethods(handlerChain)) {
-        recordImplementationApiRoute(routes, { method, path: subPath, sourceFiles: [toRepoRelative(repoRoot, directFile)] });
-      }
-    }
-  }
-  return [...routes.values()].sort((a, b) => a.domain.localeCompare(b.domain) || a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
-}
-
 // ── API contract loading ────────────────────────────────────────────
 
 function loadApiContract(repoRoot: string, scanRoot: string): OpenApiDoc | null {
@@ -745,7 +610,7 @@ function detectFramework(repoRoot: string): string[] {
   if (fs.existsSync(path.join(repoRoot, "config", "plugin.ts")) || fs.existsSync(path.join(repoRoot, "config", "plugin.js"))) {
     detected.push("eggjs");
   }
-  if (fs.existsSync(path.join(repoRoot, "Cargo.toml")) || fs.existsSync(path.join(repoRoot, "crates", "routa-server"))) {
+  if (fs.existsSync(path.join(repoRoot, "Cargo.toml"))) {
     detected.push("rust");
   }
   if (detected.length === 0) detected.push("generic");
@@ -790,15 +655,11 @@ function detectAdapters(repoRoot: string): Array<{ id: FeatureTreeAdapterId; con
       ]),
     });
   }
-  const hasAxum = fs.existsSync(path.join(repoRoot, "crates", "routa-server", "src", "api")) || fs.existsSync(path.join(repoRoot, "Cargo.toml"));
-  if (hasAxum) {
+  if (fs.existsSync(path.join(repoRoot, "Cargo.toml"))) {
     adapters.push({
       id: "axum",
-      confidence: fs.existsSync(path.join(repoRoot, "crates", "routa-server", "src", "api")) ? "high" : "medium",
-      signals: uniqueSorted([
-        fs.existsSync(path.join(repoRoot, "Cargo.toml")) ? "Cargo.toml" : "",
-        fs.existsSync(path.join(repoRoot, "crates", "routa-server", "src", "api")) ? "crates/routa-server/src/api" : "",
-      ]),
+      confidence: "medium",
+      signals: ["Cargo.toml"],
     });
   }
   if (fs.existsSync(path.join(repoRoot, "pom.xml"))) {
@@ -851,7 +712,6 @@ function collectCandidateRoots(repoRoot: string): string[] {
       path.join(dir, "pages"),
       path.join(dir, "src", "pages", "api"),
       path.join(dir, "pages", "api"),
-      path.join(dir, "crates", "routa-server", "src", "api"),
     ].some((entry) => fs.existsSync(entry));
 
     if (hasRootSignal || hasSurfaceSignal) {
@@ -875,7 +735,8 @@ function buildCandidateRoot(repoRoot: string, candidateRoot: string): FeatureTre
   const pages = scanFrontendRoutes(repoRoot, candidateRoot);
   const appRouterApis = scanNextjsAppRouterApiRoutes(repoRoot, candidateRoot);
   const pagesApis = scanNextjsPagesApiRoutes(repoRoot, candidateRoot);
-  const rustApis = scanRustApiRoutes(repoRoot, candidateRoot);
+  // Rust backend removed in the Web-only migration; counts kept for surface-index shape compatibility.
+  const rustApis: ImplementationApiRoute[] = [];
   const adapters = detectAdapters(candidateRoot).map((entry) => entry.id);
   const warnings: string[] = [];
   if (!loadApiContract(repoRoot, candidateRoot)) {
@@ -1000,11 +861,9 @@ function renderContractApiSection(
   lines: string[],
   apis: FeatureSurfaceIndex["contractApis"],
   nextjsApis: ImplementationApiRoute[],
-  rustApis: ImplementationApiRoute[],
 ): void {
   const grouped = new Map<string, typeof apis>();
   const nextjsLookup = new Map(nextjsApis.map((a) => [buildApiLookupKey(a.method, a.path), a.sourceFiles]));
-  const rustLookup = new Map(rustApis.map((a) => [buildApiLookupKey(a.method, a.path), a.sourceFiles]));
   for (const api of apis) {
     const current = grouped.get(api.domain) ?? [];
     current.push(api);
@@ -1014,10 +873,10 @@ function renderContractApiSection(
   for (const [domain, endpoints] of [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const domainName = domain.replace(/\b\w/g, (c) => c.toUpperCase());
     lines.push(`### ${domainName} (${endpoints.length})`, "");
-    lines.push("| Method | Endpoint | Details | Next.js | Rust |", "|--------|----------|---------|---------|------|");
+    lines.push("| Method | Endpoint | Details | Next.js |", "|--------|----------|---------|---------|");
     for (const ep of endpoints) {
       const key = buildApiLookupKey(ep.method, ep.path);
-      lines.push(`| ${ep.method} | \`${ep.path}\` | ${ep.summary || ep.operationId || ""} | ${formatSourceFiles(nextjsLookup.get(key) ?? [])} | ${formatSourceFiles(rustLookup.get(key) ?? [])} |`);
+      lines.push(`| ${ep.method} | \`${ep.path}\` | ${ep.summary || ep.operationId || ""} | ${formatSourceFiles(nextjsLookup.get(key) ?? [])} |`);
     }
     lines.push("");
   }
@@ -1051,11 +910,11 @@ function renderImplementationOnlyApiSection(lines: string[], title: string, apis
   }
 }
 
-function renderMarkdown(tree: FeatureTree, surfaceIndex: FeatureSurfaceIndex, nextjsApis: ImplementationApiRoute[], rustApis: ImplementationApiRoute[]): string {
+function renderMarkdown(tree: FeatureTree, surfaceIndex: FeatureSurfaceIndex, nextjsApis: ImplementationApiRoute[]): string {
   const lines: string[] = [
     "---",
     "status: generated",
-    "purpose: Auto-generated route and API surface index for Routa.js.",
+    "purpose: Auto-generated route and API surface index for Loom-team.",
     "sources:",
     "  - src/app/**/page.tsx",
     "  - app/**/page.tsx",
@@ -1066,9 +925,8 @@ function renderMarkdown(tree: FeatureTree, surfaceIndex: FeatureSurfaceIndex, ne
     "  - app/api/**/route.ts",
     "  - src/pages/api/**/*",
     "  - pages/api/**/*",
-    "  - crates/routa-server/src/api/**/*.rs",
     "update_policy:",
-    "  - \"Regenerate with `routa feature-tree generate` or via the Feature Explorer UI.\"",
+    "  - \"Regenerate via the Feature Explorer UI (`/api/spec/feature-tree/generate`).\"",
     "  - \"Hand-edit semantic `feature_metadata` fields in this frontmatter block.\"",
     "  - \"`feature_metadata.features[].source_files` is regenerated from declared pages/APIs.\"",
     "  - \"Do not hand-edit generated endpoint or route tables below.\"",
@@ -1081,7 +939,6 @@ function renderMarkdown(tree: FeatureTree, surfaceIndex: FeatureSurfaceIndex, ne
     "- Frontend routes: `src/app/**/page.tsx`, `app/**/page.tsx`, `src/pages/**/*`, `pages/**/*`",
     "- Contract API: `api-contract.yaml`",
     "- Next.js API routes: `src/app/api/**/route.ts`, `app/api/**/route.ts`, `src/pages/api/**/*`, `pages/api/**/*`",
-    "- Rust API routes: `crates/routa-server/src/api/**/*.rs`",
     "- Feature metadata: `feature_metadata` frontmatter in this file (`source_files` regenerated)", "", "---", "");
   lines.push("## Frontend Pages", "", "| Page | Route | Source File | Description |", "|------|-------|-------------|-------------|");
   for (const page of surfaceIndex.pages) {
@@ -1090,15 +947,14 @@ function renderMarkdown(tree: FeatureTree, surfaceIndex: FeatureSurfaceIndex, ne
     lines.push(`| ${page.title} | \`${page.route}\` | \`${page.sourceFile}\` | ${normalizedDesc} |`);
   }
   lines.push("", "---", "");
-  renderContractApiSection(lines, surfaceIndex.contractApis, nextjsApis, rustApis);
+  renderContractApiSection(lines, surfaceIndex.contractApis, nextjsApis);
   renderImplementationOnlyApiSection(lines, "## Next.js-only API Routes", filterImplementationOnlyApis(surfaceIndex.contractApis, nextjsApis));
-  renderImplementationOnlyApiSection(lines, "## Rust-only API Routes", filterImplementationOnlyApis(surfaceIndex.contractApis, rustApis));
   return `${lines.join("\n")}\n`;
 }
 
 function buildFeatureTree(routes: RouteInfo[], apiFeatures: Record<string, ContractApiFeature[]>): FeatureTree {
   return {
-    name: "Routa.js",
+    name: "Loom-team",
     description: "Multi-agent coordination platform",
     children: [
       {
@@ -1152,7 +1008,8 @@ export async function generateFeatureTree(options: GenerateFeatureTreeOptions): 
   const nextjsPagesApis = scanNextjsPagesApiRoutes(effectiveRepoRoot, effectiveScanRoot);
   const nextjsApis = [...nextjsAppRouterApis, ...nextjsPagesApis].sort((a, b) =>
     a.domain.localeCompare(b.domain) || a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
-  const rustApis = scanRustApiRoutes(effectiveRepoRoot, effectiveScanRoot);
+  // Rust backend removed in the Web-only migration; kept as an empty list for surface-index shape compatibility.
+  const rustApis: ImplementationApiRoute[] = [];
   const apiContract = loadApiContract(effectiveRepoRoot, effectiveScanRoot);
   const metadata = metadataOverride
     ? normalizeFeatureMetadata(metadataOverride)
@@ -1180,7 +1037,7 @@ export async function generateFeatureTree(options: GenerateFeatureTreeOptions): 
 
   if (!dryRun) {
     fs.mkdirSync(path.dirname(outputMd), { recursive: true });
-    fs.writeFileSync(outputMd, renderMarkdown(tree, surfaceIndex, nextjsApis, rustApis), "utf8");
+    fs.writeFileSync(outputMd, renderMarkdown(tree, surfaceIndex, nextjsApis), "utf8");
     wroteFiles.push(path.relative(repoRoot, outputMd));
     fs.writeFileSync(outputJson, JSON.stringify(surfaceIndex, null, 2) + "\n", "utf8");
     wroteFiles.push(path.relative(repoRoot, outputJson));

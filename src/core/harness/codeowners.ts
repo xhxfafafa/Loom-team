@@ -25,7 +25,6 @@ const CODEOWNERS_CANDIDATES = [".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWN
 const SENSITIVE_PATH_PREFIXES = [
   "src/core/acp/",
   "src/core/orchestration/",
-  "crates/routa-server/src/api/",
 ];
 
 const SENSITIVE_FILES = [

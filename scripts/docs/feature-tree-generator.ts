@@ -194,9 +194,6 @@ type OpenApiDoc = {
 const API_CONTRACT = fromRoot("api-contract.yaml");
 const APP_DIR = fromRoot("src", "app");
 const NEXT_API_DIR = fromRoot("src", "app", "api");
-const RUST_API_DIR = fromRoot("crates", "routa-server", "src", "api");
-const RUST_API_MOD = path.join(RUST_API_DIR, "mod.rs");
-const RUST_LIB = fromRoot("crates", "routa-server", "src", "lib.rs");
 const OUTPUT_MD = fromRoot("docs", "product-specs", "FEATURE_TREE.md");
 const OUTPUT_JSON = fromRoot("docs", "product-specs", "feature-tree.index.json");
 const REPO_ROOT = fromRoot();
@@ -481,253 +478,6 @@ function scanNextjsApiRoutes(): ImplementationApiRoute[] {
   }
 
   walk(NEXT_API_DIR);
-  return [...routes.values()].sort((left, right) =>
-    left.domain.localeCompare(right.domain)
-    || left.path.localeCompare(right.path)
-    || left.method.localeCompare(right.method),
-  );
-}
-
-type RustModuleContent = {
-  content: string;
-  sourceFiles: string[];
-};
-
-function listRustSourceFiles(dir: string): string[] {
-  if (!fs.existsSync(dir)) {
-    return [];
-  }
-
-  const files: string[] = [];
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...listRustSourceFiles(fullPath));
-    } else if (entry.isFile() && entry.name.endsWith(".rs")) {
-      files.push(fullPath);
-    }
-  }
-
-  return files.sort();
-}
-
-function extractMethods(handlerChain: string): string[] {
-  const methods: string[] = [];
-  for (const method of ["get", "post", "put", "delete", "patch"]) {
-    const regex = new RegExp(`(?:^|[\\s.:])${method}\\(`, "g");
-    if (regex.test(handlerChain)) {
-      methods.push(method.toUpperCase());
-    }
-  }
-  return methods;
-}
-
-function extractRouteCalls(content: string): Array<{ subPath: string; handlerChain: string }> {
-  const results: Array<{ subPath: string; handlerChain: string }> = [];
-  const prefix = ".route(";
-  let index = 0;
-
-  while (index < content.length) {
-    const routeIndex = content.indexOf(prefix, index);
-    if (routeIndex === -1) {
-      break;
-    }
-
-    let cursor = routeIndex + prefix.length;
-    while (cursor < content.length && /\s/.test(content[cursor] ?? "")) {
-      cursor += 1;
-    }
-
-    if (content[cursor] !== "\"") {
-      index = cursor + 1;
-      continue;
-    }
-    cursor += 1;
-
-    let subPath = "";
-    while (cursor < content.length && content[cursor] !== "\"") {
-      subPath += content[cursor];
-      cursor += 1;
-    }
-    cursor += 1;
-
-    while (cursor < content.length && /[\s,]/.test(content[cursor] ?? "")) {
-      cursor += 1;
-    }
-
-    let depth = 1;
-    const handlerStart = cursor;
-    while (cursor < content.length && depth > 0) {
-      if (content[cursor] === "(") {
-        depth += 1;
-      } else if (content[cursor] === ")") {
-        depth -= 1;
-      }
-      if (depth > 0) {
-        cursor += 1;
-      }
-    }
-
-    results.push({
-      subPath,
-      handlerChain: content.slice(handlerStart, cursor),
-    });
-    index = cursor + 1;
-  }
-
-  return results;
-}
-
-function extractNestCalls(
-  content: string,
-): Array<{ basePath: string; modulePath: string; functionName: string }> {
-  const results: Array<{ basePath: string; modulePath: string; functionName: string }> = [];
-  const regex = /\.nest\("([^"]+)",\s*([\w:]+)::(\w+)\([^)]*\)\)/g;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(content)) !== null) {
-    results.push({
-      basePath: match[1] ?? "",
-      modulePath: match[2] ?? "",
-      functionName: match[3] ?? "",
-    });
-  }
-
-  return results;
-}
-
-function joinRustRoutePaths(basePath: string, subPath: string): string {
-  const normalizedBase = basePath.replace(/\/+$/, "");
-  const normalizedSubPath = subPath === "/" ? "" : subPath;
-  return `${normalizedBase}${normalizedSubPath || ""}` || "/";
-}
-
-function readRustApiModule(moduleName: string): RustModuleContent | null {
-  const moduleFile = path.join(RUST_API_DIR, `${moduleName}.rs`);
-  const moduleDir = path.join(RUST_API_DIR, moduleName);
-  const files: string[] = [];
-
-  if (fs.existsSync(moduleFile)) {
-    files.push(moduleFile);
-  }
-  files.push(...listRustSourceFiles(moduleDir));
-
-  if (files.length === 0) {
-    return null;
-  }
-
-  return {
-    content: files.map((file) => fs.readFileSync(file, "utf8")).join("\n"),
-    sourceFiles: files.map(toRepoRelative),
-  };
-}
-
-function recordImplementationApiRoute(
-  routes: Map<string, ImplementationApiRoute>,
-  route: Omit<ImplementationApiRoute, "domain"> & { domain?: string },
-): void {
-  const key = `${route.method} ${route.path}`;
-  const existing = routes.get(key);
-  const sourceFiles = [...new Set(route.sourceFiles)].sort();
-
-  if (!existing) {
-    routes.set(key, {
-      method: route.method,
-      path: route.path,
-      domain: route.domain ?? domainFromApiPath(route.path),
-      sourceFiles,
-    });
-    return;
-  }
-
-  routes.set(key, {
-    ...existing,
-    sourceFiles: [...new Set([...existing.sourceFiles, ...sourceFiles])].sort(),
-  });
-}
-
-function collectRustApiRoutes(params: {
-  content: string;
-  basePath: string;
-  sourceFiles: string[];
-  visitedRouters: Set<string>;
-  routes: Map<string, ImplementationApiRoute>;
-}): void {
-  const { content, basePath, sourceFiles, visitedRouters, routes } = params;
-
-  for (const { subPath, handlerChain } of extractRouteCalls(content)) {
-    const fullPath = joinRustRoutePaths(basePath, subPath);
-    for (const method of extractMethods(handlerChain)) {
-      recordImplementationApiRoute(routes, {
-        method,
-        path: fullPath,
-        sourceFiles,
-      });
-    }
-  }
-
-  for (const nest of extractNestCalls(content)) {
-    const moduleName = nest.modulePath.split("::").filter(Boolean).at(-1);
-    if (!moduleName) {
-      continue;
-    }
-
-    const visitKey = `${basePath}::${nest.basePath}::${nest.modulePath}::${nest.functionName}`;
-    if (visitedRouters.has(visitKey)) {
-      continue;
-    }
-    visitedRouters.add(visitKey);
-
-    const apiModule = readRustApiModule(moduleName);
-    if (!apiModule) {
-      continue;
-    }
-
-    collectRustApiRoutes({
-      content: apiModule.content,
-      basePath: joinRustRoutePaths(basePath, nest.basePath),
-      sourceFiles: apiModule.sourceFiles,
-      visitedRouters,
-      routes,
-    });
-  }
-}
-
-function scanRustApiRoutes(): ImplementationApiRoute[] {
-  const routes = new Map<string, ImplementationApiRoute>();
-  const visitedRouters = new Set<string>();
-
-  if (fs.existsSync(RUST_API_MOD)) {
-    collectRustApiRoutes({
-      content: fs.readFileSync(RUST_API_MOD, "utf8"),
-      basePath: "",
-      sourceFiles: [toRepoRelative(RUST_API_MOD)],
-      visitedRouters,
-      routes,
-    });
-  }
-
-  for (const directFile of [RUST_API_MOD, RUST_LIB]) {
-    if (!fs.existsSync(directFile)) {
-      continue;
-    }
-
-    const content = fs.readFileSync(directFile, "utf8");
-    for (const { subPath, handlerChain } of extractRouteCalls(content)) {
-      if (!subPath.startsWith("/api/")) {
-        continue;
-      }
-
-      for (const method of extractMethods(handlerChain)) {
-        recordImplementationApiRoute(routes, {
-          method,
-          path: subPath,
-          sourceFiles: [toRepoRelative(directFile)],
-        });
-      }
-    }
-  }
-
   return [...routes.values()].sort((left, right) =>
     left.domain.localeCompare(right.domain)
     || left.path.localeCompare(right.path)
@@ -1045,11 +795,9 @@ function renderContractApiSection(
   lines: string[],
   apis: FeatureSurfaceIndex["contractApis"],
   nextjsApis: ImplementationApiRoute[],
-  rustApis: ImplementationApiRoute[],
 ): void {
   const grouped = new Map<string, FeatureSurfaceIndex["contractApis"][number][]>();
   const nextjsLookup = new Map(nextjsApis.map((api) => [buildApiLookupKey(api.method, api.path), api.sourceFiles]));
-  const rustLookup = new Map(rustApis.map((api) => [buildApiLookupKey(api.method, api.path), api.sourceFiles]));
 
   for (const api of apis) {
     const current = grouped.get(api.domain) ?? [];
@@ -1061,11 +809,11 @@ function renderContractApiSection(
   for (const [domain, endpoints] of [...grouped.entries()].sort(([left], [right]) => left.localeCompare(right))) {
     const domainName = domain.replace(/\b\w/g, (char) => char.toUpperCase());
     lines.push(`### ${domainName} (${endpoints.length})`, "");
-    lines.push("| Method | Endpoint | Details | Next.js | Rust |", "|--------|----------|---------|---------|------|");
+    lines.push("| Method | Endpoint | Details | Next.js |", "|--------|----------|---------|---------|");
     for (const endpoint of endpoints) {
       const key = buildApiLookupKey(endpoint.method, endpoint.path);
       lines.push(
-        `| ${endpoint.method} | \`${endpoint.path}\` | ${endpoint.summary || endpoint.operationId || ""} | ${formatSourceFiles(nextjsLookup.get(key) ?? [])} | ${formatSourceFiles(rustLookup.get(key) ?? [])} |`,
+        `| ${endpoint.method} | \`${endpoint.path}\` | ${endpoint.summary || endpoint.operationId || ""} | ${formatSourceFiles(nextjsLookup.get(key) ?? [])} |`,
       );
     }
     lines.push("");
@@ -1163,16 +911,11 @@ export function renderMarkdown(
   }
 
   lines.push("", "---", "");
-  renderContractApiSection(lines, surfaceIndex.contractApis, surfaceIndex.nextjsApis, surfaceIndex.rustApis);
+  renderContractApiSection(lines, surfaceIndex.contractApis, surfaceIndex.nextjsApis);
   renderImplementationOnlyApiSection(
     lines,
     "## Next.js-only API Routes",
     filterImplementationOnlyApis(surfaceIndex.contractApis, surfaceIndex.nextjsApis),
-  );
-  renderImplementationOnlyApiSection(
-    lines,
-    "## Rust-only API Routes",
-    filterImplementationOnlyApis(surfaceIndex.contractApis, surfaceIndex.rustApis),
   );
 
   return `${lines.join("\n")}\n`;
@@ -1289,7 +1032,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
 
   const routes = scanFrontendRoutes();
   const nextjsApis = scanNextjsApiRoutes();
-  const rustApis = scanRustApiRoutes();
+  // Rust backend removed in the Web-only migration; kept empty for surface-index shape compatibility.
+  const rustApis: ImplementationApiRoute[] = [];
   const apiContract = loadYamlFile<OpenApiDoc>(API_CONTRACT);
   const existingFeatureTree = fs.existsSync(OUTPUT_MD) ? fs.readFileSync(OUTPUT_MD, "utf8") : "";
   const existingSurfaceIndex = fs.existsSync(OUTPUT_JSON) ? fs.readFileSync(OUTPUT_JSON, "utf8") : "";

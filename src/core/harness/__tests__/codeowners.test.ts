@@ -150,7 +150,7 @@ describe("resolveOwnership", () => {
   it("does not mark nested files as overlaps for root-anchored basename rules", () => {
     const content = "/package.json @root\npackages/** @packages\n";
     const { rules } = parseCodeownersContent(content);
-    const matches = resolveOwnership(["packages/routa-cli/package.json", "package.json"], rules);
+    const matches = resolveOwnership(["packages/web-toolkit/package.json", "package.json"], rules);
 
     expect(matches[0].covered).toBe(true);
     expect(matches[0].owners[0].name).toBe("@packages");
@@ -163,24 +163,24 @@ describe("resolveOwnership", () => {
   it("builds trigger-aware ownership routing context", () => {
     const { rules } = parseCodeownersContent([
       "src/core/** @arch-team",
-      "crates/** @platform-team",
+      "src/app/api/** @platform-team",
     ].join("\n"));
     const matches = resolveOwnership([
       "src/core/review.ts",
-      "crates/routa-server/src/api/harness.rs",
+      "src/app/api/harness/route.ts",
       "api-contract.yaml",
     ], rules);
     const triggerRules = parseReviewTriggerConfig([
       "review_triggers:",
-      "  - name: cross_boundary_change_web_rust",
+      "  - name: cross_boundary_change_core_api",
       "    type: cross_boundary_change",
       "    severity: medium",
       "    action: require_human_review",
       "    boundaries:",
-      "      web:",
-      "        - src/**",
-      "      rust:",
-      "        - crates/**",
+      "      core:",
+      "        - src/core/**",
+      "      api:",
+      "        - src/app/api/**",
       "  - name: sensitive_contract_or_governance_change",
       "    type: sensitive_file_change",
       "    severity: high",
@@ -192,13 +192,13 @@ describe("resolveOwnership", () => {
     const routing = buildOwnershipRoutingContext({
       changedFiles: [
         "src/core/review.ts",
-        "crates/routa-server/src/api/harness.rs",
+        "src/app/api/harness/route.ts",
         "api-contract.yaml",
       ],
       matches,
       triggerRules,
       matchedTriggerNames: [
-        "cross_boundary_change_web_rust",
+        "cross_boundary_change_core_api",
         "sensitive_contract_or_governance_change",
       ],
     });
@@ -206,7 +206,7 @@ describe("resolveOwnership", () => {
     expect(routing.touchedOwners).toEqual(["@arch-team", "@platform-team"]);
     expect(routing.unownedChangedFiles).toEqual(["api-contract.yaml"]);
     expect(routing.highRiskUnownedFiles).toEqual(["api-contract.yaml"]);
-    expect(routing.crossOwnerTriggers).toEqual(["cross_boundary_change_web_rust"]);
+    expect(routing.crossOwnerTriggers).toEqual(["cross_boundary_change_core_api"]);
     expect(routing.triggerCorrelations).toHaveLength(2);
   });
 

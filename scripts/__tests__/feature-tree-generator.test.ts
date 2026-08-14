@@ -35,16 +35,16 @@ describe("feature-tree-generator", () => {
       [{ route: "/", title: "Home", description: "", sourceFile: "src/app/page.tsx" }],
       { agents: [{ domain: "agents", path: "/api/agents", method: "GET", operationId: "listAgents", summary: "List agents" }] },
       [{ domain: "agents", method: "GET", path: "/api/agents", sourceFiles: ["src/app/api/agents/route.ts"] }],
-      [{ domain: "agents", method: "GET", path: "/api/agents", sourceFiles: ["crates/routa-server/src/api/agents.rs"] }],
+      [],
       metadata,
     );
 
     const markdown = renderMarkdown(tree, surfaceIndex);
     expect(markdown).toContain("Regenerate via the Feature Explorer UI");
     expect(markdown).toContain("| Home | `/` | `src/app/page.tsx` |  |");
-    expect(markdown).toContain("| GET | `/api/agents` | List agents | `src/app/api/agents/route.ts` | `crates/routa-server/src/api/agents.rs` |");
+    expect(markdown).toContain("| GET | `/api/agents` | List agents | `src/app/api/agents/route.ts` |");
     expect(markdown).not.toContain("## Next.js API Routes");
-    expect(markdown).not.toContain("## Rust API Routes");
+    expect(markdown).not.toContain("## Rust-only API Routes");
     expect(markdown).toContain("feature_metadata:");
     expect(markdown).toContain("schema_version: 1");
     expect(markdown).toContain("Hand-edit semantic `feature_metadata` fields in this frontmatter block.");
@@ -80,7 +80,7 @@ describe("feature-tree-generator", () => {
         ],
       },
       [{ domain: "spec", method: "GET", path: "/api/spec/issues", sourceFiles: ["src/app/api/spec/issues/route.ts"] }],
-      [{ domain: "spec", method: "GET", path: "/api/spec/issues", sourceFiles: ["crates/routa-server/src/api/spec.rs"] }],
+      [],
       metadata,
     );
 
@@ -105,10 +105,7 @@ describe("feature-tree-generator", () => {
       path: "/api/spec/issues",
       sourceFiles: ["src/app/api/spec/issues/route.ts"],
     });
-    expect(index.rustApis[0]).toMatchObject({
-      path: "/api/spec/issues",
-      sourceFiles: ["crates/routa-server/src/api/spec.rs"],
-    });
+    expect(index.rustApis).toEqual([]);
     expect(index.metadata?.features[0]?.sourceFiles).toEqual([
       "src/app/workspace/[workspaceId]/spec/page.tsx",
     ]);
@@ -143,12 +140,11 @@ describe("feature-tree-generator", () => {
         ],
       },
       [{ domain: "sessions", method: "GET", path: "/api/sessions/{id}/context", sourceFiles: ["src/app/api/sessions/[sessionId]/context/route.ts"] }],
-      [{ domain: "sessions", method: "GET", path: "/api/sessions/{id}/context", sourceFiles: ["crates/routa-server/src/api/sessions.rs"] }],
+      [],
       metadata,
     );
 
     expect(index.metadata?.features[0]?.sourceFiles).toEqual([
-      "crates/routa-server/src/api/sessions.rs",
       "src/app/api/sessions/[sessionId]/context/route.ts",
     ]);
   });
@@ -184,7 +180,7 @@ describe("feature-tree-generator", () => {
         ],
       },
       [{ domain: "agents", method: "GET", path: "/api/agents", sourceFiles: ["src/app/api/agents/route.ts"] }],
-      [{ domain: "agents", method: "GET", path: "/api/agents", sourceFiles: ["crates/routa-server/src/api/agents.rs"] }],
+      [],
       metadata,
     );
 
@@ -193,7 +189,6 @@ describe("feature-tree-generator", () => {
       pages: ["/settings/agents"],
       apis: ["GET /api/agents"],
       sourceFiles: [
-        "crates/routa-server/src/api/agents.rs",
         "src/app/api/agents/route.ts",
         "src/app/settings/agents/page.tsx",
       ],

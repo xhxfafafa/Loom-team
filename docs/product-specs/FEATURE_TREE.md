@@ -64,7 +64,6 @@ feature_metadata:
         - GET /api/feature-explorer/{featureId}/apis
         - GET /api/feature-explorer/{featureId}/files
       source_files:
-        - crates/routa-server/src/api/feature_explorer.rs
         - src/app/api/feature-explorer/[featureId]/apis/route.ts
         - src/app/api/feature-explorer/[featureId]/files/route.ts
         - src/app/api/feature-explorer/[featureId]/route.ts
@@ -100,7 +99,6 @@ feature_metadata:
         - team-runs
         - workspace-overview
       source_files:
-        - crates/routa-server/src/api/sessions.rs
         - src/app/api/sessions/[sessionId]/context/route.ts
         - src/app/api/sessions/[sessionId]/disconnect/route.ts
         - src/app/api/sessions/[sessionId]/fork/route.ts
@@ -138,7 +136,6 @@ feature_metadata:
       related_features:
         - session-recovery
       source_files:
-        - crates/routa-server/src/api/kanban.rs
         - src/app/api/kanban/boards/[boardId]/route.ts
         - src/app/api/kanban/boards/route.ts
         - src/app/api/kanban/decompose/route.ts
@@ -196,8 +193,6 @@ feature_metadata:
         - harness
         - spec
       source_files:
-        - crates/routa-server/src/api/fitness.rs
-        - crates/routa-server/src/api/harness.rs
         - src/app/api/fitness/analyze/route.ts
         - src/app/api/fitness/architecture/route.ts
         - src/app/api/fitness/plan/route.ts
@@ -236,7 +231,7 @@ Multi-agent coordination platform. This document is auto-generated from:
 | Home | `/` | `src/app/page.tsx` | Workspace-first landing page for selecting a workspace, connecting providers, an |
 | Canvas | `/canvas/:id` | `src/app/canvas/[id]/page.tsx` | Viewer page for opening a saved canvas artifact by ID. |
 | Mcp Tools | `/mcp-tools` | `src/app/mcp-tools/page.tsx` | Shortcut route that redirects to the MCP tools settings experience for browsing  |
-| Settings Page | `/settings` | `src/app/settings/page.tsx` | Provides a full-page UI for all Loom-team settings: - Providers (default agent provi |
+| Settings Page | `/settings` | `src/app/settings/page.tsx` | Provides a full-page UI for all Loom-team settings: - Providers (default agent p |
 | Settings / Agents | `/settings/agents` | `src/app/settings/agents/page.tsx` | Settings page for installing, discovering, and managing ACP-compatible agent run |
 | Settings / Fitness | `/settings/fitness` | `src/app/settings/fitness/page.tsx` | Compatibility route that forwards fitness configuration requests to the fluency  |
 | Settings / Fluency | `/settings/fluency` | `src/app/settings/fluency/page.tsx` | Settings page for repository fluency analysis, fitness snapshots, and harnessabi |
@@ -263,405 +258,405 @@ Multi-agent coordination platform. This document is auto-generated from:
 
 ### A2ui (2)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/a2ui/dashboard` | Get A2UI v0.10 dashboard data | `src/app/api/a2ui/dashboard/route.ts` | `crates/routa-server/src/api/a2ui.rs` |
-| POST | `/api/a2ui/dashboard` | Add custom A2UI messages to the dashboard | `src/app/api/a2ui/dashboard/route.ts` | `crates/routa-server/src/api/a2ui.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/a2ui/dashboard` | Get A2UI v0.10 dashboard data | `src/app/api/a2ui/dashboard/route.ts` |
+| POST | `/api/a2ui/dashboard` | Add custom A2UI messages to the dashboard | `src/app/api/a2ui/dashboard/route.ts` |
 
 ### Acp (15)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/acp` | ACP SSE stream | `src/app/api/acp/route.ts` | `crates/routa-server/src/api/acp_routes.rs`, `crates/routa-server/src/api/acp_routes/session_recovery.rs`, `crates/routa-server/src/api/acp_routes/session_support.rs`, `crates/routa-server/src/api/acp_routes/team_chain_support.rs`, `crates/routa-server/src/api/acp_routes/team_chain_tests.rs` |
-| POST | `/api/acp` | ACP JSON-RPC endpoint | `src/app/api/acp/route.ts` | `crates/routa-server/src/api/acp_routes.rs`, `crates/routa-server/src/api/acp_routes/session_recovery.rs`, `crates/routa-server/src/api/acp_routes/session_support.rs`, `crates/routa-server/src/api/acp_routes/team_chain_support.rs`, `crates/routa-server/src/api/acp_routes/team_chain_tests.rs` |
-| POST | `/api/acp/docker/container/start` | Start a Docker container for OpenCode agent | `src/app/api/acp/docker/container/start/route.ts` | `crates/routa-server/src/api/acp_docker.rs` |
-| POST | `/api/acp/docker/container/stop` | Stop a Docker container | `src/app/api/acp/docker/container/stop/route.ts` | `crates/routa-server/src/api/acp_docker.rs` |
-| GET | `/api/acp/docker/containers` | List Docker containers for OpenCode agents | `src/app/api/acp/docker/containers/route.ts` | `crates/routa-server/src/api/acp_docker.rs` |
-| POST | `/api/acp/docker/pull` | Pull a Docker image | `src/app/api/acp/docker/pull/route.ts` | `crates/routa-server/src/api/acp_docker.rs` |
-| GET | `/api/acp/docker/status` | Get Docker daemon status | `src/app/api/acp/docker/status/route.ts` | `crates/routa-server/src/api/acp_docker.rs` |
-| DELETE | `/api/acp/install` | Uninstall an ACP agent | `src/app/api/acp/install/route.ts` | `crates/routa-server/src/api/acp_registry.rs` |
-| POST | `/api/acp/install` | Install an ACP agent | `src/app/api/acp/install/route.ts` | `crates/routa-server/src/api/acp_registry.rs` |
-| GET | `/api/acp/registry` | List agents in the ACP registry | `src/app/api/acp/registry/route.ts` | `crates/routa-server/src/api/acp_registry.rs` |
-| POST | `/api/acp/registry` | Register an agent in the ACP registry | `src/app/api/acp/registry/route.ts` | `crates/routa-server/src/api/acp_registry.rs` |
-| GET | `/api/acp/runtime` | Get ACP runtime status | `src/app/api/acp/runtime/route.ts` | `crates/routa-server/src/api/acp_registry.rs` |
-| POST | `/api/acp/runtime` | Start ACP runtime | `src/app/api/acp/runtime/route.ts` | `crates/routa-server/src/api/acp_registry.rs` |
-| GET | `/api/acp/warmup` | Get ACP warmup status | `src/app/api/acp/warmup/route.ts` | `crates/routa-server/src/api/acp_registry.rs` |
-| POST | `/api/acp/warmup` | Trigger ACP warmup | `src/app/api/acp/warmup/route.ts` | `crates/routa-server/src/api/acp_registry.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/acp` | ACP SSE stream | `src/app/api/acp/route.ts` |
+| POST | `/api/acp` | ACP JSON-RPC endpoint | `src/app/api/acp/route.ts` |
+| POST | `/api/acp/docker/container/start` | Start a Docker container for OpenCode agent | `src/app/api/acp/docker/container/start/route.ts` |
+| POST | `/api/acp/docker/container/stop` | Stop a Docker container | `src/app/api/acp/docker/container/stop/route.ts` |
+| GET | `/api/acp/docker/containers` | List Docker containers for OpenCode agents | `src/app/api/acp/docker/containers/route.ts` |
+| POST | `/api/acp/docker/pull` | Pull a Docker image | `src/app/api/acp/docker/pull/route.ts` |
+| GET | `/api/acp/docker/status` | Get Docker daemon status | `src/app/api/acp/docker/status/route.ts` |
+| DELETE | `/api/acp/install` | Uninstall an ACP agent | `src/app/api/acp/install/route.ts` |
+| POST | `/api/acp/install` | Install an ACP agent | `src/app/api/acp/install/route.ts` |
+| GET | `/api/acp/registry` | List agents in the ACP registry | `src/app/api/acp/registry/route.ts` |
+| POST | `/api/acp/registry` | Register an agent in the ACP registry | `src/app/api/acp/registry/route.ts` |
+| GET | `/api/acp/runtime` | Get ACP runtime status | `src/app/api/acp/runtime/route.ts` |
+| POST | `/api/acp/runtime` | Start ACP runtime | `src/app/api/acp/runtime/route.ts` |
+| GET | `/api/acp/warmup` | Get ACP warmup status | `src/app/api/acp/warmup/route.ts` |
+| POST | `/api/acp/warmup` | Trigger ACP warmup | `src/app/api/acp/warmup/route.ts` |
 
 ### Agents (5)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/agents` | List agents (or get single by id query param) | `src/app/api/agents/route.ts` | `crates/routa-server/src/api/agents.rs` |
-| POST | `/api/agents` | Create a new agent | `src/app/api/agents/route.ts` | `crates/routa-server/src/api/agents.rs` |
-| DELETE | `/api/agents/{id}` | Delete an agent | `src/app/api/agents/[id]/route.ts` | `crates/routa-server/src/api/agents.rs` |
-| GET | `/api/agents/{id}` | Get agent by ID (REST-style path param) | `src/app/api/agents/[id]/route.ts` | `crates/routa-server/src/api/agents.rs` |
-| POST | `/api/agents/{id}/status` | Update agent status | `src/app/api/agents/[id]/status/route.ts` | `crates/routa-server/src/api/agents.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/agents` | List agents (or get single by id query param) | `src/app/api/agents/route.ts` |
+| POST | `/api/agents` | Create a new agent | `src/app/api/agents/route.ts` |
+| DELETE | `/api/agents/{id}` | Delete an agent | `src/app/api/agents/[id]/route.ts` |
+| GET | `/api/agents/{id}` | Get agent by ID (REST-style path param) | `src/app/api/agents/[id]/route.ts` |
+| POST | `/api/agents/{id}/status` | Update agent status | `src/app/api/agents/[id]/status/route.ts` |
 
 ### Background-Tasks (7)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/background-tasks` | List background tasks | `src/app/api/background-tasks/route.ts` | `crates/routa-server/src/api/background_tasks.rs` |
-| POST | `/api/background-tasks` | Create a background task | `src/app/api/background-tasks/route.ts` | `crates/routa-server/src/api/background_tasks.rs` |
-| DELETE | `/api/background-tasks/{id}` | Cancel a background task | `src/app/api/background-tasks/[id]/route.ts` | `crates/routa-server/src/api/background_tasks.rs` |
-| GET | `/api/background-tasks/{id}` | Get a background task by ID | `src/app/api/background-tasks/[id]/route.ts` | `crates/routa-server/src/api/background_tasks.rs` |
-| PATCH | `/api/background-tasks/{id}` | Update a background task (PENDING only) | `src/app/api/background-tasks/[id]/route.ts` | `crates/routa-server/src/api/background_tasks.rs` |
-| POST | `/api/background-tasks/{id}/retry` | Retry a failed background task | `src/app/api/background-tasks/[id]/retry/route.ts` | `crates/routa-server/src/api/background_tasks.rs` |
-| POST | `/api/background-tasks/process` | Process the next pending background task | `src/app/api/background-tasks/process/route.ts` | `crates/routa-server/src/api/background_tasks.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/background-tasks` | List background tasks | `src/app/api/background-tasks/route.ts` |
+| POST | `/api/background-tasks` | Create a background task | `src/app/api/background-tasks/route.ts` |
+| DELETE | `/api/background-tasks/{id}` | Cancel a background task | `src/app/api/background-tasks/[id]/route.ts` |
+| GET | `/api/background-tasks/{id}` | Get a background task by ID | `src/app/api/background-tasks/[id]/route.ts` |
+| PATCH | `/api/background-tasks/{id}` | Update a background task (PENDING only) | `src/app/api/background-tasks/[id]/route.ts` |
+| POST | `/api/background-tasks/{id}/retry` | Retry a failed background task | `src/app/api/background-tasks/[id]/retry/route.ts` |
+| POST | `/api/background-tasks/process` | Process the next pending background task | `src/app/api/background-tasks/process/route.ts` |
 
 ### Canvas (5)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/canvas` | List canvas artifacts for a workspace | `src/app/api/canvas/route.ts` | `crates/routa-server/src/api/canvas.rs` |
-| POST | `/api/canvas` | Create a canvas artifact | `src/app/api/canvas/route.ts` | `crates/routa-server/src/api/canvas.rs` |
-| DELETE | `/api/canvas/{id}` | Delete a canvas artifact | `src/app/api/canvas/[id]/route.ts` | `crates/routa-server/src/api/canvas.rs` |
-| GET | `/api/canvas/{id}` | Fetch a canvas artifact by ID | `src/app/api/canvas/[id]/route.ts` | `crates/routa-server/src/api/canvas.rs` |
-| POST | `/api/canvas/specialist` | Generate a canvas artifact directly from a specialist prompt | `src/app/api/canvas/specialist/route.ts` | `crates/routa-server/src/api/canvas.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/canvas` | List canvas artifacts for a workspace | `src/app/api/canvas/route.ts` |
+| POST | `/api/canvas` | Create a canvas artifact | `src/app/api/canvas/route.ts` |
+| DELETE | `/api/canvas/{id}` | Delete a canvas artifact | `src/app/api/canvas/[id]/route.ts` |
+| GET | `/api/canvas/{id}` | Fetch a canvas artifact by ID | `src/app/api/canvas/[id]/route.ts` |
+| POST | `/api/canvas/specialist` | Generate a canvas artifact directly from a specialist prompt | `src/app/api/canvas/specialist/route.ts` |
 
 ### Clone (9)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/clone` | List cloned repositories | `src/app/api/clone/route.ts` | `crates/routa-server/src/api/clone.rs` |
-| PATCH | `/api/clone` | Switch branch on cloned repo | `src/app/api/clone/route.ts` | `crates/routa-server/src/api/clone.rs` |
-| POST | `/api/clone` | Clone a GitHub repository | `src/app/api/clone/route.ts` | `crates/routa-server/src/api/clone.rs` |
-| DELETE | `/api/clone/branches` | Delete local branch | `src/app/api/clone/branches/route.ts` | `crates/routa-server/src/api/clone_branches.rs` |
-| GET | `/api/clone/branches` | Get branch info | `src/app/api/clone/branches/route.ts` | `crates/routa-server/src/api/clone_branches.rs` |
-| PATCH | `/api/clone/branches` | Checkout branch | `src/app/api/clone/branches/route.ts` | `crates/routa-server/src/api/clone_branches.rs` |
-| POST | `/api/clone/branches` | Fetch remote branches | `src/app/api/clone/branches/route.ts` | `crates/routa-server/src/api/clone_branches.rs` |
-| POST | `/api/clone/local` | Load an existing local folder (git optional) | `src/app/api/clone/local/route.ts` | `crates/routa-server/src/api/clone_local.rs` |
-| POST | `/api/clone/progress` | Clone with SSE progress | `src/app/api/clone/progress/route.ts` | `crates/routa-server/src/api/clone_progress.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/clone` | List cloned repositories | `src/app/api/clone/route.ts` |
+| PATCH | `/api/clone` | Switch branch on cloned repo | `src/app/api/clone/route.ts` |
+| POST | `/api/clone` | Clone a GitHub repository | `src/app/api/clone/route.ts` |
+| DELETE | `/api/clone/branches` | Delete local branch | `src/app/api/clone/branches/route.ts` |
+| GET | `/api/clone/branches` | Get branch info | `src/app/api/clone/branches/route.ts` |
+| PATCH | `/api/clone/branches` | Checkout branch | `src/app/api/clone/branches/route.ts` |
+| POST | `/api/clone/branches` | Fetch remote branches | `src/app/api/clone/branches/route.ts` |
+| POST | `/api/clone/local` | Load an existing local folder (git optional) | `src/app/api/clone/local/route.ts` |
+| POST | `/api/clone/progress` | Clone with SSE progress | `src/app/api/clone/progress/route.ts` |
 
 ### Codebases (3)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| DELETE | `/api/codebases/{id}` | Delete a codebase | `src/app/api/codebases/[codebaseId]/route.ts` | `crates/routa-server/src/api/codebases.rs` |
-| PATCH | `/api/codebases/{id}` | Update codebase metadata | `src/app/api/codebases/[codebaseId]/route.ts` | `crates/routa-server/src/api/codebases.rs` |
-| POST | `/api/codebases/{id}/default` | Set a codebase as the default | `src/app/api/codebases/[codebaseId]/default/route.ts` | `crates/routa-server/src/api/codebases.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| DELETE | `/api/codebases/{id}` | Delete a codebase | `src/app/api/codebases/[codebaseId]/route.ts` |
+| PATCH | `/api/codebases/{id}` | Update codebase metadata | `src/app/api/codebases/[codebaseId]/route.ts` |
+| POST | `/api/codebases/{id}/default` | Set a codebase as the default | `src/app/api/codebases/[codebaseId]/default/route.ts` |
 
 ### Debug (1)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/debug/path` | Debug endpoint — returns resolved binary paths (desktop only) | `src/app/api/debug/path/route.ts` | `crates/routa-server/src/api/debug.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/debug/path` | Debug endpoint — returns resolved binary paths (desktop only) | `src/app/api/debug/path/route.ts` |
 
 ### Files (1)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/files/search` | Search files in a codebase | `src/app/api/files/search/route.ts` | `crates/routa-server/src/api/files.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/files/search` | Search files in a codebase | `src/app/api/files/search/route.ts` |
 
 ### Fitness (6)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| POST | `/api/fitness/analyze` | Run harness fluency analysis and return the additive harnessability baseline for one or more profiles | `src/app/api/fitness/analyze/route.ts` | `crates/routa-server/src/api/fitness.rs` |
-| GET | `/api/fitness/architecture` | Get backend architecture quality report for a repo context | `src/app/api/fitness/architecture/route.ts` | `crates/routa-server/src/api/fitness.rs` |
-| GET | `/api/fitness/plan` | Build the executable fitness plan for a repository context | `src/app/api/fitness/plan/route.ts` | `crates/routa-server/src/api/fitness.rs` |
-| GET | `/api/fitness/report` | Read persisted harness fluency snapshots and their additive harnessability baseline payloads | `src/app/api/fitness/report/route.ts` | `crates/routa-server/src/api/fitness.rs` |
-| GET | `/api/fitness/runtime` | Read latest Entrix runtime fitness status and artifact summary for a repository context | `src/app/api/fitness/runtime/route.ts` | `crates/routa-server/src/api/fitness.rs` |
-| GET | `/api/fitness/specs` | Inspect docs/fitness source files and parsed metric metadata | `src/app/api/fitness/specs/route.ts` | `crates/routa-server/src/api/fitness.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| POST | `/api/fitness/analyze` | Run harness fluency analysis and return the additive harnessability baseline for one or more profiles | `src/app/api/fitness/analyze/route.ts` |
+| GET | `/api/fitness/architecture` | Get backend architecture quality report for a repo context | `src/app/api/fitness/architecture/route.ts` |
+| GET | `/api/fitness/plan` | Build the executable fitness plan for a repository context | `src/app/api/fitness/plan/route.ts` |
+| GET | `/api/fitness/report` | Read persisted harness fluency snapshots and their additive harnessability baseline payloads | `src/app/api/fitness/report/route.ts` |
+| GET | `/api/fitness/runtime` | Read latest Entrix runtime fitness status and artifact summary for a repository context | `src/app/api/fitness/runtime/route.ts` |
+| GET | `/api/fitness/specs` | Inspect docs/fitness source files and parsed metric metadata | `src/app/api/fitness/specs/route.ts` |
 
 ### Git (3)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/git/commit` | Get git commit metadata and changed files | `src/app/api/git/commit/route.ts` | `crates/routa-server/src/api/git.rs` |
-| GET | `/api/git/log` | List git commit history for a local repository | `src/app/api/git/log/route.ts` | `crates/routa-server/src/api/git.rs` |
-| GET | `/api/git/refs` | List git refs for a local repository | `src/app/api/git/refs/route.ts` | `crates/routa-server/src/api/git.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/git/commit` | Get git commit metadata and changed files | `src/app/api/git/commit/route.ts` |
+| GET | `/api/git/log` | List git commit history for a local repository | `src/app/api/git/log/route.ts` |
+| GET | `/api/git/refs` | List git refs for a local repository | `src/app/api/git/refs/route.ts` |
 
 ### Github (8)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/github` | List active GitHub virtual workspaces | `src/app/api/github/route.ts` | `crates/routa-server/src/api/github.rs` |
-| GET | `/api/github/file` | Read a file from an imported GitHub repo | `src/app/api/github/file/route.ts` | `crates/routa-server/src/api/github.rs` |
-| POST | `/api/github/import` | Import a GitHub repo as a virtual workspace (zipball download) | `src/app/api/github/import/route.ts` | `crates/routa-server/src/api/github.rs` |
-| GET | `/api/github/issues` | List GitHub issues for a workspace codebase | `src/app/api/github/issues/route.ts` | `crates/routa-server/src/api/github.rs` |
-| POST | `/api/github/pr-comment` | Post a comment on a GitHub pull request | `src/app/api/github/pr-comment/route.ts` | `crates/routa-server/src/api/github.rs` |
-| GET | `/api/github/pulls` | List GitHub pull requests for a workspace codebase | `src/app/api/github/pulls/route.ts` | `crates/routa-server/src/api/github.rs` |
-| GET | `/api/github/search` | Search files in an imported GitHub repo | `src/app/api/github/search/route.ts` | `crates/routa-server/src/api/github.rs` |
-| GET | `/api/github/tree` | Get file tree for an imported GitHub repo | `src/app/api/github/tree/route.ts` | `crates/routa-server/src/api/github.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/github` | List active GitHub virtual workspaces | `src/app/api/github/route.ts` |
+| GET | `/api/github/file` | Read a file from an imported GitHub repo | `src/app/api/github/file/route.ts` |
+| POST | `/api/github/import` | Import a GitHub repo as a virtual workspace (zipball download) | `src/app/api/github/import/route.ts` |
+| GET | `/api/github/issues` | List GitHub issues for a workspace codebase | `src/app/api/github/issues/route.ts` |
+| POST | `/api/github/pr-comment` | Post a comment on a GitHub pull request | `src/app/api/github/pr-comment/route.ts` |
+| GET | `/api/github/pulls` | List GitHub pull requests for a workspace codebase | `src/app/api/github/pulls/route.ts` |
+| GET | `/api/github/search` | Search files in an imported GitHub repo | `src/app/api/github/search/route.ts` |
+| GET | `/api/github/tree` | Get file tree for an imported GitHub repo | `src/app/api/github/tree/route.ts` |
 
 ### Graph (1)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/graph/analyze` | Analyze repository module dependencies and return a graph snapshot | `src/app/api/graph/analyze/route.ts` | `crates/routa-server/src/api/graph.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/graph/analyze` | Analyze repository module dependencies and return a graph snapshot | `src/app/api/graph/analyze/route.ts` |
 
 ### Harness (13)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/harness/agent-hooks` | Read and validate agent hook lifecycle configuration | `src/app/api/harness/agent-hooks/route.ts` | `crates/routa-server/src/api/harness.rs` |
-| GET | `/api/harness/automations` | Inspect repo-defined automation definitions, pending findings, and runtime schedule state | `src/app/api/harness/automations/route.ts` | `crates/routa-server/src/api/harness.rs` |
-| GET | `/api/harness/codeowners` | Parse CODEOWNERS and report ownership coverage for the selected repository | `src/app/api/harness/codeowners/route.ts` | `crates/routa-server/src/api/harness.rs` |
-| GET | `/api/harness/design-decisions` | Detect architecture and ADR design decision sources for the selected repository | `src/app/api/harness/design-decisions/route.ts` | `crates/routa-server/src/api/harness.rs` |
-| GET | `/api/harness/github-actions` | Inspect repository GitHub Actions workflow files | `src/app/api/harness/github-actions/route.ts` | `crates/routa-server/src/api/harness.rs` |
-| GET | `/api/harness/hooks` | Inspect hook runtime profiles, bound hook files, and resolved metrics | `src/app/api/harness/hooks/route.ts` | `crates/routa-server/src/api/harness.rs` |
-| GET | `/api/harness/hooks/preview` | Run hook runtime preview for a configured profile | `src/app/api/harness/hooks/preview/route.ts` | `crates/routa-server/src/api/harness.rs` |
-| GET | `/api/harness/instructions` | Read repository guidance documents used by harness views | `src/app/api/harness/instructions/route.ts` | `crates/routa-server/src/api/harness.rs` |
-| GET | `/api/harness/repo-signals` | Detect YAML-driven build and test harness surfaces for the selected repository | `src/app/api/harness/repo-signals/route.ts` | `crates/routa-server/src/api/harness.rs` |
-| GET | `/api/harness/spec-sources` | Detect specification and planning source systems for the selected repository | `src/app/api/harness/spec-sources/route.ts` | `crates/routa-server/src/api/harness.rs` |
-| GET | `/api/harness/templates` | List harness templates for a repo context | `src/app/api/harness/templates/route.ts` | `crates/routa-server/src/api/harness_templates.rs` |
-| GET | `/api/harness/templates/doctor` | Run harness template diagnostics for a repo context | `src/app/api/harness/templates/doctor/route.ts` | `crates/routa-server/src/api/harness_templates.rs` |
-| GET | `/api/harness/templates/validate` | Validate a harness template for a repo context | `src/app/api/harness/templates/validate/route.ts` | `crates/routa-server/src/api/harness_templates.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/harness/agent-hooks` | Read and validate agent hook lifecycle configuration | `src/app/api/harness/agent-hooks/route.ts` |
+| GET | `/api/harness/automations` | Inspect repo-defined automation definitions, pending findings, and runtime schedule state | `src/app/api/harness/automations/route.ts` |
+| GET | `/api/harness/codeowners` | Parse CODEOWNERS and report ownership coverage for the selected repository | `src/app/api/harness/codeowners/route.ts` |
+| GET | `/api/harness/design-decisions` | Detect architecture and ADR design decision sources for the selected repository | `src/app/api/harness/design-decisions/route.ts` |
+| GET | `/api/harness/github-actions` | Inspect repository GitHub Actions workflow files | `src/app/api/harness/github-actions/route.ts` |
+| GET | `/api/harness/hooks` | Inspect hook runtime profiles, bound hook files, and resolved metrics | `src/app/api/harness/hooks/route.ts` |
+| GET | `/api/harness/hooks/preview` | Run hook runtime preview for a configured profile | `src/app/api/harness/hooks/preview/route.ts` |
+| GET | `/api/harness/instructions` | Read repository guidance documents used by harness views | `src/app/api/harness/instructions/route.ts` |
+| GET | `/api/harness/repo-signals` | Detect YAML-driven build and test harness surfaces for the selected repository | `src/app/api/harness/repo-signals/route.ts` |
+| GET | `/api/harness/spec-sources` | Detect specification and planning source systems for the selected repository | `src/app/api/harness/spec-sources/route.ts` |
+| GET | `/api/harness/templates` | List harness templates for a repo context | `src/app/api/harness/templates/route.ts` |
+| GET | `/api/harness/templates/doctor` | Run harness template diagnostics for a repo context | `src/app/api/harness/templates/doctor/route.ts` |
+| GET | `/api/harness/templates/validate` | Validate a harness template for a repo context | `src/app/api/harness/templates/validate/route.ts` |
 
 ### Health (1)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/health` | Health check — returns service status | `src/app/api/health/route.ts` | `crates/routa-server/src/lib.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/health` | Health check — returns service status | `src/app/api/health/route.ts` |
 
 ### Kanban (8)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/kanban/boards` | List Kanban boards for a workspace | `src/app/api/kanban/boards/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
-| POST | `/api/kanban/boards` | Create a Kanban board | `src/app/api/kanban/boards/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
-| GET | `/api/kanban/boards/{boardId}` | Get a Kanban board by ID | `src/app/api/kanban/boards/[boardId]/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
-| PATCH | `/api/kanban/boards/{boardId}` | Update a Kanban board | `src/app/api/kanban/boards/[boardId]/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
-| POST | `/api/kanban/decompose` | Decompose natural language input into multiple Kanban tasks | `src/app/api/kanban/decompose/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
-| GET | `/api/kanban/events` | Stream kanban workspace events over SSE | `src/app/api/kanban/events/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
-| GET | `/api/kanban/export` | Export kanban boards as YAML | `src/app/api/kanban/export/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
-| POST | `/api/kanban/import` | Import kanban boards from YAML | `src/app/api/kanban/import/route.ts` | `crates/routa-server/src/api/kanban.rs`, `crates/routa-server/src/api/kanban/board_meta.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/kanban/boards` | List Kanban boards for a workspace | `src/app/api/kanban/boards/route.ts` |
+| POST | `/api/kanban/boards` | Create a Kanban board | `src/app/api/kanban/boards/route.ts` |
+| GET | `/api/kanban/boards/{boardId}` | Get a Kanban board by ID | `src/app/api/kanban/boards/[boardId]/route.ts` |
+| PATCH | `/api/kanban/boards/{boardId}` | Update a Kanban board | `src/app/api/kanban/boards/[boardId]/route.ts` |
+| POST | `/api/kanban/decompose` | Decompose natural language input into multiple Kanban tasks | `src/app/api/kanban/decompose/route.ts` |
+| GET | `/api/kanban/events` | Stream kanban workspace events over SSE | `src/app/api/kanban/events/route.ts` |
+| GET | `/api/kanban/export` | Export kanban boards as YAML | `src/app/api/kanban/export/route.ts` |
+| POST | `/api/kanban/import` | Import kanban boards from YAML | `src/app/api/kanban/import/route.ts` |
 
 ### Mcp (6)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| DELETE | `/api/mcp` | Terminate MCP session | `src/app/api/mcp/route.ts` | `crates/routa-server/src/api/mcp_routes.rs`, `crates/routa-server/src/api/mcp_routes/rmcp_service.rs`, `crates/routa-server/src/api/mcp_routes/tool_catalog.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor/agents_tasks.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor/delegation.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor/events_kanban.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor/notes_workspace.rs` |
-| GET | `/api/mcp` | MCP SSE stream | `src/app/api/mcp/route.ts` | `crates/routa-server/src/api/mcp_routes.rs`, `crates/routa-server/src/api/mcp_routes/rmcp_service.rs`, `crates/routa-server/src/api/mcp_routes/tool_catalog.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor/agents_tasks.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor/delegation.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor/events_kanban.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor/notes_workspace.rs` |
-| POST | `/api/mcp` | MCP Streamable HTTP (JSON-RPC) | `src/app/api/mcp/route.ts` | `crates/routa-server/src/api/mcp_routes.rs`, `crates/routa-server/src/api/mcp_routes/rmcp_service.rs`, `crates/routa-server/src/api/mcp_routes/tool_catalog.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor/agents_tasks.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor/delegation.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor/events_kanban.rs`, `crates/routa-server/src/api/mcp_routes/tool_executor/notes_workspace.rs` |
-| GET | `/api/mcp/tools` | List MCP tools | `src/app/api/mcp/tools/route.ts` | `crates/routa-server/src/api/mcp_tools.rs` |
-| PATCH | `/api/mcp/tools` | Update MCP tool configuration | `src/app/api/mcp/tools/route.ts` | `crates/routa-server/src/api/mcp_tools.rs` |
-| POST | `/api/mcp/tools` | Execute an MCP tool | `src/app/api/mcp/tools/route.ts` | `crates/routa-server/src/api/mcp_tools.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| DELETE | `/api/mcp` | Terminate MCP session | `src/app/api/mcp/route.ts` |
+| GET | `/api/mcp` | MCP SSE stream | `src/app/api/mcp/route.ts` |
+| POST | `/api/mcp` | MCP Streamable HTTP (JSON-RPC) | `src/app/api/mcp/route.ts` |
+| GET | `/api/mcp/tools` | List MCP tools | `src/app/api/mcp/tools/route.ts` |
+| PATCH | `/api/mcp/tools` | Update MCP tool configuration | `src/app/api/mcp/tools/route.ts` |
+| POST | `/api/mcp/tools` | Execute an MCP tool | `src/app/api/mcp/tools/route.ts` |
 
 ### Mcp-Server (3)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| DELETE | `/api/mcp-server` | Stop MCP server | `src/app/api/mcp-server/route.ts` | `crates/routa-server/src/api/mcp_server_mgmt.rs` |
-| GET | `/api/mcp-server` | Get MCP server status | `src/app/api/mcp-server/route.ts` | `crates/routa-server/src/api/mcp_server_mgmt.rs` |
-| POST | `/api/mcp-server` | Start MCP server | `src/app/api/mcp-server/route.ts` | `crates/routa-server/src/api/mcp_server_mgmt.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| DELETE | `/api/mcp-server` | Stop MCP server | `src/app/api/mcp-server/route.ts` |
+| GET | `/api/mcp-server` | Get MCP server status | `src/app/api/mcp-server/route.ts` |
+| POST | `/api/mcp-server` | Start MCP server | `src/app/api/mcp-server/route.ts` |
 
 ### Mcp-Servers (4)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| DELETE | `/api/mcp-servers` | Delete a custom MCP server | `src/app/api/mcp-servers/route.ts` | `crates/routa-server/src/api/mcp_servers.rs` |
-| GET | `/api/mcp-servers` | List custom MCP servers (or get single by id query param) | `src/app/api/mcp-servers/route.ts` | `crates/routa-server/src/api/mcp_servers.rs` |
-| POST | `/api/mcp-servers` | Create a new custom MCP server | `src/app/api/mcp-servers/route.ts` | `crates/routa-server/src/api/mcp_servers.rs` |
-| PUT | `/api/mcp-servers` | Update an existing custom MCP server | `src/app/api/mcp-servers/route.ts` | `crates/routa-server/src/api/mcp_servers.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| DELETE | `/api/mcp-servers` | Delete a custom MCP server | `src/app/api/mcp-servers/route.ts` |
+| GET | `/api/mcp-servers` | List custom MCP servers (or get single by id query param) | `src/app/api/mcp-servers/route.ts` |
+| POST | `/api/mcp-servers` | Create a new custom MCP server | `src/app/api/mcp-servers/route.ts` |
+| PUT | `/api/mcp-servers` | Update an existing custom MCP server | `src/app/api/mcp-servers/route.ts` |
 
 ### Notes (6)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| DELETE | `/api/notes` | Delete note by query params | `src/app/api/notes/route.ts` | `crates/routa-server/src/api/notes.rs` |
-| GET | `/api/notes` | List notes or get single by noteId | `src/app/api/notes/route.ts` | `crates/routa-server/src/api/notes.rs` |
-| POST | `/api/notes` | Create or update a note | `src/app/api/notes/route.ts` | `crates/routa-server/src/api/notes.rs` |
-| DELETE | `/api/notes/{workspaceId}/{noteId}` | Delete note by path params | `src/app/api/notes/[workspaceId]/[noteId]/route.ts` | `crates/routa-server/src/api/notes.rs` |
-| GET | `/api/notes/{workspaceId}/{noteId}` | Get note by workspace + note ID | `src/app/api/notes/[workspaceId]/[noteId]/route.ts` | `crates/routa-server/src/api/notes.rs` |
-| GET | `/api/notes/events` | SSE stream for note change events | `src/app/api/notes/events/route.ts` | `crates/routa-server/src/api/notes.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| DELETE | `/api/notes` | Delete note by query params | `src/app/api/notes/route.ts` |
+| GET | `/api/notes` | List notes or get single by noteId | `src/app/api/notes/route.ts` |
+| POST | `/api/notes` | Create or update a note | `src/app/api/notes/route.ts` |
+| DELETE | `/api/notes/{workspaceId}/{noteId}` | Delete note by path params | `src/app/api/notes/[workspaceId]/[noteId]/route.ts` |
+| GET | `/api/notes/{workspaceId}/{noteId}` | Get note by workspace + note ID | `src/app/api/notes/[workspaceId]/[noteId]/route.ts` |
+| GET | `/api/notes/events` | SSE stream for note change events | `src/app/api/notes/events/route.ts` |
 
 ### Polling (4)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/polling/check` | Run a polling check (GET) | `src/app/api/polling/check/route.ts` | `crates/routa-server/src/api/polling.rs` |
-| POST | `/api/polling/check` | Run a polling check (POST) | `src/app/api/polling/check/route.ts` | `crates/routa-server/src/api/polling.rs` |
-| GET | `/api/polling/config` | Get polling configuration | `src/app/api/polling/config/route.ts` | `crates/routa-server/src/api/polling.rs` |
-| POST | `/api/polling/config` | Update polling configuration | `src/app/api/polling/config/route.ts` | `crates/routa-server/src/api/polling.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/polling/check` | Run a polling check (GET) | `src/app/api/polling/check/route.ts` |
+| POST | `/api/polling/check` | Run a polling check (POST) | `src/app/api/polling/check/route.ts` |
+| GET | `/api/polling/config` | Get polling configuration | `src/app/api/polling/config/route.ts` |
+| POST | `/api/polling/config` | Update polling configuration | `src/app/api/polling/config/route.ts` |
 
 ### Providers (2)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/providers` | List configured LLM providers | `src/app/api/providers/route.ts` | `crates/routa-server/src/api/providers.rs` |
-| GET | `/api/providers/models` | List available models for configured providers | `src/app/api/providers/models/route.ts` | `crates/routa-server/src/api/provider_models.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/providers` | List configured LLM providers | `src/app/api/providers/route.ts` |
+| GET | `/api/providers/models` | List available models for configured providers | `src/app/api/providers/models/route.ts` |
 
 ### Review (1)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| POST | `/api/review/analyze` | Analyze a git diff with the single public PR Reviewer specialist | `src/app/api/review/analyze/route.ts` | `crates/routa-server/src/api/review.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| POST | `/api/review/analyze` | Analyze a git diff with the single public PR Reviewer specialist | `src/app/api/review/analyze/route.ts` |
 
 ### Rpc (2)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| POST | `/api/rpc` | Generic JSON-RPC endpoint | `src/app/api/rpc/route.ts` | `crates/routa-server/src/api/rpc.rs` |
-| GET | `/api/rpc/methods` | List available RPC methods | `src/app/api/rpc/methods/route.ts` | `crates/routa-server/src/api/rpc.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| POST | `/api/rpc` | Generic JSON-RPC endpoint | `src/app/api/rpc/route.ts` |
+| GET | `/api/rpc/methods` | List available RPC methods | `src/app/api/rpc/methods/route.ts` |
 
 ### Sandboxes (8)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/sandboxes` | List all active sandbox containers | `src/app/api/sandboxes/route.ts` | `crates/routa-server/src/api/sandbox.rs` |
-| POST | `/api/sandboxes` | Create a new sandbox container | `src/app/api/sandboxes/route.ts` | `crates/routa-server/src/api/sandbox.rs` |
-| DELETE | `/api/sandboxes/{id}` | Stop and remove a sandbox container | `src/app/api/sandboxes/[id]/route.ts` | `crates/routa-server/src/api/sandbox.rs` |
-| GET | `/api/sandboxes/{id}` | Get sandbox info by ID | `src/app/api/sandboxes/[id]/route.ts` | `crates/routa-server/src/api/sandbox.rs` |
-| POST | `/api/sandboxes/{id}/execute` | Execute code in a sandbox and stream results as NDJSON | `src/app/api/sandboxes/[id]/execute/route.ts` | `crates/routa-server/src/api/sandbox.rs` |
-| POST | `/api/sandboxes/{id}/permissions/apply` | Recreate a sandbox with permission constraints applied to its policy | `src/app/api/sandboxes/[id]/permissions/apply/route.ts` | `crates/routa-server/src/api/sandbox.rs` |
-| POST | `/api/sandboxes/{id}/permissions/explain` | Preview the effective sandbox policy after applying permission constraints | `src/app/api/sandboxes/[id]/permissions/explain/route.ts` | `crates/routa-server/src/api/sandbox.rs` |
-| POST | `/api/sandboxes/explain` | Resolve and explain an effective sandbox policy without creating a sandbox | `src/app/api/sandboxes/explain/route.ts` | `crates/routa-server/src/api/sandbox.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/sandboxes` | List all active sandbox containers | `src/app/api/sandboxes/route.ts` |
+| POST | `/api/sandboxes` | Create a new sandbox container | `src/app/api/sandboxes/route.ts` |
+| DELETE | `/api/sandboxes/{id}` | Stop and remove a sandbox container | `src/app/api/sandboxes/[id]/route.ts` |
+| GET | `/api/sandboxes/{id}` | Get sandbox info by ID | `src/app/api/sandboxes/[id]/route.ts` |
+| POST | `/api/sandboxes/{id}/execute` | Execute code in a sandbox and stream results as NDJSON | `src/app/api/sandboxes/[id]/execute/route.ts` |
+| POST | `/api/sandboxes/{id}/permissions/apply` | Recreate a sandbox with permission constraints applied to its policy | `src/app/api/sandboxes/[id]/permissions/apply/route.ts` |
+| POST | `/api/sandboxes/{id}/permissions/explain` | Preview the effective sandbox policy after applying permission constraints | `src/app/api/sandboxes/[id]/permissions/explain/route.ts` |
+| POST | `/api/sandboxes/explain` | Resolve and explain an effective sandbox policy without creating a sandbox | `src/app/api/sandboxes/explain/route.ts` |
 
 ### Schedules (8)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/schedules` | List scheduled tasks | `src/app/api/schedules/route.ts` | `crates/routa-server/src/api/schedules.rs` |
-| POST | `/api/schedules` | Create a new schedule | `src/app/api/schedules/route.ts` | `crates/routa-server/src/api/schedules.rs` |
-| DELETE | `/api/schedules/{id}` | Delete a schedule | `src/app/api/schedules/[id]/route.ts` | `crates/routa-server/src/api/schedules.rs` |
-| GET | `/api/schedules/{id}` | Get a schedule by ID | `src/app/api/schedules/[id]/route.ts` | `crates/routa-server/src/api/schedules.rs` |
-| PATCH | `/api/schedules/{id}` | Update a schedule | `src/app/api/schedules/[id]/route.ts` | `crates/routa-server/src/api/schedules.rs` |
-| POST | `/api/schedules/{id}/run` | Trigger a schedule to run immediately | `src/app/api/schedules/[id]/run/route.ts` | `crates/routa-server/src/api/schedules.rs` |
-| GET | `/api/schedules/tick` | Get tick status for scheduled tasks | `src/app/api/schedules/tick/route.ts` | `crates/routa-server/src/api/schedules.rs` |
-| POST | `/api/schedules/tick` | Manually trigger the schedule tick | `src/app/api/schedules/tick/route.ts` | `crates/routa-server/src/api/schedules.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/schedules` | List scheduled tasks | `src/app/api/schedules/route.ts` |
+| POST | `/api/schedules` | Create a new schedule | `src/app/api/schedules/route.ts` |
+| DELETE | `/api/schedules/{id}` | Delete a schedule | `src/app/api/schedules/[id]/route.ts` |
+| GET | `/api/schedules/{id}` | Get a schedule by ID | `src/app/api/schedules/[id]/route.ts` |
+| PATCH | `/api/schedules/{id}` | Update a schedule | `src/app/api/schedules/[id]/route.ts` |
+| POST | `/api/schedules/{id}/run` | Trigger a schedule to run immediately | `src/app/api/schedules/[id]/run/route.ts` |
+| GET | `/api/schedules/tick` | Get tick status for scheduled tasks | `src/app/api/schedules/tick/route.ts` |
+| POST | `/api/schedules/tick` | Manually trigger the schedule tick | `src/app/api/schedules/tick/route.ts` |
 
 ### Sessions (10)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/sessions` | List ACP sessions | `src/app/api/sessions/route.ts` | `crates/routa-server/src/api/sessions.rs` |
-| DELETE | `/api/sessions/{id}` | Delete a session | `src/app/api/sessions/[sessionId]/route.ts` | `crates/routa-server/src/api/sessions.rs` |
-| GET | `/api/sessions/{id}` | Get session by ID | `src/app/api/sessions/[sessionId]/route.ts` | `crates/routa-server/src/api/sessions.rs` |
-| PATCH | `/api/sessions/{id}` | Update session metadata | `src/app/api/sessions/[sessionId]/route.ts` | `crates/routa-server/src/api/sessions.rs` |
-| POST | `/api/sessions/{id}/disconnect` | Disconnect and kill an active session process | `src/app/api/sessions/[sessionId]/disconnect/route.ts` | `crates/routa-server/src/api/sessions.rs` |
-| GET | `/api/sessions/{id}/history` | Get message history for a session | `src/app/api/sessions/[sessionId]/history/route.ts` | `crates/routa-server/src/api/sessions.rs` |
-| GET | `/api/sessions/{id}/transcript` | Get preferred transcript payload for a session | `src/app/api/sessions/[sessionId]/transcript/route.ts` | `crates/routa-server/src/api/sessions.rs` |
-| GET | `/api/sessions/{sessionId}/context` | Get hierarchical context for a session | `src/app/api/sessions/[sessionId]/context/route.ts` | `crates/routa-server/src/api/sessions.rs` |
-| GET | `/api/sessions/{sessionId}/reposlide-result` | Read the RepoSlide result payload extracted from a session transcript | `src/app/api/sessions/[sessionId]/reposlide-result/route.ts` | `crates/routa-server/src/api/sessions.rs` |
-| GET | `/api/sessions/{sessionId}/reposlide-result/download` | Download the generated RepoSlide PPTX artifact for a completed session | `src/app/api/sessions/[sessionId]/reposlide-result/download/route.ts` | `crates/routa-server/src/api/sessions.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/sessions` | List ACP sessions | `src/app/api/sessions/route.ts` |
+| DELETE | `/api/sessions/{id}` | Delete a session | `src/app/api/sessions/[sessionId]/route.ts` |
+| GET | `/api/sessions/{id}` | Get session by ID | `src/app/api/sessions/[sessionId]/route.ts` |
+| PATCH | `/api/sessions/{id}` | Update session metadata | `src/app/api/sessions/[sessionId]/route.ts` |
+| POST | `/api/sessions/{id}/disconnect` | Disconnect and kill an active session process | `src/app/api/sessions/[sessionId]/disconnect/route.ts` |
+| GET | `/api/sessions/{id}/history` | Get message history for a session | `src/app/api/sessions/[sessionId]/history/route.ts` |
+| GET | `/api/sessions/{id}/transcript` | Get preferred transcript payload for a session | `src/app/api/sessions/[sessionId]/transcript/route.ts` |
+| GET | `/api/sessions/{sessionId}/context` | Get hierarchical context for a session | `src/app/api/sessions/[sessionId]/context/route.ts` |
+| GET | `/api/sessions/{sessionId}/reposlide-result` | Read the RepoSlide result payload extracted from a session transcript | `src/app/api/sessions/[sessionId]/reposlide-result/route.ts` |
+| GET | `/api/sessions/{sessionId}/reposlide-result/download` | Download the generated RepoSlide PPTX artifact for a completed session | `src/app/api/sessions/[sessionId]/reposlide-result/download/route.ts` |
 
 ### Skills (7)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/skills` | List skills or get by name | `src/app/api/skills/route.ts` | `crates/routa-server/src/api/skills.rs` |
-| POST | `/api/skills` | Reload skills from disk | `src/app/api/skills/route.ts` | `crates/routa-server/src/api/skills.rs` |
-| GET | `/api/skills/catalog` | List available skills in the registry | `src/app/api/skills/catalog/route.ts` | `crates/routa-server/src/api/skills_catalog.rs` |
-| POST | `/api/skills/catalog` | Refresh the local skill catalog from registry | `src/app/api/skills/catalog/route.ts` | `crates/routa-server/src/api/skills_catalog.rs` |
-| GET | `/api/skills/clone` | Discover skills from repo path | `src/app/api/skills/clone/route.ts` | `crates/routa-server/src/api/skills_clone.rs` |
-| POST | `/api/skills/clone` | Clone a skill repository | `src/app/api/skills/clone/route.ts` | `crates/routa-server/src/api/skills_clone.rs` |
-| POST | `/api/skills/upload` | Upload skill as zip | `src/app/api/skills/upload/route.ts` | `crates/routa-server/src/api/skills_upload.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/skills` | List skills or get by name | `src/app/api/skills/route.ts` |
+| POST | `/api/skills` | Reload skills from disk | `src/app/api/skills/route.ts` |
+| GET | `/api/skills/catalog` | List available skills in the registry | `src/app/api/skills/catalog/route.ts` |
+| POST | `/api/skills/catalog` | Refresh the local skill catalog from registry | `src/app/api/skills/catalog/route.ts` |
+| GET | `/api/skills/clone` | Discover skills from repo path | `src/app/api/skills/clone/route.ts` |
+| POST | `/api/skills/clone` | Clone a skill repository | `src/app/api/skills/clone/route.ts` |
+| POST | `/api/skills/upload` | Upload skill as zip | `src/app/api/skills/upload/route.ts` |
 
 ### Spec (3)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| POST | `/api/spec/feature-tree/generate` | Scan the repository and generate FEATURE_TREE.md + feature-tree.index.json | `src/app/api/spec/feature-tree/generate/route.ts` | `crates/routa-server/src/api/spec.rs` |
-| GET | `/api/spec/issues` | List local issue specs | `src/app/api/spec/issues/route.ts` | `crates/routa-server/src/api/spec.rs` |
-| GET | `/api/spec/surface-index` | Read the generated product surface index for spec analysis | `src/app/api/spec/surface-index/route.ts` | `crates/routa-server/src/api/spec.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| POST | `/api/spec/feature-tree/generate` | Scan the repository and generate FEATURE_TREE.md + feature-tree.index.json | `src/app/api/spec/feature-tree/generate/route.ts` |
+| GET | `/api/spec/issues` | List local issue specs | `src/app/api/spec/issues/route.ts` |
+| GET | `/api/spec/surface-index` | Read the generated product surface index for spec analysis | `src/app/api/spec/surface-index/route.ts` |
 
 ### Specialists (4)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| DELETE | `/api/specialists` | Delete a specialist | `src/app/api/specialists/route.ts` | `crates/routa-server/src/api/specialists.rs` |
-| GET | `/api/specialists` | List configured specialist agents | `src/app/api/specialists/route.ts` | `crates/routa-server/src/api/specialists.rs` |
-| POST | `/api/specialists` | Create a specialist configuration | `src/app/api/specialists/route.ts` | `crates/routa-server/src/api/specialists.rs` |
-| PUT | `/api/specialists` | Update an existing specialist | `src/app/api/specialists/route.ts` | `crates/routa-server/src/api/specialists.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| DELETE | `/api/specialists` | Delete a specialist | `src/app/api/specialists/route.ts` |
+| GET | `/api/specialists` | List configured specialist agents | `src/app/api/specialists/route.ts` |
+| POST | `/api/specialists` | Create a specialist configuration | `src/app/api/specialists/route.ts` |
+| PUT | `/api/specialists` | Update an existing specialist | `src/app/api/specialists/route.ts` |
 
 ### System (3)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| DELETE | `/api/system/memory` | Clear runtime memory monitoring history | `src/app/api/system/memory/route.ts` | `crates/routa-server/src/api/memory.rs` |
-| GET | `/api/system/memory` | Get runtime memory monitoring stats | `src/app/api/system/memory/route.ts` | `crates/routa-server/src/api/memory.rs` |
-| POST | `/api/system/memory` | Trigger runtime memory cleanup | `src/app/api/system/memory/route.ts` | `crates/routa-server/src/api/memory.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| DELETE | `/api/system/memory` | Clear runtime memory monitoring history | `src/app/api/system/memory/route.ts` |
+| GET | `/api/system/memory` | Get runtime memory monitoring stats | `src/app/api/system/memory/route.ts` |
+| POST | `/api/system/memory` | Trigger runtime memory cleanup | `src/app/api/system/memory/route.ts` |
 
 ### Tasks (15)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| DELETE | `/api/tasks` | Delete all tasks for a workspace | `src/app/api/tasks/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
-| GET | `/api/tasks` | List tasks | `src/app/api/tasks/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
-| POST | `/api/tasks` | Create a task | `src/app/api/tasks/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
-| DELETE | `/api/tasks/{id}` | Delete a task | `src/app/api/tasks/[taskId]/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
-| GET | `/api/tasks/{id}` | Get task by ID | `src/app/api/tasks/[taskId]/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
-| PATCH | `/api/tasks/{id}` | Update a task | `src/app/api/tasks/[taskId]/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
-| GET | `/api/tasks/{id}/artifacts` | List all artifacts for a task | `src/app/api/tasks/[taskId]/artifacts/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
-| POST | `/api/tasks/{id}/artifacts` | Attach an artifact to a task | `src/app/api/tasks/[taskId]/artifacts/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
-| GET | `/api/tasks/{id}/runs` | List normalized execution runs for a task | `src/app/api/tasks/[taskId]/runs/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
-| POST | `/api/tasks/{id}/status` | Update task status | `src/app/api/tasks/[taskId]/status/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
-| GET | `/api/tasks/{taskId}/changes` | Get repository or worktree changes associated with a task | `src/app/api/tasks/[taskId]/changes/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
-| GET | `/api/tasks/{taskId}/changes/commit` | Get diff for a single commit associated with a task repository | `src/app/api/tasks/[taskId]/changes/commit/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
-| GET | `/api/tasks/{taskId}/changes/file` | Get diff for a single changed file associated with a task | `src/app/api/tasks/[taskId]/changes/file/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
-| GET | `/api/tasks/{taskId}/changes/stats` | Get additions and deletions for a subset of changed files associated with a task | `src/app/api/tasks/[taskId]/changes/stats/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
-| GET | `/api/tasks/ready` | Find tasks with all dependencies satisfied | `src/app/api/tasks/ready/route.ts` | `crates/routa-server/src/api/tasks/changes.rs`, `crates/routa-server/src/api/tasks/dto.rs`, `crates/routa-server/src/api/tasks/evidence.rs`, `crates/routa-server/src/api/tasks/handlers.rs`, `crates/routa-server/src/api/tasks/mod.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| DELETE | `/api/tasks` | Delete all tasks for a workspace | `src/app/api/tasks/route.ts` |
+| GET | `/api/tasks` | List tasks | `src/app/api/tasks/route.ts` |
+| POST | `/api/tasks` | Create a task | `src/app/api/tasks/route.ts` |
+| DELETE | `/api/tasks/{id}` | Delete a task | `src/app/api/tasks/[taskId]/route.ts` |
+| GET | `/api/tasks/{id}` | Get task by ID | `src/app/api/tasks/[taskId]/route.ts` |
+| PATCH | `/api/tasks/{id}` | Update a task | `src/app/api/tasks/[taskId]/route.ts` |
+| GET | `/api/tasks/{id}/artifacts` | List all artifacts for a task | `src/app/api/tasks/[taskId]/artifacts/route.ts` |
+| POST | `/api/tasks/{id}/artifacts` | Attach an artifact to a task | `src/app/api/tasks/[taskId]/artifacts/route.ts` |
+| GET | `/api/tasks/{id}/runs` | List normalized execution runs for a task | `src/app/api/tasks/[taskId]/runs/route.ts` |
+| POST | `/api/tasks/{id}/status` | Update task status | `src/app/api/tasks/[taskId]/status/route.ts` |
+| GET | `/api/tasks/{taskId}/changes` | Get repository or worktree changes associated with a task | `src/app/api/tasks/[taskId]/changes/route.ts` |
+| GET | `/api/tasks/{taskId}/changes/commit` | Get diff for a single commit associated with a task repository | `src/app/api/tasks/[taskId]/changes/commit/route.ts` |
+| GET | `/api/tasks/{taskId}/changes/file` | Get diff for a single changed file associated with a task | `src/app/api/tasks/[taskId]/changes/file/route.ts` |
+| GET | `/api/tasks/{taskId}/changes/stats` | Get additions and deletions for a subset of changed files associated with a task | `src/app/api/tasks/[taskId]/changes/stats/route.ts` |
+| GET | `/api/tasks/ready` | Find tasks with all dependencies satisfied | `src/app/api/tasks/ready/route.ts` |
 
 ### Test-Mcp (1)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/test-mcp` | Test MCP config | `src/app/api/test-mcp/route.ts` | `crates/routa-server/src/api/test_mcp.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/test-mcp` | Test MCP config | `src/app/api/test-mcp/route.ts` |
 
 ### Traces (4)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/traces` | List agent execution traces | `src/app/api/traces/route.ts` | `crates/routa-server/src/api/traces.rs` |
-| GET | `/api/traces/{id}` | Get a single trace by ID | `src/app/api/traces/[id]/route.ts` | `crates/routa-server/src/api/traces.rs` |
-| POST | `/api/traces/export` | Export trace records in Agent Trace JSON format | `src/app/api/traces/export/route.ts` | `crates/routa-server/src/api/traces.rs` |
-| GET | `/api/traces/stats` | Get aggregated trace statistics | `src/app/api/traces/stats/route.ts` | `crates/routa-server/src/api/traces.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/traces` | List agent execution traces | `src/app/api/traces/route.ts` |
+| GET | `/api/traces/{id}` | Get a single trace by ID | `src/app/api/traces/[id]/route.ts` |
+| POST | `/api/traces/export` | Export trace records in Agent Trace JSON format | `src/app/api/traces/export/route.ts` |
+| GET | `/api/traces/stats` | Get aggregated trace statistics | `src/app/api/traces/stats/route.ts` |
 
 ### Webhooks (10)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| DELETE | `/api/webhooks/configs` | Delete a webhook configuration | `src/app/api/webhooks/configs/route.ts` | `crates/routa-server/src/api/webhooks.rs` |
-| GET | `/api/webhooks/configs` | List webhook configurations | `src/app/api/webhooks/configs/route.ts` | `crates/routa-server/src/api/webhooks.rs` |
-| POST | `/api/webhooks/configs` | Create a webhook configuration | `src/app/api/webhooks/configs/route.ts` | `crates/routa-server/src/api/webhooks.rs` |
-| PUT | `/api/webhooks/configs` | Update a webhook configuration | `src/app/api/webhooks/configs/route.ts` | `crates/routa-server/src/api/webhooks.rs` |
-| GET | `/api/webhooks/github` | List registered GitHub webhooks | `src/app/api/webhooks/github/route.ts` | `crates/routa-server/src/api/webhooks.rs` |
-| POST | `/api/webhooks/github` | Handle an incoming GitHub webhook event | `src/app/api/webhooks/github/route.ts` | `crates/routa-server/src/api/webhooks.rs` |
-| DELETE | `/api/webhooks/register` | Unregister a webhook | `src/app/api/webhooks/register/route.ts` | `crates/routa-server/src/api/webhooks.rs` |
-| GET | `/api/webhooks/register` | List webhook registrations | `src/app/api/webhooks/register/route.ts` | `crates/routa-server/src/api/webhooks.rs` |
-| POST | `/api/webhooks/register` | Register a new webhook | `src/app/api/webhooks/register/route.ts` | `crates/routa-server/src/api/webhooks.rs` |
-| GET | `/api/webhooks/webhook-logs` | List webhook delivery logs | `src/app/api/webhooks/webhook-logs/route.ts` | `crates/routa-server/src/api/webhooks.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| DELETE | `/api/webhooks/configs` | Delete a webhook configuration | `src/app/api/webhooks/configs/route.ts` |
+| GET | `/api/webhooks/configs` | List webhook configurations | `src/app/api/webhooks/configs/route.ts` |
+| POST | `/api/webhooks/configs` | Create a webhook configuration | `src/app/api/webhooks/configs/route.ts` |
+| PUT | `/api/webhooks/configs` | Update a webhook configuration | `src/app/api/webhooks/configs/route.ts` |
+| GET | `/api/webhooks/github` | List registered GitHub webhooks | `src/app/api/webhooks/github/route.ts` |
+| POST | `/api/webhooks/github` | Handle an incoming GitHub webhook event | `src/app/api/webhooks/github/route.ts` |
+| DELETE | `/api/webhooks/register` | Unregister a webhook | `src/app/api/webhooks/register/route.ts` |
+| GET | `/api/webhooks/register` | List webhook registrations | `src/app/api/webhooks/register/route.ts` |
+| POST | `/api/webhooks/register` | Register a new webhook | `src/app/api/webhooks/register/route.ts` |
+| GET | `/api/webhooks/webhook-logs` | List webhook delivery logs | `src/app/api/webhooks/webhook-logs/route.ts` |
 
 ### Workflows (6)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/workflows` | List all workflow YAML definitions from resources/flows/ | `src/app/api/workflows/route.ts` | `crates/routa-server/src/api/workflows.rs` |
-| POST | `/api/workflows` | Create a new workflow YAML file | `src/app/api/workflows/route.ts` | `crates/routa-server/src/api/workflows.rs` |
-| DELETE | `/api/workflows/{id}` | Delete a workflow YAML file | `src/app/api/workflows/[id]/route.ts` | `crates/routa-server/src/api/workflows.rs` |
-| GET | `/api/workflows/{id}` | Get a specific workflow by ID | `src/app/api/workflows/[id]/route.ts` | `crates/routa-server/src/api/workflows.rs` |
-| PUT | `/api/workflows/{id}` | Update a workflow YAML file | `src/app/api/workflows/[id]/route.ts` | `crates/routa-server/src/api/workflows.rs` |
-| POST | `/api/workflows/{id}/trigger` | Trigger a workflow run inside a workspace | `src/app/api/workflows/[id]/trigger/route.ts` | `crates/routa-server/src/api/workflows.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/workflows` | List all workflow YAML definitions from resources/flows/ | `src/app/api/workflows/route.ts` |
+| POST | `/api/workflows` | Create a new workflow YAML file | `src/app/api/workflows/route.ts` |
+| DELETE | `/api/workflows/{id}` | Delete a workflow YAML file | `src/app/api/workflows/[id]/route.ts` |
+| GET | `/api/workflows/{id}` | Get a specific workflow by ID | `src/app/api/workflows/[id]/route.ts` |
+| PUT | `/api/workflows/{id}` | Update a workflow YAML file | `src/app/api/workflows/[id]/route.ts` |
+| POST | `/api/workflows/{id}/trigger` | Trigger a workflow run inside a workspace | `src/app/api/workflows/[id]/trigger/route.ts` |
 
 ### Workspaces (14)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| GET | `/api/workspaces` | List all workspaces | `src/app/api/workspaces/route.ts` | `crates/routa-server/src/api/workspaces.rs` |
-| POST | `/api/workspaces` | Create a workspace | `src/app/api/workspaces/route.ts` | `crates/routa-server/src/api/workspaces.rs` |
-| DELETE | `/api/workspaces/{id}` | Delete workspace | `src/app/api/workspaces/[workspaceId]/route.ts` | `crates/routa-server/src/api/workspaces.rs` |
-| GET | `/api/workspaces/{id}` | Get workspace by ID | `src/app/api/workspaces/[workspaceId]/route.ts` | `crates/routa-server/src/api/workspaces.rs` |
-| PATCH | `/api/workspaces/{id}` | Update workspace (title, repoPath, branch, status, metadata) | `src/app/api/workspaces/[workspaceId]/route.ts` | `crates/routa-server/src/api/workspaces.rs` |
-| POST | `/api/workspaces/{id}/archive` | Archive or unarchive a workspace | `src/app/api/workspaces/[workspaceId]/archive/route.ts` | `crates/routa-server/src/api/workspaces.rs` |
-| GET | `/api/workspaces/{id}/codebases` | List codebases in a workspace | `src/app/api/workspaces/[workspaceId]/codebases/route.ts` | `crates/routa-server/src/api/codebases.rs` |
-| POST | `/api/workspaces/{id}/codebases` | Add a codebase to a workspace | `src/app/api/workspaces/[workspaceId]/codebases/route.ts` | `crates/routa-server/src/api/codebases.rs` |
-| GET | `/api/workspaces/{id}/codebases/changes` | List git change summaries for workspace codebases | `src/app/api/workspaces/[workspaceId]/codebases/changes/route.ts` | `crates/routa-server/src/api/codebases.rs` |
-| GET | `/api/workspaces/{workspace_id}/codebases/{codebase_id}/worktrees` | List worktrees for a codebase | `src/app/api/workspaces/[workspaceId]/codebases/[codebaseId]/worktrees/route.ts` | `crates/routa-server/src/api/worktrees.rs` |
-| POST | `/api/workspaces/{workspace_id}/codebases/{codebase_id}/worktrees` | Create a new git worktree | `src/app/api/workspaces/[workspaceId]/codebases/[codebaseId]/worktrees/route.ts` | `crates/routa-server/src/api/worktrees.rs` |
-| DELETE | `/api/workspaces/{workspaceId}/codebases/{codebaseId}` | Delete a codebase from a workspace-scoped route | `src/app/api/workspaces/[workspaceId]/codebases/[codebaseId]/route.ts` | `crates/routa-server/src/api/codebases.rs` |
-| GET | `/api/workspaces/{workspaceId}/codebases/{codebaseId}/reposlide` | Get RepoSlide launch context for an agent-driven deck generation session | `src/app/api/workspaces/[workspaceId]/codebases/[codebaseId]/reposlide/route.ts` | `crates/routa-server/src/api/codebases.rs` |
-| GET | `/api/workspaces/{workspaceId}/codebases/{codebaseId}/wiki` | Generate an architecture-aware RepoWiki summary payload for a codebase | `src/app/api/workspaces/[workspaceId]/codebases/[codebaseId]/wiki/route.ts` | `crates/routa-server/src/api/codebases.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| GET | `/api/workspaces` | List all workspaces | `src/app/api/workspaces/route.ts` |
+| POST | `/api/workspaces` | Create a workspace | `src/app/api/workspaces/route.ts` |
+| DELETE | `/api/workspaces/{id}` | Delete workspace | `src/app/api/workspaces/[workspaceId]/route.ts` |
+| GET | `/api/workspaces/{id}` | Get workspace by ID | `src/app/api/workspaces/[workspaceId]/route.ts` |
+| PATCH | `/api/workspaces/{id}` | Update workspace (title, repoPath, branch, status, metadata) | `src/app/api/workspaces/[workspaceId]/route.ts` |
+| POST | `/api/workspaces/{id}/archive` | Archive or unarchive a workspace | `src/app/api/workspaces/[workspaceId]/archive/route.ts` |
+| GET | `/api/workspaces/{id}/codebases` | List codebases in a workspace | `src/app/api/workspaces/[workspaceId]/codebases/route.ts` |
+| POST | `/api/workspaces/{id}/codebases` | Add a codebase to a workspace | `src/app/api/workspaces/[workspaceId]/codebases/route.ts` |
+| GET | `/api/workspaces/{id}/codebases/changes` | List git change summaries for workspace codebases | `src/app/api/workspaces/[workspaceId]/codebases/changes/route.ts` |
+| GET | `/api/workspaces/{workspace_id}/codebases/{codebase_id}/worktrees` | List worktrees for a codebase | `src/app/api/workspaces/[workspaceId]/codebases/[codebaseId]/worktrees/route.ts` |
+| POST | `/api/workspaces/{workspace_id}/codebases/{codebase_id}/worktrees` | Create a new git worktree | `src/app/api/workspaces/[workspaceId]/codebases/[codebaseId]/worktrees/route.ts` |
+| DELETE | `/api/workspaces/{workspaceId}/codebases/{codebaseId}` | Delete a codebase from a workspace-scoped route | `src/app/api/workspaces/[workspaceId]/codebases/[codebaseId]/route.ts` |
+| GET | `/api/workspaces/{workspaceId}/codebases/{codebaseId}/reposlide` | Get RepoSlide launch context for an agent-driven deck generation session | `src/app/api/workspaces/[workspaceId]/codebases/[codebaseId]/reposlide/route.ts` |
+| GET | `/api/workspaces/{workspaceId}/codebases/{codebaseId}/wiki` | Generate an architecture-aware RepoWiki summary payload for a codebase | `src/app/api/workspaces/[workspaceId]/codebases/[codebaseId]/wiki/route.ts` |
 
 ### Worktrees (3)
 
-| Method | Endpoint | Details | Next.js | Rust |
-|--------|----------|---------|---------|------|
-| DELETE | `/api/worktrees/{id}` | Remove a worktree | `src/app/api/worktrees/[worktreeId]/route.ts` | `crates/routa-server/src/api/worktrees.rs` |
-| GET | `/api/worktrees/{id}` | Get a single worktree | `src/app/api/worktrees/[worktreeId]/route.ts` | `crates/routa-server/src/api/worktrees.rs` |
-| POST | `/api/worktrees/{id}/validate` | Validate worktree health on disk | `src/app/api/worktrees/[worktreeId]/validate/route.ts` | `crates/routa-server/src/api/worktrees.rs` |
+| Method | Endpoint | Details | Next.js |
+|--------|----------|---------|---------|
+| DELETE | `/api/worktrees/{id}` | Remove a worktree | `src/app/api/worktrees/[worktreeId]/route.ts` |
+| GET | `/api/worktrees/{id}` | Get a single worktree | `src/app/api/worktrees/[worktreeId]/route.ts` |
+| POST | `/api/worktrees/{id}/validate` | Validate worktree health on disk | `src/app/api/worktrees/[worktreeId]/validate/route.ts` |
 
 ---
 
@@ -754,58 +749,4 @@ Multi-agent coordination platform. This document is auto-generated from:
 | POST | `/api/workspaces/{workspaceId}/codebases/{codebaseId}/git/reset` | `src/app/api/workspaces/[workspaceId]/codebases/[codebaseId]/git/reset/route.ts` |
 | POST | `/api/workspaces/{workspaceId}/codebases/{codebaseId}/git/stage` | `src/app/api/workspaces/[workspaceId]/codebases/[codebaseId]/git/stage/route.ts` |
 | POST | `/api/workspaces/{workspaceId}/codebases/{codebaseId}/git/unstage` | `src/app/api/workspaces/[workspaceId]/codebases/[codebaseId]/git/unstage/route.ts` |
-
----
-
-## Rust-only API Routes
-
-### Canvas (1)
-
-| Method | Endpoint | Source Files |
-|--------|----------|--------------|
-| POST | `/api/canvas/specialist/materialize` | `crates/routa-server/src/api/canvas.rs` |
-
-### Feature-Explorer (4)
-
-| Method | Endpoint | Source Files |
-|--------|----------|--------------|
-| GET | `/api/feature-explorer` | `crates/routa-server/src/api/feature_explorer.rs` |
-| GET | `/api/feature-explorer/{featureId}` | `crates/routa-server/src/api/feature_explorer.rs` |
-| GET | `/api/feature-explorer/{featureId}/apis` | `crates/routa-server/src/api/feature_explorer.rs` |
-| GET | `/api/feature-explorer/{featureId}/files` | `crates/routa-server/src/api/feature_explorer.rs` |
-
-### Git (11)
-
-| Method | Endpoint | Source Files |
-|--------|----------|--------------|
-| POST | `/api/git/commit` | `crates/routa-server/src/api/git.rs` |
-| GET | `/api/git/commits` | `crates/routa-server/src/api/git.rs` |
-| GET | `/api/git/commits/{sha}/diff` | `crates/routa-server/src/api/git.rs` |
-| GET | `/api/git/diff` | `crates/routa-server/src/api/git.rs` |
-| POST | `/api/git/discard` | `crates/routa-server/src/api/git.rs` |
-| POST | `/api/git/export` | `crates/routa-server/src/api/git.rs` |
-| POST | `/api/git/pull` | `crates/routa-server/src/api/git.rs` |
-| POST | `/api/git/rebase` | `crates/routa-server/src/api/git.rs` |
-| POST | `/api/git/reset` | `crates/routa-server/src/api/git.rs` |
-| POST | `/api/git/stage` | `crates/routa-server/src/api/git.rs` |
-| POST | `/api/git/unstage` | `crates/routa-server/src/api/git.rs` |
-
-### Github (1)
-
-| Method | Endpoint | Source Files |
-|--------|----------|--------------|
-| GET | `/api/github/access` | `crates/routa-server/src/api/github.rs` |
-
-### Sessions (1)
-
-| Method | Endpoint | Source Files |
-|--------|----------|--------------|
-| POST | `/api/sessions/{session_id}/fork` | `crates/routa-server/src/api/sessions.rs` |
-
-### Spec (2)
-
-| Method | Endpoint | Source Files |
-|--------|----------|--------------|
-| POST | `/api/spec/feature-tree/commit` | `crates/routa-server/src/api/spec.rs` |
-| GET | `/api/spec/feature-tree/preflight` | `crates/routa-server/src/api/spec.rs` |
 

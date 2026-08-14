@@ -3,7 +3,6 @@ resolver = "2"
 members = [
     "crates/routa-core",
     "crates/routa-scanner",
-    "crates/entrix",
 ]
 
 [workspace.package]

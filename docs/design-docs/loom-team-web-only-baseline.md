@@ -78,6 +78,30 @@ Phase 0 probe server. Restartable with the same command; no data impact.
    not gate-bypassing. Note `rust_api_test` (`rust_api_end_to_end`) still PASSES at baseline.
    Also recorded from the same run: `ts_test_pass_full` PASS (all vitest tests pass), with
    advisory coverage 62.5% lines < 80% threshold (metric, not a gate failure).
+5. **Legacy non-hermetic Kanban Playwright specs fail against an ephemeral test server —
+   recorded during Phase 5 `validate:web:e2e` (2026-08-14); all pre-existing, none gated in
+   source CI.** Run conditions: fresh `npm run build`, ephemeral SQLite DB, port 3099.
+   Results: `api:test:nextjs` 86/86 PASS; `e2e/team-run-lifecycle.spec.ts` 4/4 PASS; four
+   Kanban spec tests fail:
+   - `kanban-agent-panel.spec.ts` (6.0s): `locator.selectOption: Element is not a <select>
+     element` — the spec (last touched 2026-03-14) calls `selectOption()` on
+     `data-testid=kanban-agent-provider`, but the shipped UI renders a `<button>` popover
+     trigger. The component `kanban-tab-content.tsx` was last modified 2026-04-17 — before the
+     migration, by commits unrelated to it — and the same testid is covered by passing vitest
+     unit tests. Inherited spec staleness, not a migration regression.
+   - `kanban-column-automation.spec.ts` (180s test timeout): waits for an automation card to
+     contain provider output ("Codex"); requires a live agent provider binary, none configured
+     in this environment (compare exception 2 on offline providers).
+   - `kanban-drag-drop.spec.ts` (both tests, 60s timeout each):
+     `page.waitForLoadState("networkidle")` never settles on `/workspace/default/kanban`
+     against an unseeded ephemeral SQLite DB; the specs assume a persistent dev server with
+     seeded default-workspace content.
+   No source-repo workflow references any `.spec.ts`, and the specs are unchanged since
+   2026-03-17. §3.2 excludes UI/test rework from the first migration round. Team/Kanban
+   behavioral coverage instead comes from: the hermetic `team-run-lifecycle` spec (4/4), the
+   kanban suite inside `api:test:nextjs` (part of 86/86), and the vitest Kanban unit suites
+   (green in `test:run`). Disposition: recorded per §13; the specs stay in the repo and remain
+   runnable via `npm run test:e2e` where a provider and seeded workspace are available.
 
 ## Tauri/desktop reference baseline counts (target repo @ ff6ac33c)
 

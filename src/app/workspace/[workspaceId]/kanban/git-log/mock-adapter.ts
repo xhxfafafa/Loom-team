@@ -171,7 +171,7 @@ function getOrCreateFileChanges(commitSha: string): CommitFileChange[] {
     "src/client/components/button.tsx",
     "src/i18n/locales/en.ts",
     "src/i18n/locales/zh.ts",
-    "crates/routa-server/src/api/mod.rs",
+    "src/app/api/kanban/boards/route.ts",
     "docs/ARCHITECTURE.md",
     "package.json",
     "src/core/git/git-utils.ts",

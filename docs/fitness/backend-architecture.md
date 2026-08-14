@@ -18,13 +18,11 @@ metrics:
       - src/core/**
       - src/app/api/**
       - architecture/rules/backend-core.archdsl.yaml
-      - crates/routa-cli/src/commands/fitness/arch_dsl.rs
-      - crates/routa-server/src/api/fitness.rs
       - scripts/fitness/architecture-rule-dsl.ts
       - scripts/fitness/check-backend-architecture.ts
       - src/app/api/fitness/architecture/route.ts
       - docs/fitness/backend-architecture.md
-    description: "TypeScript backend core 边界约束（src/core / src/app/api）通过 Rust graph 执行器做本地 advisory 检查。"
+    description: "TypeScript backend core 边界约束（src/core / src/app/api）通过 graph 执行器做本地 advisory 检查。"
 
   - name: ts_backend_core_arch_cycles
     command: npm run test:arch:backend-core -- --suite cycles --json 2>&1
@@ -36,8 +34,6 @@ metrics:
     run_when_changed:
       - src/core/**
       - architecture/rules/backend-core.archdsl.yaml
-      - crates/routa-cli/src/commands/fitness/arch_dsl.rs
-      - crates/routa-server/src/api/fitness.rs
       - scripts/fitness/architecture-rule-dsl.ts
       - scripts/fitness/check-backend-architecture.ts
       - src/app/api/fitness/architecture/route.ts

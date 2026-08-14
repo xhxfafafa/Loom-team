@@ -118,10 +118,10 @@ criteria:
     critical: false
     why_it_matters: Broader orchestrator SDLC support should include API contract evidence in addition to code tests.
     recommended_action: Add or maintain API contract evidence.
-    evidence_hint: docs/fitness/rust-api-test.md
+    evidence_hint: docs/fitness/web-api-test.md
     detector:
       type: file_exists
-      path: docs/fitness/rust-api-test.md
+      path: docs/fitness/web-api-test.md
 
   - id: sdlc.structured_ai_coding.pr_verify_flow
     level: structured_ai_coding
@@ -213,10 +213,10 @@ criteria:
     critical: false
     why_it_matters: Awareness-level orchestrators benefit from a local CLI or server runtime entrypoint.
     recommended_action: Add a local CLI or server runtime entrypoint for agent execution.
-    evidence_hint: crates/routa-cli
+    evidence_hint: scripts/fitness
     detector:
       type: file_exists
-      path: crates/routa-cli
+      path: scripts/fitness
 
   - id: harness.assisted.runtime_manager
     level: assisted_coding
@@ -341,10 +341,10 @@ criteria:
     critical: true
     why_it_matters: Agent orchestrators need architecture-aware guardrails that are stronger than generic lint rules.
     recommended_action: Add or maintain a dedicated governance runtime for repository fitness.
-    evidence_hint: crates/entrix
+    evidence_hint: src/core/fitness
     detector:
       type: file_exists
-      path: crates/entrix
+      path: src/core/fitness
   - id: governance.agent_centric.review_trigger_rules
     level: agent_centric
     dimension: governance

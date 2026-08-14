@@ -15,7 +15,6 @@
 .github/** @phodal
 apps/** @phodal
 architecture/** @phodal
-crates/** @phodal
 docker/** @phodal
 docs/** @phodal
 drizzle/** @phodal
@@ -40,7 +39,6 @@ tools/** @phodal
 /.npmrc @phodal
 /.semgrepignore @phodal
 /AGENTS.md @phodal
-/Cargo.toml @phodal
 /CLAUDE.md @phodal
 /CHANGELOG.md @phodal
 /CODE_OF_CONDUCT.md @phodal

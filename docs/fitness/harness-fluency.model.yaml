@@ -270,7 +270,6 @@ criteria:
         - src/**/*.test.*
         - src/**/*.spec.*
         - "**/*_test.go"
-        - crates/**/*test*.rs
       min: 2
   - id: sdlc.assisted.validation_surface
     level: assisted_coding
@@ -454,7 +453,6 @@ criteria:
         - src/**/*.py
         - src/**/*.rs
         - src/**/*.go
-        - crates/**/*.rs
         - packages/**/*.ts
         - packages/**/*.tsx
         - packages/**/*.js

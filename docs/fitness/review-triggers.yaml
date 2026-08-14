@@ -4,7 +4,7 @@ review_triggers:
     paths:
       - src/core/acp/**
       - src/core/orchestration/**
-      - crates/routa-server/src/api/**
+      - src/app/api/**
     severity: high
     action: staged
     confidence_threshold: 8
@@ -31,10 +31,9 @@ review_triggers:
     paths:
       - src/core/acp/**
       - src/core/orchestration/**
-      - crates/routa-server/src/api/**
+      - src/app/api/**
     evidence_paths:
       - docs/fitness/**
-      - crates/entrix/**
       - .github/workflows/defense.yaml
     severity: medium
     action: staged
@@ -50,9 +49,8 @@ review_triggers:
       - scripts/fitness/check-api-parity.ts
       - scripts/fitness/validate-openapi-schema.ts
       - src/app/api/**
-      - crates/routa-server/src/api/**
       - docs/fitness/unit-test.md
-      - docs/fitness/rust-api-test.md
+      - docs/fitness/web-api-test.md
     severity: high
     action: staged
     confidence_threshold: 8
@@ -60,14 +58,12 @@ review_triggers:
     context:
       - graph_review_context
 
-  - name: cross_boundary_change_web_rust
+  - name: cross_boundary_change_web_desktop
     type: cross_boundary_change
     boundaries:
       web:
         - src/**
-        - apps/web/**
-      rust:
-        - crates/**
+      desktop:
         - apps/desktop/src-tauri/**
     min_boundaries: 2
     severity: medium

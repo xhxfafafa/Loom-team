@@ -21,7 +21,6 @@
     "kanban",
     "multi-agent",
     "nextjs",
-    "rust",
     "mcp",
     "acp"
   ],
@@ -110,9 +109,6 @@
     "docs:build": "node scripts/build/build-docs-site.mjs",
     "docs:serve": "docusaurus serve docs-site",
     "coverage:summary:refresh": "node --import tsx scripts/fitness/write-coverage-summary.ts",
-    "rust:cov": "node --import tsx scripts/fitness/rust-coverage.ts routa-core summary",
-    "rust:cov:lcov": "node --import tsx scripts/fitness/rust-coverage.ts routa-core lcov",
-    "rust:cov:html": "node --import tsx scripts/fitness/rust-coverage.ts routa-core html",
     "prepare": "node scripts/install/run-hooks-sync.mjs"
   },
   "dependencies": {

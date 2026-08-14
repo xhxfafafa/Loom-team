@@ -26,9 +26,6 @@ describe("hook runtime profile config", () => {
       "eslint_pass",
       "ts_typecheck_pass",
       "ts_test_pass_full",
-      "clippy_pass",
-      "rust_test_pass",
-      "graph_test_mapping_probe",
     ]);
   });
 

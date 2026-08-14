@@ -22,7 +22,6 @@ const brandSemanticFiles = [
   "src/client/components/compact-stat.tsx",
   "src/app/workspace/[workspaceId]/ui-components.tsx",
   "src/core/models/kanban.ts",
-  "crates/routa-core/src/models/kanban.rs",
 ];
 
 const desktopThemeFile = "src/app/styles/desktop-theme.css";

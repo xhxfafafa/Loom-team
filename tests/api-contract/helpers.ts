@@ -1,10 +1,10 @@
 /**
  * Shared test helpers for API contract tests.
  *
- * These tests run against whichever backend is at BASE_URL.
+ * These tests run against the Web backend at BASE_URL.
  * Usage:
- *   BASE_URL=http://localhost:3000 npx tsx tests/api-contract/run.ts   # Next.js
- *   BASE_URL=http://localhost:3210 npx tsx tests/api-contract/run.ts   # Rust
+ *   npx tsx tests/api-contract/run.ts                          # Web backend (default)
+ *   BASE_URL=http://localhost:3000 npx tsx tests/api-contract/run.ts   # Web backend
  */
 
 import { validateSchema, validateOperationResponse, validateOperationRequest } from "./schema-validator";

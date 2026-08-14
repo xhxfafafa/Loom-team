@@ -88,7 +88,7 @@ describe("mcp-setup file-based providers", () => {
     const { ensureMcpForProvider } = await import("../mcp-setup");
 
     const result = await ensureMcpForProvider("codex", {
-      routaServerUrl: "http://127.0.0.1:3210",
+      routaServerUrl: "http://127.0.0.1:3000",
       includeCustomServers: false,
       cwd: "/workspace/routa-overlay",
     });
@@ -98,7 +98,7 @@ describe("mcp-setup file-based providers", () => {
       "-c",
       'projects."/workspace/routa-overlay".trust_level="trusted"',
       "-c",
-      'mcp_servers.routa-coordination.url="http://127.0.0.1:3210/api/mcp"',
+      'mcp_servers.routa-coordination.url="http://127.0.0.1:3000/api/mcp"',
       "-c",
       "mcp_servers.routa-coordination.enabled=true",
     ]);
@@ -107,7 +107,7 @@ describe("mcp-setup file-based providers", () => {
     const raw = await fs.readFile(configPath, "utf-8");
 
     expect(raw).toContain("routa-coordination");
-    expect(raw).toContain('url = "http://127.0.0.1:3210/api/mcp"');
+    expect(raw).toContain('url = "http://127.0.0.1:3000/api/mcp"');
     expect(raw).toContain("enabled = true");
     expect(result.summary).toContain("codex: wrote private overlay");
   });
@@ -116,7 +116,7 @@ describe("mcp-setup file-based providers", () => {
     const { ensureMcpForProvider } = await import("../mcp-setup");
 
     const result = await ensureMcpForProvider("codex-acp", {
-      routaServerUrl: "http://127.0.0.1:3210",
+      routaServerUrl: "http://127.0.0.1:3000",
       includeCustomServers: false,
       cwd: "/workspace/routa-codex-acp",
     });
@@ -132,7 +132,7 @@ describe("mcp-setup file-based providers", () => {
     const projectDir = path.join(tmpHome, "qoder-project");
     await fs.mkdir(projectDir, { recursive: true });
     const realProjectDir = await fs.realpath(projectDir);
-    const mcpEndpoint = "http://127.0.0.1:3210/api/mcp?wsId=ws-qoder&sid=session-qoder";
+    const mcpEndpoint = "http://127.0.0.1:3000/api/mcp?wsId=ws-qoder&sid=session-qoder";
     const originalPwd = process.env.PWD;
     await fs.writeFile(
       qoderBinPath,
@@ -156,7 +156,7 @@ fs.appendFileSync(${JSON.stringify(qoderLogPath)}, payload + "\\n");
 
     try {
       const result = await ensureMcpForProvider("qoder", {
-        routaServerUrl: "http://127.0.0.1:3210",
+        routaServerUrl: "http://127.0.0.1:3000",
         mcpEndpoint,
         workspaceId: "ws-qoder",
         sessionId: "session-qoder",

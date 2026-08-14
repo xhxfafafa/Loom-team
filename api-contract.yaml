@@ -2,16 +2,14 @@ openapi: 3.1.0
 info:
   title: Routa.js API Contract
   description: |
-    Single source of truth for the Routa.js dual-backend API.
-    Both the Next.js backend (src/app/api/) and the Rust backend (crates/routa-server/)
-    MUST implement all endpoints defined here with compatible request/response shapes.
+    Single source of truth for the Routa.js Web API.
+    The Next.js backend (src/app/api/) MUST implement all endpoints defined here
+    with compatible request/response shapes.
   version: 0.1.0
 
 servers:
   - url: http://localhost:3000
     description: Next.js backend (dev)
-  - url: http://localhost:3210
-    description: Rust backend (desktop)
 
 # ─────────────────────────────────────────────────────────
 # Shared component schemas

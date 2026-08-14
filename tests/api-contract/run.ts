@@ -2,11 +2,11 @@
 /**
  * Shared API Contract Test Runner
  *
- * Runs the same test suite against either backend to verify behavioral parity.
+ * Runs the test suite against the Web backend to verify behavioral correctness.
  *
  * Usage:
- *   BASE_URL=http://localhost:3000 npx tsx tests/api-contract/run.ts   # Next.js
- *   BASE_URL=http://localhost:3210 npx tsx tests/api-contract/run.ts   # Rust
+ *   npx tsx tests/api-contract/run.ts                          # Web backend (default)
+ *   BASE_URL=http://localhost:3000 npx tsx tests/api-contract/run.ts   # Web backend
  *
  * Options:
  *   --json          Output results as JSON

@@ -490,7 +490,7 @@ describe("AcpProcessManager", () => {
     const manager = new AcpProcessManager();
     ensureMcpForProviderMock.mockResolvedValueOnce({
       mcpConfigs: ["mcp-config"],
-      providerArgs: ["-c", 'mcp_servers.routa-coordination.url="http://localhost:3210/api/mcp"'],
+      providerArgs: ["-c", 'mcp_servers.routa-coordination.url="http://localhost:3000/api/mcp"'],
       summary: "codex: wrote private overlay",
     });
 
@@ -508,7 +508,7 @@ describe("AcpProcessManager", () => {
     expect(buildConfigFromPresetMock).toHaveBeenCalledWith(
       "codex",
       "/repo",
-      ["-c", 'mcp_servers.routa-coordination.url="http://localhost:3210/api/mcp"', "--verbose"],
+      ["-c", 'mcp_servers.routa-coordination.url="http://localhost:3000/api/mcp"', "--verbose"],
       undefined,
       ["mcp-config"],
     );

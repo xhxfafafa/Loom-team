@@ -56,7 +56,7 @@ describe("sandbox permissions API helpers", () => {
   beforeEach(() => {
     process.env = {
       ...originalEnv,
-      ROUTA_SERVER_URL: "http://127.0.0.1:3210",
+      ROUTA_SERVER_URL: "http://127.0.0.1:3000",
       ROUTA_INTERNAL_API_ORIGIN: "http://127.0.0.1:3000",
     };
     vi.restoreAllMocks();
@@ -80,7 +80,7 @@ describe("sandbox permissions API helpers", () => {
     const result = await createRustSandbox(request);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:3210/api/sandboxes",
+      "http://127.0.0.1:3000/api/sandboxes",
       expect.objectContaining({ method: "POST" }),
     );
     expect(result.effectivePolicy?.workspaceId).toBe("ws-1");
@@ -107,7 +107,7 @@ describe("sandbox permissions API helpers", () => {
     expect(mutated.policy.mounts[0].access).toBe("readOnly");
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      "http://127.0.0.1:3210/api/sandboxes/explain",
+      "http://127.0.0.1:3000/api/sandboxes/explain",
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(

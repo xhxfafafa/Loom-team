@@ -324,16 +324,6 @@ jobs:
       - name: npm audit (high) - report only
         run: npm audit --audit-level=high || true
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
-
-      - name: cargo audit
-        run: cargo audit
-        continue-on-error: true
-
   # ══════════════════════════════════════════════════════════════
   # SECURITY DIMENSION: Semgrep SAST 扫描
   # ══════════════════════════════════════════════════════════════

@@ -11,6 +11,7 @@ import { useAcp } from "@/client/hooks/use-acp";
 import { useNotes } from "@/client/hooks/use-notes";
 import {
   clearPendingPrompt,
+  ensurePendingPromptDeliveryId,
   peekPendingPromptPayload,
   type PendingPromptPayload,
 } from "@/client/utils/pending-prompt";
@@ -84,6 +85,7 @@ import { TeamRunSessionModal } from "./team-run-session-modal";
 import { TeamRunPageHeader } from "./team-run-page-header";
 import { DeleteTeamRunDialog, type TeamRunDeletionResultSummary } from "../delete-team-run-dialog";
 import { useRealTeamRunParams } from "./use-real-team-run-params";
+import { useTeamRunRecovery } from "./use-team-run-recovery";
 import { useTranslation } from "@/i18n";
 
 
@@ -163,6 +165,14 @@ function pendingPayloadHasTeamAttachments(payload: PendingPromptPayload): boolea
   return Boolean(payload.attachmentTransferId) || (payload.repositoryFiles?.length ?? 0) > 0;
 }
 
+/**
+ * Retention window for the Team launch prompt. A legitimate takeover can wait
+ * for the full foreign lease (default five minutes), so the pending prompt
+ * must survive longer than the 30-second handoff default used by other
+ * surfaces. Ten minutes covers the lease wait with margin.
+ */
+const TEAM_PENDING_PROMPT_MAX_AGE_MS = 600_000;
+
 export function TeamRunPageClient() {
   const { t } = useTranslation();
   const router = useRouter();
@@ -179,6 +189,7 @@ export function TeamRunPageClient() {
     promptSession: acpPromptSession,
     setProvider: acpSetProvider,
     selectSession,
+    resumeSession,
   } = acp;
   const modalAcp = useAcp();
   const {
@@ -236,13 +247,27 @@ export function TeamRunPageClient() {
     }
   }, [acpConnected, acpLoading, connectAcp]);
 
-  useEffect(() => {
-    if (!isResolved || !acpConnected || !session || session.sessionId !== sessionId || sessionId === "__placeholder__") {
-      return;
-    }
-    if (acp.sessionId === sessionId) return;
-    selectSession(sessionId);
-  }, [acp.sessionId, acpConnected, isResolved, selectSession, session, sessionId]);
+  /** Map a structured recovery failure to its localized Team explanation. */
+  const localizeRecoveryError = useCallback((err: unknown): string => {
+    const errorI18nKey = resolveTeamPromptErrorI18nKey(err);
+    return errorI18nKey
+      ? t.teamRuntime[errorI18nKey]
+      : err instanceof Error ? err.message : String(err);
+  }, [t]);
+
+  // Bootstrap attach path: selectSession (active) XOR resumeSession
+  // (restorable/interrupted/stale) — never both, never concurrent.
+  const { recoveryError, retryRecovery } = useTeamRunRecovery({
+    workspaceId,
+    sessionId,
+    isResolved,
+    acpConnected,
+    attachedSessionId: acp.sessionId,
+    session,
+    selectSession,
+    resumeSession,
+    localizeRecoveryError,
+  });
 
   useEffect(() => {
     if (!selectedSessionForModal) return;
@@ -572,7 +597,10 @@ export function TeamRunPageClient() {
         attachments,
         transferId,
       });
-      await acpPromptSession(sessionId, blocks, undefined, { throwOnError: true });
+      await acpPromptSession(sessionId, blocks, undefined, {
+        throwOnError: true,
+        promptId: payload.promptId,
+      });
       // Accepted: remove the temporary record and the handoff payload.
       if (transferId) {
         await deleteTeamAttachmentTransfer(transferId);
@@ -589,11 +617,19 @@ export function TeamRunPageClient() {
     if (pendingPromptInFlightRef.current.has(sessionId)) return;
 
     if (!pendingPromptPayloadRef.current) {
-      const payload = peekPendingPromptPayload(sessionId);
+      // Team window (ten minutes) instead of the 30-second default: the
+      // launch prompt must survive a legitimate lease wait during recovery.
+      const payload = peekPendingPromptPayload(sessionId, {
+        maxAgeMs: TEAM_PENDING_PROMPT_MAX_AGE_MS,
+      });
       if (!payload || !payload.text) return;
-      if (!pendingPayloadHasTeamAttachments(payload)) {
-        // Text-only handoff keeps the historical delete-on-read semantics.
-        clearPendingPrompt(sessionId);
+      if (!payload.promptId) {
+        // Entries stored before delivery identities existed get one assigned
+        // in place, so every retry of THIS delivery reuses the same promptId.
+        const assignedId = ensurePendingPromptDeliveryId(sessionId);
+        if (assignedId) {
+          payload.promptId = assignedId;
+        }
       }
       pendingPromptPayloadRef.current = payload;
     }
@@ -617,7 +653,12 @@ export function TeamRunPageClient() {
         if (pendingPayloadHasTeamAttachments(payload)) {
           await sendTeamFirstPromptBlocks(payload);
         } else {
-          await acpPromptSession(sessionId, payload.text);
+          await acpPromptSession(sessionId, payload.text, undefined, {
+            promptId: payload.promptId,
+          });
+          // Accepted: only NOW is the handoff dropped. Clearing at read time
+          // would lose the launch prompt when delivery fails mid-recovery.
+          clearPendingPrompt(sessionId);
         }
         pendingPromptSentRef.current.add(sessionId);
         pendingPromptPayloadRef.current = null;
@@ -1575,6 +1616,18 @@ export function TeamRunPageClient() {
             />
 
             <div className="shrink-0 border-t border-desktop-border bg-desktop-bg-primary px-3 py-2">
+              {recoveryError && (
+                <div className="mb-2 flex items-start justify-between gap-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                  <span className="min-w-0 break-words">{recoveryError}</span>
+                  <button
+                    type="button"
+                    onClick={retryRecovery}
+                    className="shrink-0 rounded border border-rose-300 px-2 py-0.5 font-medium transition hover:bg-rose-100 dark:border-rose-500/40 dark:hover:bg-rose-500/20"
+                  >
+                    {t.teamRuntime.promptRetry}
+                  </button>
+                </div>
+              )}
               {timelinePromptError && (
                 <div className="mb-2 flex items-start justify-between gap-3 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
                   <span className="min-w-0 break-words">

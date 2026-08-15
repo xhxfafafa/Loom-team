@@ -3,7 +3,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BrowserAcpClient } from "../acp-client";
+import { AcpClientError, BrowserAcpClient, computeRecoveryRetryDelayMs } from "../acp-client";
 
 class MockEventSource {
   static CLOSED = 2;
@@ -240,6 +240,168 @@ describe("BrowserAcpClient", () => {
       filePaths: ["src/app/page.tsx"],
       historySessionIds: ["session-a"],
       taskType: "implementation",
+    });
+  });
+
+  it("reuses the caller-provided promptId for every delivery attempt", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        id?: number;
+        params?: Record<string, unknown>;
+      };
+      bodies.push(body);
+      return new Response(JSON.stringify({
+        jsonrpc: "2.0",
+        id: body?.id ?? 1,
+        result: {
+          promptId: body?.params?.promptId,
+          promptAccepted: true,
+          duplicate: false,
+        },
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new BrowserAcpClient("");
+    // Recovery retries must reuse ONE delivery identity so the backend can
+    // deduplicate the dispatch.
+    const first = await client.prompt("session-1", "Coordinate this team run", undefined, {
+      promptId: "stable-prompt-1",
+    });
+    const second = await client.prompt("session-1", "Coordinate this team run", undefined, {
+      promptId: "stable-prompt-1",
+    });
+
+    expect(first.promptAccepted).toBe(true);
+    expect(second.promptAccepted).toBe(true);
+    expect(bodies.map((body) => (body.params as Record<string, unknown>).promptId)).toEqual([
+      "stable-prompt-1",
+      "stable-prompt-1",
+    ]);
+
+    // Without an explicit delivery identity every attempt gets a fresh id —
+    // callers that need deduplication must pass the stored promptId through.
+    await client.prompt("session-1", "fresh attempt");
+    const generated = (bodies[2].params as Record<string, unknown>).promptId;
+    expect(generated).toEqual(expect.any(String));
+    expect(generated).not.toBe("stable-prompt-1");
+  });
+
+  describe("computeRecoveryRetryDelayMs", () => {
+    function ownershipError(data: Record<string, unknown>): AcpClientError {
+      return new AcpClientError(
+        "Session runtime is owned by another Routa instance",
+        -32010,
+        undefined,
+        undefined,
+        data,
+      );
+    }
+
+    it("returns null for errors without structured recovery data", () => {
+      expect(computeRecoveryRetryDelayMs(new Error("boom"))).toBeNull();
+      expect(computeRecoveryRetryDelayMs("boom")).toBeNull();
+      expect(computeRecoveryRetryDelayMs(new AcpClientError("plain", -32000))).toBeNull();
+      expect(computeRecoveryRetryDelayMs(ownershipError({ reason: "runtime_owned" }))).toBeNull();
+    });
+
+    it("returns null when the structured failure is not retryable", () => {
+      expect(
+        computeRecoveryRetryDelayMs(
+          ownershipError({ reason: "recovery_failed", retryable: false, retryAfterMs: 45000 }),
+        ),
+      ).toBeNull();
+    });
+
+    it("returns null when retryable but no lease hint is present", () => {
+      expect(
+        computeRecoveryRetryDelayMs(ownershipError({ reason: "runtime_owned", retryable: true })),
+      ).toBeNull();
+    });
+
+    it("derives the delay from retryAfterMs with bounded jitter", () => {
+      const random = vi.spyOn(Math, "random");
+      try {
+        random.mockReturnValue(0);
+        expect(
+          computeRecoveryRetryDelayMs(
+            ownershipError({ reason: "runtime_owned", retryable: true, retryAfterMs: 45000 }),
+          ),
+        ).toBe(45000);
+        random.mockReturnValue(0.9999);
+        expect(
+          computeRecoveryRetryDelayMs(
+            ownershipError({ reason: "runtime_owned", retryable: true, retryAfterMs: 45000 }),
+          ),
+        ).toBe(46999);
+      } finally {
+        random.mockRestore();
+      }
+    });
+
+    it("prefers retryAfterMs over leaseExpiresAt", () => {
+      const random = vi.spyOn(Math, "random").mockReturnValue(0);
+      try {
+        expect(
+          computeRecoveryRetryDelayMs(
+            ownershipError({
+              reason: "runtime_owned",
+              retryable: true,
+              retryAfterMs: 45000,
+              leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+            }),
+          ),
+        ).toBe(45000);
+      } finally {
+        random.mockRestore();
+      }
+    });
+
+    it("falls back to leaseExpiresAt when retryAfterMs is absent", () => {
+      const random = vi.spyOn(Math, "random").mockReturnValue(0);
+      try {
+        expect(
+          computeRecoveryRetryDelayMs(
+            ownershipError({
+              reason: "runtime_owned",
+              retryable: true,
+              leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+            }),
+          ),
+        ).toBe(60_000);
+      } finally {
+        random.mockRestore();
+      }
+    });
+
+    it("clamps a tiny lease hint to a small positive minimum", () => {
+      const random = vi.spyOn(Math, "random").mockReturnValue(0);
+      try {
+        expect(
+          computeRecoveryRetryDelayMs(
+            ownershipError({ reason: "runtime_owned", retryable: true, retryAfterMs: 0 }),
+          ),
+        ).toBe(1000);
+      } finally {
+        random.mockRestore();
+      }
+    });
+
+    it("caps the delay at the default lease duration", () => {
+      const random = vi.spyOn(Math, "random").mockReturnValue(0);
+      try {
+        expect(
+          computeRecoveryRetryDelayMs(
+            ownershipError({ reason: "runtime_owned", retryable: true, retryAfterMs: 900_000 }),
+          ),
+        ).toBe(300_000);
+      } finally {
+        random.mockRestore();
+      }
     });
   });
 });

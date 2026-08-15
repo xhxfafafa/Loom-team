@@ -232,7 +232,7 @@ export interface UseAcpActions {
     sessionId: string,
     prompt: string | AcpContentBlock[],
     skillContext?: { skillName: string; skillContent: string },
-    options?: { throwOnError?: boolean },
+    options?: { throwOnError?: boolean; promptId?: string },
   ) => Promise<void>;
   respondToUserInput: (toolCallId: string, response: Record<string, unknown>) => Promise<void>;
   respondToUserInputForSession: (
@@ -733,7 +733,7 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
     sessionId: string,
     prompt: string | AcpContentBlock[],
     skillContext?: { skillName: string; skillContent: string },
-    options?: { throwOnError?: boolean },
+    options?: { throwOnError?: boolean; promptId?: string },
   ): Promise<void> => {
     const client = clientRef.current;
     if (!client || !sessionId) return;
@@ -741,7 +741,9 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
     try {
       setState((s) => ({ ...s, loading: true, error: null }));
       sessionIdRef.current = sessionId;
-      await client.prompt(sessionId, prompt, skillContext);
+      await client.prompt(sessionId, prompt, skillContext, {
+        promptId: options?.promptId,
+      });
       setState((s) => ({ ...s, sessionId, loading: false }));
     } catch (err) {
       if (shouldSuppressPromptError(err)) {

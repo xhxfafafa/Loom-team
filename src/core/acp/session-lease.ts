@@ -27,12 +27,20 @@ export { getSessionLeaseRefreshMs };
 /**
  * Refresh the lease of an embedded session owned by this instance.
  *
- * Updates the in-memory record and persists the refreshed lease with an
- * atomic CAS (`tryAcquireExpiredLease`): the DB write only succeeds while
- * this instance still owns the lease (or the lease expired), so concurrent
- * instances never clobber each other's binding. Fire-and-forget by design —
- * a failed refresh only means the next refresh retries; the in-memory
- * runtime is unaffected.
+ * Only a lease whose recorded owner IS this instance may be refreshed. A
+ * record hydrated from another instance's durable row (including a dead
+ * owner whose lease expired) must never be renewed here: persisting the
+ * foreign owner with a fresh lease would resurrect a dead owner, and
+ * claiming an ownerless row is an acquisition — takeover belongs
+ * exclusively to `ensureSessionRuntime`'s compare-and-set.
+ *
+ * The refreshed lease is persisted with an atomic CAS
+ * (`tryAcquireExpiredLease`), and the in-memory record is updated only
+ * after the write is known to be valid: a refused CAS means ownership was
+ * lost, and upserting a refreshed lease anyway would resurrect a binding
+ * this instance no longer holds. Fire-and-forget by design — a failed
+ * refresh only means the next refresh retries; the in-memory runtime is
+ * unaffected.
  */
 export function refreshEmbeddedSessionLease(
   store: ReturnType<typeof getHttpSessionStore>,
@@ -42,12 +50,19 @@ export function refreshEmbeddedSessionLease(
     return;
   }
 
-  const refreshed = refreshExecutionBinding(session);
-  store.upsertSession(refreshed);
+  const instanceId = getAcpInstanceId();
+  if (session.ownerInstanceId !== instanceId) {
+    return;
+  }
+
   void tryAcquireSessionLeaseInDb(session.sessionId, {
     executionMode: "embedded",
-    ownerInstanceId: refreshed.ownerInstanceId ?? getAcpInstanceId(),
-    leaseExpiresAt: refreshed.leaseExpiresAt ?? buildAcpLeaseExpiresAt(),
+    ownerInstanceId: instanceId,
+    leaseExpiresAt: buildAcpLeaseExpiresAt(),
+  }).then((acquired) => {
+    if (acquired) {
+      store.upsertSession(refreshExecutionBinding(session));
+    }
   });
 }
 

@@ -13,12 +13,26 @@
  */
 
 import type { RepositoryFileReference } from "./attachment-draft";
+import { generatePromptDeliveryId } from "../acp-client";
 
 const STORAGE_KEY_PREFIX = "routa_pending_prompt_";
+
+/**
+ * Default handoff window: a freshly created session consumes its pending
+ * prompt within seconds, so entries older than this are stale.
+ */
+const DEFAULT_PENDING_PROMPT_MAX_AGE_MS = 30_000;
 
 export interface PendingPromptPayload {
   text: string;
   timestamp: number;
+  /**
+   * Stable delivery identity (promptId) assigned when the prompt is first
+   * stored. Every recovery retry of this delivery MUST reuse it so the
+   * backend can deduplicate the dispatch; never generate a replacement id
+   * for the same pending delivery.
+   */
+  promptId?: string;
   skillName?: string;
   skillRepoPath?: string;
   /**
@@ -55,6 +69,9 @@ export function storePendingPrompt(
   const data: PendingPromptPayload = {
     text: typeof input === "string" ? input : input.text,
     timestamp: Date.now(),
+    // Assign the durable delivery identity at FIRST storage: recovery retries
+    // reuse this exact promptId so the backend dispatches the delivery once.
+    promptId: generatePromptDeliveryId(),
     skillName: typeof input === "string" ? undefined : input.skillName,
     skillRepoPath: typeof input === "string" ? undefined : input.skillRepoPath,
     attachmentTransferId: typeof input === "string" ? undefined : input.attachmentTransferId,
@@ -83,9 +100,12 @@ export function consumePendingPrompt(sessionId: string): string | null {
 
 /**
  * Read a stored payload without removing it. Returns null when nothing is
- * stored or the entry is older than 30 seconds.
+ * stored or the entry is older than `maxAgeMs` (30 seconds by default).
  */
-function readPendingPayload(sessionId: string): PendingPromptPayload | null {
+function readPendingPayload(
+  sessionId: string,
+  maxAgeMs: number = DEFAULT_PENDING_PROMPT_MAX_AGE_MS,
+): PendingPromptPayload | null {
   if (typeof window === "undefined") return null;
 
   const key = `${STORAGE_KEY_PREFIX}${sessionId}`;
@@ -96,9 +116,8 @@ function readPendingPayload(sessionId: string): PendingPromptPayload | null {
 
     const data = JSON.parse(raw) as PendingPromptPayload;
 
-    // Check if the prompt is too old (> 30 seconds)
     const age = Date.now() - data.timestamp;
-    if (age > 30000) {
+    if (age > maxAgeMs) {
       console.warn("[PendingPrompt] Pending prompt too old, discarding");
       return null;
     }
@@ -112,12 +131,14 @@ function readPendingPayload(sessionId: string): PendingPromptPayload | null {
 
 /**
  * Retrieve and clear a structured pending prompt payload for a session.
- * Returns null if no pending prompt exists or if it's too old (> 30 seconds)
+ * Returns null if no pending prompt exists or if it's too old (30 seconds by
+ * default; pass `maxAgeMs` to widen the window).
  */
 export function consumePendingPromptPayload(
   sessionId: string,
+  options?: { maxAgeMs?: number },
 ): PendingPromptPayload | null {
-  const data = readPendingPayload(sessionId);
+  const data = readPendingPayload(sessionId, options?.maxAgeMs);
   // Always remove the item, regardless of whether we use it
   clearPendingPrompt(sessionId);
   return data;
@@ -128,11 +149,43 @@ export function consumePendingPromptPayload(
  * the Team Run first prompt, which must keep the transfer metadata available
  * for retry until delivery succeeds. Call `clearPendingPrompt` after the
  * prompt was accepted.
+ *
+ * `maxAgeMs` defaults to the 30-second handoff window; the Team Run launch
+ * prompt reads with a ten-minute window so a legitimate lease wait (default
+ * lease: five minutes) cannot expire the prompt before takeover.
  */
 export function peekPendingPromptPayload(
   sessionId: string,
+  options?: { maxAgeMs?: number },
 ): PendingPromptPayload | null {
-  return readPendingPayload(sessionId);
+  return readPendingPayload(sessionId, options?.maxAgeMs);
+}
+
+/**
+ * Guarantee the stored payload has a stable delivery identity. Entries stored
+ * before `promptId` existed get one assigned IN PLACE (the timestamp is
+ * preserved, so the retention window keeps running from the original storage
+ * time). Returns the payload's promptId, or null when nothing is stored.
+ */
+export function ensurePendingPromptDeliveryId(sessionId: string): string | null {
+  if (typeof window === "undefined") return null;
+
+  const key = `${STORAGE_KEY_PREFIX}${sessionId}`;
+
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+
+    const data = JSON.parse(raw) as PendingPromptPayload;
+    if (data.promptId) return data.promptId;
+
+    data.promptId = generatePromptDeliveryId();
+    sessionStorage.setItem(key, JSON.stringify(data));
+    return data.promptId;
+  } catch (e) {
+    console.warn("[PendingPrompt] Failed to ensure delivery id:", e);
+    return null;
+  }
 }
 
 /** Remove the pending prompt entry for a session, if present. */

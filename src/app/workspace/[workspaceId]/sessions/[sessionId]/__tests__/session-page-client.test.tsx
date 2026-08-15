@@ -203,6 +203,7 @@ vi.mock("@/client/acp-client", () => ({
     onUpdate = vi.fn();
     disconnect = vi.fn();
   },
+  generatePromptDeliveryId: () => "mock-prompt-delivery-id",
 }));
 
 describe("SessionPageClient", () => {

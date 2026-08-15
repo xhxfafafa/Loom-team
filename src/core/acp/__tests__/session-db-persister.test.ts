@@ -27,11 +27,19 @@ import { LocalSessionProvider } from "../../storage/local-session-provider";
 
 let tmpDir: string;
 let originalHome: string | undefined;
+let originalDbPath: string | undefined;
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "session-db-persister-"));
   originalHome = process.env.HOME;
   process.env.HOME = tmpDir;
+  // Point SQLite at a per-test file so full-suite runs do not share the
+  // cwd-relative `routa.db` with unrelated test files; leftover lease rows
+  // from other suites made fail-closed lease acquisition flaky.
+  const { closeSqliteDatabase } = await import("../../db/sqlite");
+  closeSqliteDatabase();
+  originalDbPath = process.env.ROUTA_DB_PATH;
+  process.env.ROUTA_DB_PATH = path.join(tmpDir, "routa.db");
 });
 
 afterEach(async () => {
@@ -44,6 +52,12 @@ afterEach(async () => {
     delete process.env.HOME;
   } else {
     process.env.HOME = originalHome;
+  }
+
+  if (originalDbPath === undefined) {
+    delete process.env.ROUTA_DB_PATH;
+  } else {
+    process.env.ROUTA_DB_PATH = originalDbPath;
   }
 
   // Close SQLite database to release file locks on Windows
@@ -559,6 +573,47 @@ describe("acquireSessionLeaseInDb (P1 fail-closed 5-state result)", () => {
       // A DB failure must NEVER be reported as `missing` — conflating the two
       // is exactly the fail-open hole that let runtimes start during outages.
       expect(result.outcome).toBe("unavailable");
+    } finally {
+      if (priorDbPath === undefined) delete process.env.ROUTA_DB_PATH;
+      else process.env.ROUTA_DB_PATH = priorDbPath;
+    }
+  });
+});
+
+// Regression for docs/issues/2026-08-16-team-run-stale-owner-recovery.md:
+// initializeSqliteTables must create every column the drizzle schema selects.
+// A fresh runtime database without acp_sessions.team_chain_id made session
+// reads throw `no such column: "team_chain_id"` and the fail-closed lease CAS
+// return `unavailable`, so recovery failed before it could evaluate ownership.
+describe("runtime SQLite schema compatibility (fresh database)", () => {
+  it("round-trips teamChainId and acquires a lease on a database created by the current initializer", async () => {
+    const { closeSqliteDatabase } = await import("../../db/sqlite");
+    const priorDbPath = process.env.ROUTA_DB_PATH;
+    closeSqliteDatabase();
+    process.env.ROUTA_DB_PATH = path.join(tmpDir, "fresh-schema.db");
+    try {
+      await persistSessionToDb({
+        id: "fresh-schema-session",
+        cwd: path.join(tmpDir, "fresh-schema-session"),
+        workspaceId: "ws-1",
+        provider: "opencode",
+        role: "ROUTA",
+        executionMode: "embedded",
+        teamChainId: "standard_delivery",
+      });
+
+      const row = await loadSessionFromDb("fresh-schema-session");
+      expect(row).not.toBeNull();
+      expect(row?.teamChainId).toBe("standard_delivery");
+
+      const result = await acquireSessionLeaseInDb("fresh-schema-session", {
+        ownerInstanceId: "instance-a",
+        leaseExpiresAt: new Date(Date.now() + 600_000).toISOString(),
+        executionMode: "embedded",
+      });
+      // Schema drift must not fail the lease closed as `unavailable`; the
+      // unowned durable row is acquirable.
+      expect(result.outcome).toBe("acquired");
     } finally {
       if (priorDbPath === undefined) delete process.env.ROUTA_DB_PATH;
       else process.env.ROUTA_DB_PATH = priorDbPath;

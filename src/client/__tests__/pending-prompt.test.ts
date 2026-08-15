@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearPendingPrompt,
   consumePendingPromptPayload,
+  ensurePendingPromptDeliveryId,
   peekPendingPromptPayload,
   storePendingPrompt,
 } from "../utils/pending-prompt";
@@ -39,9 +40,65 @@ describe("pending-prompt payload handoff", () => {
     const raw = sessionStorage.getItem("routa_pending_prompt_session-2") ?? "";
     const payload = JSON.parse(raw) as Record<string, unknown>;
     expect(Object.keys(payload).sort()).toEqual(
-      ["attachmentTransferId", "text", "timestamp"].sort(),
+      ["attachmentTransferId", "promptId", "text", "timestamp"].sort(),
     );
     expect(raw).not.toContain("base64");
+  });
+
+  it("assigns one stable promptId at storage and keeps it across peeks", () => {
+    storePendingPrompt("session-prompt-id", {
+      text: "Coordinate this team run",
+      attachmentTransferId: "transfer-1",
+    });
+    const first = peekPendingPromptPayload("session-prompt-id");
+    expect(first?.promptId).toEqual(expect.any(String));
+    expect(first?.promptId?.length).toBeGreaterThan(0);
+    // Recovery retries must reuse ONE delivery identity: repeated peeks and a
+    // consume must all observe the same promptId that was assigned at storage.
+    expect(peekPendingPromptPayload("session-prompt-id")?.promptId).toBe(first?.promptId);
+    expect(consumePendingPromptPayload("session-prompt-id")?.promptId).toBe(first?.promptId);
+  });
+
+  it("keeps a payload readable beyond 30 seconds when the reader allows a Team window", () => {
+    // Regression: a pending Team launch prompt must survive a legitimate
+    // lease wait (default lease: five minutes), not expire with the 30s
+    // default handoff window.
+    sessionStorage.setItem(
+      "routa_pending_prompt_session-team-window",
+      JSON.stringify({
+        text: "launch the team",
+        timestamp: Date.now() - 40_000,
+        promptId: "stable-prompt-1",
+      }),
+    );
+    // Default surfaces keep the 30-second window.
+    expect(peekPendingPromptPayload("session-team-window")).toBeNull();
+    // The Team page reads with a ten-minute window.
+    const payload = peekPendingPromptPayload("session-team-window", { maxAgeMs: 600_000 });
+    expect(payload).toMatchObject({ text: "launch the team", promptId: "stable-prompt-1" });
+    // Beyond the Team window the payload still expires.
+    expect(
+      peekPendingPromptPayload("session-team-window", { maxAgeMs: 10_000 }),
+    ).toBeNull();
+  });
+
+  it("ensures a delivery id for legacy entries without touching the timestamp", () => {
+    const timestamp = Date.now() - 5_000;
+    sessionStorage.setItem(
+      "routa_pending_prompt_session-legacy",
+      JSON.stringify({ text: "legacy launch", timestamp }),
+    );
+    const assigned = ensurePendingPromptDeliveryId("session-legacy");
+    expect(assigned).toEqual(expect.any(String));
+    const stored = JSON.parse(
+      sessionStorage.getItem("routa_pending_prompt_session-legacy") ?? "{}",
+    ) as Record<string, unknown>;
+    expect(stored.promptId).toBe(assigned);
+    // The retention window still runs from the ORIGINAL storage time.
+    expect(stored.timestamp).toBe(timestamp);
+    // A second call reuses the same identity.
+    expect(ensurePendingPromptDeliveryId("session-legacy")).toBe(assigned);
+    expect(ensurePendingPromptDeliveryId("session-missing")).toBeNull();
   });
 
   it("clears the payload on demand", () => {

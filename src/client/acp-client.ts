@@ -191,6 +191,56 @@ export class AcpClientError extends Error {
   }
 }
 
+/** Minimum wait before a Team recovery retry, even when the lease hint is tiny. */
+const RECOVERY_RETRY_MIN_DELAY_MS = 1_000;
+/** Never wait longer than the default lease duration before re-checking ownership. */
+const RECOVERY_RETRY_MAX_DELAY_MS = 300_000;
+/** Bounded jitter added to the clamped delay so recovering pages do not synchronize. */
+const RECOVERY_RETRY_JITTER_MS = 2_000;
+
+/**
+ * Derive the next Team recovery retry delay from a structured recovery failure.
+ *
+ * Response parsing and timing metadata stay here in the client: the Team page
+ * owns the retry timer itself and only consumes this delay. A retryable
+ * ownership conflict (`runtime_owned`) carries `retryAfterMs` (or, failing
+ * that, `leaseExpiresAt`) from the backend; the delay is clamped to a small
+ * positive minimum so an about-to-expire lease never produces a tight loop,
+ * capped at the default lease duration, and spread with bounded jitter.
+ *
+ * Returns null when the error is not a retryable structured recovery failure
+ * or carries no lease hint — callers then surface the error without an
+ * automatic retry.
+ */
+export function computeRecoveryRetryDelayMs(error: unknown): number | null {
+  if (!(error instanceof AcpClientError)) return null;
+  const data = error.data;
+  if (typeof data !== "object" || data === null) return null;
+  const recoveryData = data as {
+    retryable?: unknown;
+    retryAfterMs?: unknown;
+    leaseExpiresAt?: unknown;
+  };
+  if (recoveryData.retryable !== true) return null;
+
+  let hintedMs: number | null = null;
+  if (typeof recoveryData.retryAfterMs === "number" && Number.isFinite(recoveryData.retryAfterMs)) {
+    hintedMs = Math.max(0, recoveryData.retryAfterMs);
+  } else if (typeof recoveryData.leaseExpiresAt === "string") {
+    const expiresAt = Date.parse(recoveryData.leaseExpiresAt);
+    if (Number.isFinite(expiresAt)) {
+      hintedMs = Math.max(0, expiresAt - Date.now());
+    }
+  }
+  if (hintedMs === null) return null;
+
+  const clamped = Math.min(
+    Math.max(hintedMs, RECOVERY_RETRY_MIN_DELAY_MS),
+    RECOVERY_RETRY_MAX_DELAY_MS,
+  );
+  return clamped + Math.floor(Math.random() * RECOVERY_RETRY_JITTER_MS);
+}
+
 export class BrowserAcpClient {
   private baseUrl: string;
   private eventSource: EventSource | null = null;

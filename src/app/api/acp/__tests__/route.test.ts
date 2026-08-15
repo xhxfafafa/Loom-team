@@ -320,6 +320,50 @@ describe("/api/acp GET", () => {
     });
     expect(httpSessionStore.attachSse).not.toHaveBeenCalled();
   });
+
+  it("does not renew an expired foreign lease when probing a dead owner's session", async () => {
+    getSessionRoutingRecord.mockResolvedValue({
+      sessionId: "session-1",
+      executionMode: "embedded",
+      ownerInstanceId: "dead-instance",
+      leaseExpiresAt: "2000-01-01T00:00:00.000Z",
+      createdAt: "2026-03-28T00:00:00.000Z",
+      cwd: "/tmp/session",
+      workspaceId: "default",
+    });
+
+    const response = await GET(
+      new NextRequest("http://localhost/api/acp?sessionId=session-1&probe=1"),
+    );
+
+    expect(response.status).toBe(204);
+    // The probe must not extend the dead owner's lease: no CAS write, no
+    // in-memory resurrection. Takeover of an expired foreign lease belongs
+    // exclusively to ensureSessionRuntime (session/load).
+    expect(tryAcquireSessionLeaseInDb).not.toHaveBeenCalled();
+    expect(httpSessionStore.upsertSession).not.toHaveBeenCalled();
+  });
+
+  it("attaches SSE without claiming or refreshing an expired foreign lease", async () => {
+    getSessionRoutingRecord.mockResolvedValue({
+      sessionId: "session-1",
+      executionMode: "embedded",
+      ownerInstanceId: "dead-instance",
+      leaseExpiresAt: "2000-01-01T00:00:00.000Z",
+      createdAt: "2026-03-28T00:00:00.000Z",
+      cwd: "/tmp/session",
+      workspaceId: "default",
+    });
+
+    const response = await GET(
+      new NextRequest("http://localhost/api/acp?sessionId=session-1"),
+    );
+
+    expect(response.headers.get("Content-Type")).toContain("text/event-stream");
+    expect(httpSessionStore.attachSse).toHaveBeenCalled();
+    expect(tryAcquireSessionLeaseInDb).not.toHaveBeenCalled();
+    expect(httpSessionStore.upsertSession).not.toHaveBeenCalled();
+  });
 });
 
 describe("/api/acp POST", () => {

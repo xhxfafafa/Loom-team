@@ -109,6 +109,13 @@ Phase 0 probe server. Restartable with the same command; no data impact.
    kanban suite inside `api:test:nextjs` (part of 86/86), and the vitest Kanban unit suites
    (green in `test:run`). Disposition: recorded per §13; the specs stay in the repo and remain
    runnable via `npm run test:e2e` where a provider and seeded workspace are available.
+   Phase 7 re-run (2026-08-14, `npm run validate:web:e2e`): `api:test:nextjs` PASS; the three
+   Kanban specs reproduce the same inherited failure classes (stale `selectOption` selector,
+   missing live provider binary, `networkidle` against an unseeded ephemeral DB). The
+   `team-run-lifecycle` spec showed 2 flaky failures in that single long run (120s timeouts and
+   ECONNRESET while the host machine intermittently suspended), but passes 4/4 in a focused
+   re-run against a fresh ephemeral server (2.7s total), confirming environment flake rather
+   than a migration regression. Phase 7 made no UI or Team/Kanban runtime changes.
 6. **`e2e/desktop-shell-visual.spec.ts` restored in Phase 5 after an incorrect deletion; golden
    images are absent at source baseline.** Commit 43cb9a36 deleted this spec, its runner, and the
    two hard-gated design-system fitness metrics that invoke it. The migration doc's retain/delete

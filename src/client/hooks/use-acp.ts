@@ -23,6 +23,7 @@ import {
   AcpSessionNotification,
   AcpConnectionIssue,
 } from "../acp-client";
+import type { AcpContentBlock } from "@/core/acp/protocol-types";
 import {
   logRuntime,
   shouldSuppressTeardownError,
@@ -229,7 +230,7 @@ export interface UseAcpActions {
   prompt: (text: string, skillContext?: { skillName: string; skillContent: string }) => Promise<void>;
   promptSession: (
     sessionId: string,
-    text: string,
+    prompt: string | AcpContentBlock[],
     skillContext?: { skillName: string; skillContent: string },
     options?: { throwOnError?: boolean },
   ) => Promise<void>;
@@ -730,7 +731,7 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
 
   const promptSession = useCallback(async (
     sessionId: string,
-    text: string,
+    prompt: string | AcpContentBlock[],
     skillContext?: { skillName: string; skillContent: string },
     options?: { throwOnError?: boolean },
   ): Promise<void> => {
@@ -740,7 +741,7 @@ export function useAcp(baseUrl: string = ""): UseAcpState & UseAcpActions {
     try {
       setState((s) => ({ ...s, loading: true, error: null }));
       sessionIdRef.current = sessionId;
-      await client.prompt(sessionId, text, skillContext);
+      await client.prompt(sessionId, prompt, skillContext);
       setState((s) => ({ ...s, sessionId, loading: false }));
     } catch (err) {
       if (shouldSuppressPromptError(err)) {

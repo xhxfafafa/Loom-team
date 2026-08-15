@@ -355,3 +355,26 @@ added when the reference set is next curated.
 31 Next-only routes are absent from tests/api-contract/api-contract.yaml (baseline
 count from Phase 0). Expanding contract coverage is feature work, not migration
 cleanup; tracked as technical debt rather than fixed here.
+
+## Final integration merge into main (2026-08-16)
+
+`codex/port-rust-backed-web` (67 commits, Phases 2-7) was fast-forward merged into
+`main` (`0ee1b14a..62dfc357`) and pushed after the repository owner reviewed the
+migration and chose direct merge over a PR (no gh CLI/token is available in the
+execution environment to open one).
+
+Pre-push review gate behavior on the full-scope push (base `origin/main`, scope =
+all 67 commits): the TypeScript trigger engine (ported in Phase 7) evaluated the
+diff and matched `high_risk_directory_change` (19 signals),
+`sensitive_contract_or_governance_change` (4 signals) and `oversized_change`
+(1084 files, +13077/-282626 lines). The automatic specialist ran and escalated to
+human review, reasoning that a migration of this size cannot be safely assessed from
+the truncated review payload — correct behavior for a full-history integration push,
+since every commit in scope had already passed its own incremental push gates
+(fitness + review at scope `HEAD~1`) on the codex branch.
+
+Disposition: the push completed with the hook's documented human-override
+`ROUTA_ALLOW_REVIEW_TRIGGER_PUSH=1`, representing the owner's review decision. The
+fitness suite (eslint, typecheck, full vitest run) passed in the same push. No
+`--no-verify`, force push, or hard reset was used.
+

@@ -725,7 +725,7 @@ const en: TranslationDictionary = {
     tokens: "tokens",
     inputLabel: "Input",
     outputLabel: "Output",
-    fileHint: "Attach file",
+    fileHint: "repository file",
     agentHint: "Mention agent",
     skillHint: "Use skill",
   },

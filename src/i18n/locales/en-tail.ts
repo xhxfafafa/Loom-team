@@ -426,7 +426,7 @@ export const enTail: TailTranslationDictionarySections = {
     promptErrorTeamBindingsIncomplete:
       "Team recovery failed: the team runtime bindings could not be restored. History and input are preserved; the session was not degraded to plain chat. Please retry.",
     promptErrorImagesUnsupported:
-      "The selected provider cannot accept image attachments for the first Team prompt. The prompt was not sent and no attachment was dropped; choose a provider with image support or remove the images and retry.",
+      "The selected provider cannot accept image attachments for this Team prompt. The prompt was not sent and no attachment was dropped; choose a provider with image support or remove the images and retry.",
   },
 
   taskAttachments: {
@@ -453,7 +453,7 @@ export const enTail: TailTranslationDictionarySections = {
     },
   },
 
-  // Team Run launch input attachments (Team page composer only)
+  // Team Run input attachments (launch composer and follow-up timeline composer)
   teamAttachments: {
     addFiles: "Attach text or image files",
     removeFile: "Remove attachment",

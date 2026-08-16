@@ -721,7 +721,7 @@ const zh: TranslationDictionary = {
     tokens: "令牌",
     inputLabel: "输入",
     outputLabel: "输出",
-    fileHint: "附加文件",
+    fileHint: "引用仓库文件",
     agentHint: "提及智能体",
     skillHint: "使用技能",
   },

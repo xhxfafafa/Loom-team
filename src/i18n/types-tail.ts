@@ -448,7 +448,7 @@ export interface TailTranslationDictionarySections {
     };
   };
 
-  // Team Run launch input attachments (Team page composer only)
+  // Team Run input attachments (launch composer and follow-up timeline composer)
   teamAttachments: {
     addFiles: string;
     removeFile: string;

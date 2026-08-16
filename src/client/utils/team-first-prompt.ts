@@ -1,11 +1,12 @@
 /**
- * First Team Run prompt construction.
+ * Team prompt construction shared by the initial Team Run launch and
+ * follow-up timeline prompts.
  *
- * Builds the ACP content blocks sent as the Team Lead's first prompt:
- * the user's request, the `@`-selected repository file paths, text
- * attachments as embedded resources, and images as image blocks. All
- * attachment bytes must already be normalized by the strict Kanban
- * attachment validator before reaching this builder.
+ * Builds the ACP content blocks sent to the Team Lead: the user's request,
+ * the `@`-selected repository file paths, text attachments as embedded
+ * resources, and images as image blocks. All attachment bytes must already
+ * be normalized by the strict Kanban attachment validator before reaching
+ * this builder.
  */
 
 import type { FileReference } from "@/client/components/tiptap-input";
@@ -57,20 +58,25 @@ export function formatRepositoryFilesSection(
   return ["Repository files:", ...lines].join("\n");
 }
 
-export interface TeamFirstPromptInput {
+export interface TeamPromptContentInput {
   text: string;
   repositoryFiles?: RepositoryFileReference[];
   attachments?: NormalizedTaskAttachment[];
-  transferId?: string;
+  /**
+   * Scope used in synthetic attachment resource URIs. Initial launches
+   * supply their IndexedDB transfer ID; follow-up prompts supply their
+   * stable promptId so a retry rebuilds identical URIs.
+   */
+  resourceScopeId: string;
 }
 
 /**
- * Build the first Team prompt blocks in the documented order: request text,
+ * Build Team prompt blocks in the documented order: request text,
  * repository file paths, text attachments as embedded resources with a
  * synthetic URI, then images. Attachment content is only referenced — never
  * copied into the visible text blocks.
  */
-export function buildTeamFirstPromptBlocks(input: TeamFirstPromptInput): AcpContentBlock[] {
+export function buildTeamPromptContentBlocks(input: TeamPromptContentInput): AcpContentBlock[] {
   const blocks: AcpContentBlock[] = [{ type: "text", text: input.text }];
 
   const repositorySection = formatRepositoryFilesSection(input.repositoryFiles ?? []);
@@ -78,7 +84,7 @@ export function buildTeamFirstPromptBlocks(input: TeamFirstPromptInput): AcpCont
     blocks.push({ type: "text", text: repositorySection });
   }
 
-  const transferId = input.transferId ?? "unknown";
+  const resourceScopeId = input.resourceScopeId || "unknown";
   let textAttachmentIndex = 0;
   for (const attachment of input.attachments ?? []) {
     if (attachment.encoding === "utf8") {
@@ -86,7 +92,7 @@ export function buildTeamFirstPromptBlocks(input: TeamFirstPromptInput): AcpCont
         type: "resource",
         resource: {
           type: "resource",
-          uri: `${TEAM_INPUT_RESOURCE_SCHEME}${transferId}/${textAttachmentIndex}`,
+          uri: `${TEAM_INPUT_RESOURCE_SCHEME}${resourceScopeId}/${textAttachmentIndex}`,
           mimeType: attachment.mediaType,
           text: attachment.content,
         },

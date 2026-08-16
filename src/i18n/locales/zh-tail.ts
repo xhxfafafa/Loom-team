@@ -418,7 +418,7 @@ export const zhTail: TailTranslationDictionarySections = {
     promptErrorTeamBindingsIncomplete:
       "Team 恢复失败：Team 运行时绑定未能恢复。历史与输入已保留，会话未降级为普通聊天，请重试。",
     promptErrorImagesUnsupported:
-      "所选 Provider 无法接收 Team 首次 Prompt 中的图片附件。Prompt 未发送，任何附件都未被丢弃；请选择支持图片的 Provider，或移除图片后重试。",
+      "所选 Provider 无法接收该 Team Prompt 中的图片附件。Prompt 未发送，任何附件都未被丢弃；请选择支持图片的 Provider，或移除图片后重试。",
   },
 
   taskAttachments: {
@@ -445,7 +445,7 @@ export const zhTail: TailTranslationDictionarySections = {
     },
   },
 
-  // Team Run 启动输入附件（仅 Team 页面输入框）
+  // Team Run 输入附件（启动输入框与后续时间线输入框）
   teamAttachments: {
     addFiles: "添加文本或图片附件",
     removeFile: "移除附件",

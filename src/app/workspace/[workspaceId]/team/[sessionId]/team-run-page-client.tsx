@@ -6,7 +6,7 @@ import { DesktopAppShell } from "@/client/components/desktop-app-shell";
 import { WorkspaceSwitcher } from "@/client/components/workspace-switcher";
 import type { ChatMessage } from "@/client/components/chat-panel/types";
 import { getToolEventLabel } from "@/client/components/chat-panel/tool-call-name";
-import { TiptapInput } from "@/client/components/tiptap-input";
+import { TiptapInput, type InputContext } from "@/client/components/tiptap-input";
 import { useAcp } from "@/client/hooks/use-acp";
 import { useNotes } from "@/client/hooks/use-notes";
 import {
@@ -15,12 +15,22 @@ import {
   peekPendingPromptPayload,
   type PendingPromptPayload,
 } from "@/client/utils/pending-prompt";
-import { serializeAttachmentDrafts } from "@/client/utils/attachment-draft";
+import {
+  addAttachmentDrafts,
+  formatAttachmentValidationError,
+  serializeAttachmentDrafts,
+  type RepositoryFileReference,
+  type TaskDraftAttachment,
+} from "@/client/utils/attachment-draft";
 import {
   deleteTeamAttachmentTransfer,
   readTeamAttachmentTransfer,
 } from "@/client/utils/team-attachment-transfer";
-import { buildTeamFirstPromptBlocks } from "@/client/utils/team-first-prompt";
+import {
+  buildTeamPromptContentBlocks,
+  resolveRepositoryFileReferences,
+} from "@/client/utils/team-first-prompt";
+import { generatePromptDeliveryId } from "@/client/acp-client";
 import {
   normalizeTaskAttachments,
   type NormalizedTaskAttachment,
@@ -173,6 +183,29 @@ function pendingPayloadHasTeamAttachments(payload: PendingPromptPayload): boolea
  */
 const TEAM_PENDING_PROMPT_MAX_AGE_MS = 600_000;
 
+/**
+ * A failed follow-up timeline submission kept for idempotent Retry: the same
+ * promptId and the same content snapshot are re-sent so a delivery that was
+ * already accepted by the backend is never duplicated as a second provider
+ * turn. Editing the visible draft invalidates the snapshot.
+ */
+interface TimelinePromptSubmission {
+  promptId: string;
+  text: string;
+  attachmentDrafts: TaskDraftAttachment[];
+  repositoryFiles: RepositoryFileReference[];
+  /** Repository path used to resolve `@` references when the prompt was sent. */
+  repoPath: string;
+}
+
+function sameAttachmentDraftIds(
+  left: TaskDraftAttachment[],
+  right: TaskDraftAttachment[],
+): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((draft, index) => draft.id === right[index]?.id);
+}
+
 export function TeamRunPageClient() {
   const { t } = useTranslation();
   const router = useRouter();
@@ -215,7 +248,13 @@ export function TeamRunPageClient() {
   const [timelinePrefillText, setTimelinePrefillText] = useState<string | null>(null);
   const [timelinePromptError, setTimelinePromptError] = useState<string | null>(null);
   const [timelinePromptSending, setTimelinePromptSending] = useState(false);
-  const [failedTimelinePrompt, setFailedTimelinePrompt] = useState<string | null>(null);
+  // Follow-up prompt attachment drafts stay as browser `File` objects in React
+  // state; they are serialized immediately before `promptSession` and never
+  // handed to the IndexedDB launch transfer (that path is launch-only).
+  const [timelineAttachmentDrafts, setTimelineAttachmentDrafts] = useState<TaskDraftAttachment[]>([]);
+  const [timelineAttachmentErrors, setTimelineAttachmentErrors] = useState<string[]>([]);
+  const [timelineComposerText, setTimelineComposerText] = useState("");
+  const [failedTimelineSubmission, setFailedTimelineSubmission] = useState<TimelinePromptSubmission | null>(null);
   const [pendingFirstPromptFailed, setPendingFirstPromptFailed] = useState(false);
   const [pendingPromptRetryToken, setPendingPromptRetryToken] = useState(0);
   const [repoSelection, setRepoSelection] = useState<RepoSelection | null>(null);
@@ -238,7 +277,21 @@ export function TeamRunPageClient() {
 
   useEffect(() => {
     setIsSwitchingTeamRun(true);
-    contextKeyRef.current = `${workspaceId}:${sessionId}`;
+    const nextContextKey = `${workspaceId}:${sessionId}`;
+    if (contextKeyRef.current !== nextContextKey) {
+      // Switching to a different Team Run: discard the previous composer draft
+      // (text, @ references, attachment Files, error, and retry snapshot) so a
+      // stale attachment is never sent to a different Team Lead, and remount
+      // the editor so its visible content is cleared as well.
+      setTimelineAttachmentDrafts([]);
+      setTimelineAttachmentErrors([]);
+      setTimelineComposerText("");
+      setFailedTimelineSubmission(null);
+      setTimelinePromptError(null);
+      setTimelinePrefillText(null);
+      setTimelineInputKey((current) => current + 1);
+    }
+    contextKeyRef.current = nextContextKey;
   }, [sessionId, workspaceId]);
 
   useEffect(() => {
@@ -514,25 +567,86 @@ export function TeamRunPageClient() {
     node.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, []);
 
-  const handleTimelinePrompt = useCallback(async (text: string) => {
-    if (!sessionId || timelinePromptSending) return;
+  /**
+   * Deliver a captured follow-up submission to the Team Lead. Text-only
+   * prompts keep the plain string payload; prompts with attachments or
+   * repository references are serialized and strictly normalized into ACP
+   * content blocks before dispatch, so an invalid file sends nothing.
+   * Preparation failures keep the draft with a localized attachment error;
+   * delivery failures keep the complete submission for an idempotent retry.
+   */
+  const dispatchTimelinePrompt = useCallback(async (submission: TimelinePromptSubmission) => {
+    if (!sessionId) return;
+    // Captured at send start: if the user switches to another Team Run before
+    // this async delivery settles, the completion must not clear or overwrite
+    // the new page's composer state.
+    const startedContextKey = contextKeyRef.current;
     setTimelinePromptSending(true);
     setTimelinePromptError(null);
     try {
-      await acpPromptSession(sessionId, text, undefined, { throwOnError: true });
-      setFailedTimelinePrompt(null);
-      setTimelinePrefillText(null);
-      // Clear the composer only after the backend has accepted the prompt.
-      setTimelineInputKey((current) => current + 1);
+      const hasAttachments = submission.attachmentDrafts.length > 0;
+      const hasRepositoryFiles = submission.repositoryFiles.length > 0;
+      if (!hasAttachments && !hasRepositoryFiles) {
+        // Pure-text follow-ups keep the legacy string payload; the stable
+        // promptId still makes retries idempotent.
+        await acpPromptSession(sessionId, submission.text, undefined, {
+          throwOnError: true,
+          promptId: submission.promptId,
+        });
+      } else {
+        let normalized: ReturnType<typeof normalizeTaskAttachments>;
+        try {
+          const inputs = await serializeAttachmentDrafts(submission.attachmentDrafts);
+          normalized = normalizeTaskAttachments(inputs);
+        } catch {
+          // Serialization failure: no ACP call, the complete draft is kept and
+          // the cleared composer text is restored via prefill.
+          if (contextKeyRef.current === startedContextKey) {
+            setTimelineAttachmentErrors([t.teamAttachments.prepareFailed]);
+            setTimelinePrefillText(submission.text);
+            setTimelineInputKey((current) => current + 1);
+          }
+          return;
+        }
+        if (!normalized.ok) {
+          // Strict validation failure: no ACP call, the complete draft is kept
+          // and the cleared composer text is restored via prefill.
+          if (contextKeyRef.current === startedContextKey) {
+            setTimelineAttachmentErrors([formatAttachmentValidationError(t, normalized.reason)]);
+            setTimelinePrefillText(submission.text);
+            setTimelineInputKey((current) => current + 1);
+          }
+          return;
+        }
+        const blocks = buildTeamPromptContentBlocks({
+          text: submission.text,
+          repositoryFiles: submission.repositoryFiles,
+          attachments: normalized.attachments,
+          resourceScopeId: submission.promptId,
+        });
+        await acpPromptSession(sessionId, blocks, undefined, {
+          throwOnError: true,
+          promptId: submission.promptId,
+        });
+      }
+      // Backend accepted: only now clear the complete composer draft — and
+      // only if this delivery still belongs to the Team Run on screen.
+      if (contextKeyRef.current === startedContextKey) {
+        setFailedTimelineSubmission(null);
+        setTimelineAttachmentDrafts([]);
+        setTimelineAttachmentErrors([]);
+        setTimelinePrefillText(null);
+        setTimelineComposerText("");
+        setTimelineInputKey((current) => current + 1);
+      }
     } catch (err) {
-      // Preserve the unsent input and surface the error (ownership/recovery
-      // failures included) with a Retry action. Retrying a suspended session
-      // goes through the same prompt entry point, which triggers recovery.
-      // Structured recovery failures (ownership, DB unavailability, team
-      // binding restoration) map to localized explanations; anything else
-      // falls back to the raw error message.
-      setFailedTimelinePrompt(text);
-      setTimelinePrefillText(text);
+      // Preserve the complete submission (text, @ references, attachment File
+      // snapshot) and surface the error with a Retry action — unless the user
+      // already switched Team Runs; then the stale failure is dropped instead
+      // of overwriting the new page's state.
+      if (contextKeyRef.current !== startedContextKey) return;
+      setFailedTimelineSubmission(submission);
+      setTimelinePrefillText(submission.text);
       setTimelineInputKey((current) => current + 1);
       const errorI18nKey = resolveTeamPromptErrorI18nKey(err);
       setTimelinePromptError(
@@ -543,7 +657,33 @@ export function TeamRunPageClient() {
     } finally {
       setTimelinePromptSending(false);
     }
-  }, [acpPromptSession, sessionId, t, timelinePromptSending]);
+  }, [acpPromptSession, sessionId, t]);
+
+  const handleTimelinePrompt = useCallback((text: string, context: InputContext) => {
+    if (!sessionId || timelinePromptSending) return;
+    // A fresh send invalidates any earlier failed-submission retry snapshot:
+    // this delivery is a new submission with a new promptId.
+    setFailedTimelineSubmission(null);
+    const submission: TimelinePromptSubmission = {
+      promptId: generatePromptDeliveryId(),
+      text,
+      attachmentDrafts: [...timelineAttachmentDrafts],
+      repositoryFiles: resolveRepositoryFileReferences(context.files, repoSelection?.path),
+      repoPath: repoSelection?.path ?? "",
+    };
+    void dispatchTimelinePrompt(submission);
+  }, [dispatchTimelinePrompt, repoSelection, sessionId, timelineAttachmentDrafts, timelinePromptSending]);
+
+  // Retry stays available only while the visible draft still represents the
+  // failed submission. Editing the text, adding/removing attachments, or
+  // changing the selected repository invalidates the old snapshot; the next
+  // Send becomes a new submission with a new promptId.
+  const timelineRetryAvailable = Boolean(
+    failedTimelineSubmission
+    && failedTimelineSubmission.text === timelineComposerText
+    && failedTimelineSubmission.repoPath === (repoSelection?.path ?? "")
+    && sameAttachmentDraftIds(failedTimelineSubmission.attachmentDrafts, timelineAttachmentDrafts),
+  );
 
   const handleRetryTimelinePrompt = useCallback(() => {
     if (timelinePromptSending) return;
@@ -556,10 +696,30 @@ export function TeamRunPageClient() {
       setPendingPromptRetryToken((current) => current + 1);
       return;
     }
-    if (!failedTimelinePrompt) return;
+    if (!failedTimelineSubmission || !timelineRetryAvailable) return;
     setTimelinePrefillText(null);
-    void handleTimelinePrompt(failedTimelinePrompt);
-  }, [failedTimelinePrompt, handleTimelinePrompt, pendingFirstPromptFailed, timelinePromptSending]);
+    // Reuse the exact promptId and content snapshot so a delivery already
+    // accepted by the backend is never duplicated as a second provider turn.
+    void dispatchTimelinePrompt(failedTimelineSubmission);
+  }, [dispatchTimelinePrompt, failedTimelineSubmission, pendingFirstPromptFailed, timelinePromptSending, timelineRetryAvailable]);
+
+  const handleAddTimelineAttachmentFiles = useCallback((files: File[]) => {
+    if (timelinePromptSending) return;
+    const { drafts, rejections } = addAttachmentDrafts(timelineAttachmentDrafts, files);
+    setTimelineAttachmentDrafts(drafts);
+    setTimelineAttachmentErrors(
+      rejections.map((rejection) => formatAttachmentValidationError(t, rejection.reason)),
+    );
+  }, [t, timelineAttachmentDrafts, timelinePromptSending]);
+
+  const handleRemoveTimelineAttachment = useCallback((id: string) => {
+    if (timelinePromptSending) return;
+    setTimelineAttachmentDrafts((current) => current.filter((draft) => draft.id !== id));
+  }, [timelinePromptSending]);
+
+  const handleTimelineTextChange = useCallback((text: string) => {
+    setTimelineComposerText(text);
+  }, []);
 
   /**
    * Deliver the Team Lead's first prompt as ACP content blocks. Text
@@ -591,11 +751,13 @@ export function TeamRunPageClient() {
         }
         attachments = normalized.attachments;
       }
-      const blocks = buildTeamFirstPromptBlocks({
+      const blocks = buildTeamPromptContentBlocks({
         text: payload.text,
         repositoryFiles,
         attachments,
-        transferId,
+        // Initial-launch resources stay scoped by the IndexedDB transfer ID;
+        // follow-up prompts scope them by their stable promptId instead.
+        resourceScopeId: transferId ?? "unknown",
       });
       await acpPromptSession(sessionId, blocks, undefined, {
         throwOnError: true,
@@ -1636,7 +1798,7 @@ export function TeamRunPageClient() {
                   <button
                     type="button"
                     onClick={handleRetryTimelinePrompt}
-                    disabled={timelinePromptSending || (!failedTimelinePrompt && !pendingFirstPromptFailed)}
+                    disabled={timelinePromptSending || (!timelineRetryAvailable && !pendingFirstPromptFailed)}
                     className="shrink-0 rounded border border-rose-300 px-2 py-0.5 font-medium transition hover:bg-rose-100 disabled:opacity-50 dark:border-rose-500/40 dark:hover:bg-rose-500/20"
                   >
                     {t.teamRuntime.promptRetry}
@@ -1645,11 +1807,18 @@ export function TeamRunPageClient() {
               )}
               <TiptapInput
                 key={timelineInputKey}
-                onSend={(text) => handleTimelinePrompt(text)}
+                onSend={(text, context) => handleTimelinePrompt(text, context)}
+                onTextChange={handleTimelineTextChange}
                 disabled={!acpConnected || showRunLoadingState || timelinePromptSending}
                 loading={acpLoading}
                 prefillText={timelinePrefillText}
                 onPrefillConsumed={() => setTimelinePrefillText(null)}
+                attachmentsEnabled
+                attachmentDrafts={timelineAttachmentDrafts}
+                attachmentErrors={timelineAttachmentErrors}
+                attachmentsDisabled={timelinePromptSending}
+                onAddAttachmentFiles={handleAddTimelineAttachmentFiles}
+                onRemoveAttachment={handleRemoveTimelineAttachment}
                 skills={[]}
                 repoSkills={[]}
                 providers={acpProviders}

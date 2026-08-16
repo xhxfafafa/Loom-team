@@ -1,6 +1,7 @@
 /**
  * Client-side attachment draft state and serialization shared by the Kanban
- * task-create modal and the Team Run launch input.
+ * task-create modal, the Team Run launch input, and the Team Run follow-up
+ * timeline composer.
  *
  * Browser `File` objects stay in draft-only React state; Base64 encoding only
  * happens at submit time. The limit checks here are preflight convenience for

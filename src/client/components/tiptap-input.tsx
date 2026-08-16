@@ -539,14 +539,15 @@ interface TiptapInputProps {
   /** Larger presentation used by landing/team launch surfaces */
   variant?: "default" | "hero";
   /**
-   * Opt-in local attachment controls (Team launch mode only). The parent owns
-   * the draft state; this component only renders the picker, list, and errors.
+   * Opt-in local attachment controls (Team launch and Team Run follow-up
+   * composers). The parent owns the draft state; this component only renders
+   * the picker, list, and errors.
    */
   attachmentsEnabled?: boolean;
   attachmentDrafts?: TaskDraftAttachment[];
   /** Localized preflight errors for the most recent add attempt. */
   attachmentErrors?: string[];
-  /** Freeze attachment mutation while a launch is in flight. */
+  /** Freeze attachment mutation while a send is in flight. */
   attachmentsDisabled?: boolean;
   onAddAttachmentFiles?: (files: File[]) => void;
   onRemoveAttachment?: (id: string) => void;
@@ -722,7 +723,7 @@ export function TiptapInput({
     handleSendRef.current();
   }, []);
 
-  // ─── Local attachment controls (Team launch mode only) ────────────────
+  // ─── Local attachment controls (opt-in Team composers) ───────────────
   const attachmentFileInputRef = useRef<HTMLInputElement | null>(null);
   const [attachmentDragOver, setAttachmentDragOver] = useState(false);
   const attachmentsLocked = disabled || loading || attachmentsDisabled;
@@ -1028,7 +1029,7 @@ export function TiptapInput({
       >
         <EditorContent editor={editor} />
 
-        {/* Local attachment list (Team launch mode only) */}
+        {/* Local attachment list (opt-in Team composers) */}
         {attachmentsEnabled && (attachmentDrafts.length > 0 || attachmentErrors.length > 0) && (
           <div className="px-3 pb-2" data-testid="tiptap-attachment-panel">
             {attachmentDrafts.length > 0 && (
@@ -1082,7 +1083,7 @@ export function TiptapInput({
 
         {/* Bottom toolbar */}
         <div className={toolbarClass}>
-          {/* Local attachment picker (Team launch mode only) */}
+          {/* Local attachment picker (opt-in Team composers) */}
           {attachmentsEnabled && (
             <button
               type="button"

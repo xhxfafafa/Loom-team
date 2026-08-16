@@ -1044,7 +1044,9 @@ export async function runReviewTriggerPhase(outputMode: "human" | "jsonl" = "hum
   // was removed with the Cargo workspace. Evaluate them in-process with the
   // TypeScript engine (`src/core/harness/review-triggers.ts`) instead — the
   // same engine the GitHub PR review flow uses.
-  let evaluation: ReviewTriggerReport | null = null;
+  // Both the try and catch branches assign before any read, so no initializer
+  // is needed (and a `= null` here would be a dead store).
+  let evaluation: ReviewTriggerReport | null;
   try {
     const { rules: scopeTriggerRules } = await loadReviewTriggerRules(reviewRoot);
     const numstat = await runCommand(`git diff --numstat ${shellQuote(reviewRange)}`, {

@@ -5,7 +5,7 @@ import type { NormalizedTaskAttachment } from "@/core/kanban/task-attachments";
 
 import {
   TEAM_INPUT_RESOURCE_SCHEME,
-  buildTeamFirstPromptBlocks,
+  buildTeamPromptContentBlocks,
   formatRepositoryFilesSection,
   resolveRepositoryFileReferences,
 } from "../utils/team-first-prompt";
@@ -93,7 +93,7 @@ describe("formatRepositoryFilesSection", () => {
   });
 });
 
-describe("buildTeamFirstPromptBlocks", () => {
+describe("buildTeamPromptContentBlocks", () => {
   const textAttachment: NormalizedTaskAttachment = {
     filename: "notes.txt",
     mediaType: "text/plain",
@@ -110,17 +110,30 @@ describe("buildTeamFirstPromptBlocks", () => {
   };
 
   it("keeps a pure-text request as a single text block", () => {
-    expect(buildTeamFirstPromptBlocks({ text: "Deliver feature X" })).toEqual([
+    expect(buildTeamPromptContentBlocks({ text: "Deliver feature X", resourceScopeId: "scope-0" })).toEqual([
       { type: "text", text: "Deliver feature X" },
     ]);
   });
 
+  it("adds the repository section without attachment blocks when only references exist", () => {
+    expect(
+      buildTeamPromptContentBlocks({
+        text: "Follow up on this",
+        repositoryFiles: [{ path: "src/a.ts", label: "a.ts" }],
+        resourceScopeId: "transfer-0",
+      }),
+    ).toEqual([
+      { type: "text", text: "Follow up on this" },
+      { type: "text", text: "Repository files:\n- src/a.ts" },
+    ]);
+  });
+
   it("orders blocks: request text, repository paths, text resources, then images", () => {
-    const blocks = buildTeamFirstPromptBlocks({
+    const blocks = buildTeamPromptContentBlocks({
       text: "Deliver feature X",
       repositoryFiles: [{ path: "src/a.ts", label: "a.ts" }],
       attachments: [textAttachment, imageAttachment],
-      transferId: "transfer-1",
+      resourceScopeId: "transfer-1",
     });
 
     expect(blocks).toHaveLength(4);
@@ -138,10 +151,10 @@ describe("buildTeamFirstPromptBlocks", () => {
   });
 
   it("counts resource indices over text attachments only", () => {
-    const blocks = buildTeamFirstPromptBlocks({
+    const blocks = buildTeamPromptContentBlocks({
       text: "request",
       attachments: [textAttachment, imageAttachment, { ...textAttachment, filename: "more.md" }],
-      transferId: "transfer-2",
+      resourceScopeId: "transfer-2",
     });
 
     const uris = blocks
@@ -154,15 +167,47 @@ describe("buildTeamFirstPromptBlocks", () => {
   });
 
   it("never copies attachment content into visible text blocks", () => {
-    const blocks = buildTeamFirstPromptBlocks({
+    const blocks = buildTeamPromptContentBlocks({
       text: "request",
       attachments: [textAttachment, imageAttachment],
-      transferId: "transfer-3",
+      resourceScopeId: "transfer-3",
     });
     const visibleText = blocks
       .filter((block) => block.type === "text")
       .map((block) => (block.type === "text" ? block.text : ""))
       .join("\n");
     expect(visibleText).toBe("request");
+    // Image bytes must only surface as image blocks — never as resources or text.
+    expect(blocks.filter((block) => block.type === "resource")).toHaveLength(1);
+    expect(blocks.filter((block) => block.type === "image")).toHaveLength(1);
+    expect(visibleText).not.toContain("aW1hZ2U=");
+    expect(visibleText).not.toContain("attached text content");
+  });
+
+  it("uses the supplied scope ID verbatim in resource URIs", () => {
+    // Initial launches scope resources by transfer ID; follow-up prompts scope
+    // them by their stable promptId. The builder must use whatever scope it is
+    // given without mutation so retry re-resolves to identical URIs.
+    const blocks = buildTeamPromptContentBlocks({
+      text: "request",
+      attachments: [textAttachment],
+      resourceScopeId: "6f1c9a52-9d27-4c79-8a51-3e5b7c9d0a11",
+    });
+    expect(blocks[1]).toMatchObject({
+      type: "resource",
+      resource: {
+        uri: `${TEAM_INPUT_RESOURCE_SCHEME}6f1c9a52-9d27-4c79-8a51-3e5b7c9d0a11/0`,
+      },
+    });
+  });
+
+  it("emits deterministic block output for identical input", () => {
+    const input = {
+      text: "Deliver feature X",
+      repositoryFiles: [{ path: "src/a.ts", label: "a.ts" }],
+      attachments: [textAttachment, imageAttachment, { ...textAttachment, filename: "more.md" }],
+      resourceScopeId: "transfer-stable",
+    };
+    expect(buildTeamPromptContentBlocks(input)).toEqual(buildTeamPromptContentBlocks(input));
   });
 });

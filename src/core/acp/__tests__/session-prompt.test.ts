@@ -1309,6 +1309,58 @@ describe("session-prompt", () => {
       );
     });
 
+    it("dispatches follow-up content blocks after the first prompt was marked sent", async () => {
+      // Follow-up Team prompts carry the same block shapes as the launch
+      // prompt; the capability gate and dispatch must not depend on
+      // firstPromptSent.
+      storeMock.getSession.mockImplementation((sessionId: string) => ({
+        sessionId,
+        cwd: "/workspace",
+        workspaceId: "ws-1",
+        provider: "opencode",
+        createdAt: new Date().toISOString(),
+        firstPromptSent: true,
+      }));
+      const procPrompt = vi.fn(async (..._args: unknown[]) => ({ stopReason: "end_turn" }));
+      managerMock.getProcess.mockReturnValue({
+        alive: true,
+        prompt: procPrompt,
+        initResult: {
+          agentCapabilities: { promptCapabilities: { image: true, embeddedContext: true } },
+        },
+      });
+      managerMock.getAcpSessionId.mockReturnValue("agent-follow-up");
+
+      const response = await handleSessionPrompt({
+        id: 66,
+        params: {
+          sessionId: "acp-follow-up",
+          prompt: [
+            { type: "text", text: "Here is more context" },
+            {
+              type: "resource",
+              resource: {
+                uri: "routa-team-input://prompt-follow-up/0",
+                mimeType: "text/plain",
+                text: "follow-up notes",
+              },
+            },
+            { type: "image", data: "aW1hZ2U=", mimeType: "image/png" },
+          ],
+        },
+        ...factories,
+      });
+
+      expect(await response.json()).toMatchObject({ result: { stopReason: "end_turn" } });
+      expect(procPrompt).toHaveBeenCalledTimes(1);
+      const dispatchBlocks = procPrompt.mock.calls[0][2] as Array<Record<string, unknown>>;
+      expect(dispatchBlocks).toHaveLength(3);
+      expect(dispatchBlocks[0]).toEqual({ type: "text", text: "Here is more context" });
+      expect(dispatchBlocks[1]).toMatchObject({ type: "resource" });
+      expect(dispatchBlocks[2]).toMatchObject({ type: "image", mimeType: "image/png" });
+      expect(storeMock.pushUserMessage).toHaveBeenCalledWith("acp-follow-up", "Here is more context");
+    });
+
     it("converts text resources into delimited text for agents without embedded context", async () => {
       const procPrompt = vi.fn(async (..._args: unknown[]) => ({ stopReason: "end_turn" }));
       managerMock.getProcess.mockReturnValue({

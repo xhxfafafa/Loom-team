@@ -1,9 +1,32 @@
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
+import * as React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AcpClientError } from "@/client/acp-client";
+import { encodeBytesToBase64 } from "@/core/kanban/task-attachments";
 
 import { TeamRunPageClient } from "../team-run-page-client";
+
+interface MockRepoSelection {
+  path: string;
+  branch: string;
+  name: string;
+}
+
+interface MockTiptapInputProps {
+  onSend: (text: string, context: { files?: Array<{ path: string; label: string }> }) => void;
+  onTextChange?: (text: string) => void;
+  prefillText?: string | null;
+  onPrefillConsumed?: () => void;
+  disabled?: boolean;
+  attachmentsEnabled?: boolean;
+  attachmentDrafts?: Array<{ id: string; file: File }>;
+  attachmentErrors?: string[];
+  attachmentsDisabled?: boolean;
+  onAddAttachmentFiles?: (files: File[]) => void;
+  onRemoveAttachment?: (id: string) => void;
+  repoSelection?: MockRepoSelection | null;
+}
 
 const {
   mockDesktopAwareFetch,
@@ -15,16 +38,41 @@ const {
   mockClearPendingPrompt,
   mockEnsurePendingPromptDeliveryId,
   mockHeaderProps,
+  mockTiptapProps,
+  mockTeamRunParams,
+  mockTimelineControls,
+  mockPrefillHistory,
+  mockReadTeamAttachmentTransfer,
+  mockDeleteTeamAttachmentTransfer,
 } = vi.hoisted(() => ({
   mockDesktopAwareFetch: vi.fn(),
   mockSelectSession: vi.fn(),
   mockResumeSession: vi.fn(async (): Promise<unknown> => ({ sessionId: "session-1" })),
   mockConnect: vi.fn(async () => {}),
-  mockPromptSession: vi.fn(async () => {}),
+  mockPromptSession: vi.fn(
+    async (
+      _sessionId: string,
+      _content?: unknown,
+      _skillContext?: unknown,
+      _options?: Record<string, unknown>,
+    ): Promise<void> => {},
+  ),
   mockPeekPendingPromptPayload: vi.fn((): unknown => null),
   mockClearPendingPrompt: vi.fn(),
   mockEnsurePendingPromptDeliveryId: vi.fn((): string | null => "test-delivery-id"),
   mockHeaderProps: [] as Array<{ teamRuns: Array<{ sessionId: string; name?: string }> }>,
+  mockTiptapProps: { current: null as MockTiptapInputProps | null },
+  /** Mutable route params so tests can switch between Team Runs. */
+  mockTeamRunParams: { workspaceId: "default", sessionId: "session-1" },
+  mockTimelineControls: {
+    sendText: "",
+    sendContext: {} as { files?: Array<{ path: string; label: string }> },
+    filesToAdd: [] as File[],
+  },
+  /** Every non-null prefillText the composer mock received, in order. */
+  mockPrefillHistory: [] as string[],
+  mockReadTeamAttachmentTransfer: vi.fn(async (_transferId?: string): Promise<unknown> => null),
+  mockDeleteTeamAttachmentTransfer: vi.fn(async (_transferId?: string): Promise<void> => {}),
 }));
 
 let mockAcpSessionId: string | null = "session-1";
@@ -61,14 +109,34 @@ vi.mock("@/i18n", () => ({
         promptErrorTeamBindingsIncomplete: "Team bindings are incomplete.",
         promptErrorImagesUnsupported: "Images are not supported here.",
       },
+      teamAttachments: {
+        addFiles: "Attach text or image files",
+        removeFile: "Remove attachment",
+        prepareFailed: "Attachment preparation failed. Your files are kept — please try again.",
+        handoffFailed: "The Team session was created, but the launch handoff could not be stored.",
+        firstPromptFailed: "The first Team prompt was not sent. Attachments are kept for retry.",
+      },
+      taskAttachments: {
+        validation: {
+          tooManyAttachments: "Too many attachments: a task accepts at most 5 files.",
+          tooManyImages: "Too many images: a task accepts at most 3 images.",
+          invalidFilename: "Invalid file name.",
+          filenameTooLong: "File name is too long (max 255 characters).",
+          unsupportedExtension: "Unsupported file format. Use text files or PNG/JPEG/WebP images.",
+          invalidFile: "Invalid file content.",
+          textTooLarge: "Text file is too large (max 256 KB).",
+          imageTooLarge: "Image is too large (max 2 MB).",
+          totalTooLarge: "Attachments exceed the 6 MB total limit.",
+        },
+      },
     },
   }),
 }));
 
 vi.mock("../use-real-team-run-params", () => ({
   useRealTeamRunParams: () => ({
-    workspaceId: "default",
-    sessionId: "session-1",
+    workspaceId: mockTeamRunParams.workspaceId,
+    sessionId: mockTeamRunParams.sessionId,
     isResolved: true,
   }),
 }));
@@ -142,7 +210,62 @@ vi.mock("@/client/components/workspace-switcher", () => ({
 }));
 
 vi.mock("@/client/components/tiptap-input", () => ({
-  TiptapInput: () => <div data-testid="tiptap-input" />,
+  // Prop-capturing mock: renders test controls for Send, add/remove files,
+  // attachment state inspection, and mirrors the real prefill -> onTextChange
+  // sync so retry-availability logic behaves like the real composer.
+  TiptapInput: (props: Record<string, unknown>) => {
+    const typed = props as unknown as MockTiptapInputProps;
+    mockTiptapProps.current = typed;
+    const { prefillText, onTextChange, onPrefillConsumed } = typed;
+    React.useEffect(() => {
+      if (prefillText) {
+        mockPrefillHistory.push(prefillText);
+        onTextChange?.(prefillText);
+        onPrefillConsumed?.();
+      }
+    }, [prefillText, onTextChange, onPrefillConsumed]);
+    return (
+      <div data-testid="tiptap-input">
+        <button
+          type="button"
+          data-testid="tiptap-send"
+          onClick={() => typed.onSend(mockTimelineControls.sendText, mockTimelineControls.sendContext)}
+        >
+          send prompt
+        </button>
+        <button
+          type="button"
+          data-testid="tiptap-add-files"
+          onClick={() => typed.onAddAttachmentFiles?.(mockTimelineControls.filesToAdd)}
+        >
+          add files
+        </button>
+        {(typed.attachmentDrafts ?? []).map((draft) => (
+          <span key={draft.id} data-testid={`tiptap-draft-${draft.file.name}`}>
+            {draft.file.name}
+            <button
+              type="button"
+              data-testid={`tiptap-remove-${draft.file.name}`}
+              onClick={() => typed.onRemoveAttachment?.(draft.id)}
+            >
+              remove {draft.file.name}
+            </button>
+          </span>
+        ))}
+        {(typed.attachmentErrors ?? []).map((message, index) => (
+          <span key={`${index}-${message}`} data-testid="tiptap-attachment-error">
+            {message}
+          </span>
+        ))}
+      </div>
+    );
+  },
+}));
+
+vi.mock("@/client/utils/team-attachment-transfer", () => ({
+  readTeamAttachmentTransfer: mockReadTeamAttachmentTransfer,
+  deleteTeamAttachmentTransfer: mockDeleteTeamAttachmentTransfer,
+  saveTeamAttachmentTransfer: vi.fn(async () => "transfer-mock"),
 }));
 
 vi.mock("@/client/utils/diagnostics", () => ({
@@ -173,7 +296,23 @@ vi.mock("../team-run-page-header", () => ({
 describe("TeamRunPageClient", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks keeps implementations set by earlier tests; restore the
+    // defaults this suite relies on so state never leaks across tests.
+    mockPeekPendingPromptPayload.mockReturnValue(null);
+    mockPromptSession.mockReset();
+    mockPromptSession.mockResolvedValue(undefined);
+    mockReadTeamAttachmentTransfer.mockReset();
+    mockReadTeamAttachmentTransfer.mockResolvedValue(null);
+    mockDeleteTeamAttachmentTransfer.mockReset();
+    mockDeleteTeamAttachmentTransfer.mockResolvedValue(undefined);
     mockHeaderProps.length = 0;
+    mockTiptapProps.current = null;
+    mockTeamRunParams.workspaceId = "default";
+    mockTeamRunParams.sessionId = "session-1";
+    mockTimelineControls.sendText = "";
+    mockTimelineControls.sendContext = {};
+    mockTimelineControls.filesToAdd = [];
+    mockPrefillHistory.length = 0;
     mockAcpSessionId = "session-1";
     mockSessionDetail = null;
     mockAcpUpdates = [{ update: { sessionUpdate: "acp_status", status: "ready" } }];
@@ -194,6 +333,21 @@ describe("TeamRunPageClient", () => {
               provider: "codex",
               role: "ROUTA",
               createdAt: "2026-04-18T00:00:00.000Z",
+            },
+          }),
+        } as Response;
+      }
+      if (url === "/api/sessions/session-2") {
+        return {
+          ok: true,
+          json: async () => ({
+            session: {
+              sessionId: "session-2",
+              name: "Team - Follow-up",
+              workspaceId: "default",
+              provider: "codex",
+              role: "ROUTA",
+              createdAt: "2026-04-17T00:00:00.000Z",
             },
           }),
         } as Response;
@@ -563,5 +717,566 @@ describe("TeamRunPageClient", () => {
       expect(mockResumeSession).toHaveBeenCalledTimes(2);
     });
     expect(mockSelectSession).not.toHaveBeenCalled();
+  });
+
+  describe("follow-up timeline attachments", () => {
+    // Minimal valid PNG signature so the strict attachment normalizer
+    // accepts the image draft built from browser File objects.
+    const PNG_BYTES = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+    ]);
+
+    const makeTextFile = (name = "notes.txt", content = "hello attachment") =>
+      new File([content], name, { type: "text/plain" });
+    const makePngFile = (name = "screenshot.png") =>
+      new File([PNG_BYTES], name, { type: "image/png" });
+
+    const sendFromComposer = () => fireEvent.click(screen.getByTestId("tiptap-send"));
+    const addFilesFromComposer = (files: File[]) => {
+      mockTimelineControls.filesToAdd = files;
+      fireEvent.click(screen.getByTestId("tiptap-add-files"));
+    };
+
+    it("exposes attachment controls in the existing Team Run composer", async () => {
+      render(<TeamRunPageClient />);
+
+      await waitFor(() => {
+        expect(mockTiptapProps.current).not.toBeNull();
+      });
+      // The follow-up composer opts into the same TiptapInput attachment UI.
+      expect(mockTiptapProps.current?.attachmentsEnabled).toBe(true);
+      expect(mockTiptapProps.current?.onAddAttachmentFiles).toBeTruthy();
+      expect(mockTiptapProps.current?.onRemoveAttachment).toBeTruthy();
+
+      addFilesFromComposer([makeTextFile()]);
+      expect(screen.getByTestId("tiptap-draft-notes.txt")).toBeTruthy();
+
+      fireEvent.click(screen.getByTestId("tiptap-remove-notes.txt"));
+      expect(screen.queryByTestId("tiptap-draft-notes.txt")).toBeNull();
+    });
+
+    it("sends valid text plus an image attachment as ACP content blocks", async () => {
+      render(<TeamRunPageClient />);
+      await waitFor(() => {
+        expect(mockTiptapProps.current).not.toBeNull();
+      });
+
+      addFilesFromComposer([makePngFile()]);
+      expect(screen.getByTestId("tiptap-draft-screenshot.png")).toBeTruthy();
+
+      mockTimelineControls.sendText = "Review this screenshot";
+      sendFromComposer();
+
+      await waitFor(() => {
+        expect(mockPromptSession).toHaveBeenCalledTimes(1);
+      });
+      const call = mockPromptSession.mock.calls[0];
+      expect(call[0]).toBe("session-1");
+      // Order: user text first, then image blocks. Attachment bytes live only
+      // in the image block — never copied into the visible text block.
+      expect(call[1]).toEqual([
+        { type: "text", text: "Review this screenshot" },
+        { type: "image", data: encodeBytesToBase64(PNG_BYTES), mimeType: "image/png" },
+      ]);
+      expect(call[2]).toBeUndefined();
+      expect(call[3]).toEqual({ throwOnError: true, promptId: expect.any(String) });
+
+      // Accepted: the complete draft is cleared.
+      await waitFor(() => {
+        expect(screen.queryByTestId("tiptap-draft-screenshot.png")).toBeNull();
+      });
+    });
+
+    it("converts @ repository file references into safe repository-relative sections", async () => {
+      mockSessionDetail = {
+        sessionId: "session-1",
+        name: "Team - Original run",
+        workspaceId: "default",
+        provider: "codex",
+        role: "ROUTA",
+        createdAt: "2026-04-18T00:00:00.000Z",
+        cwd: "/repo/team-run",
+      };
+
+      render(<TeamRunPageClient />);
+      // repoSelection is derived from the session cwd; @ references resolve
+      // against it.
+      await waitFor(() => {
+        expect(mockTiptapProps.current?.repoSelection?.path).toBe("/repo/team-run");
+      });
+
+      mockTimelineControls.sendText = "Check these files";
+      mockTimelineControls.sendContext = {
+        files: [
+          { path: "/repo/team-run/src/foo.ts", label: "foo.ts" },
+          // Outside the selected repository: rejected, never embedded.
+          { path: "/elsewhere/outside.ts", label: "outside.ts" },
+        ],
+      };
+      sendFromComposer();
+
+      await waitFor(() => {
+        expect(mockPromptSession).toHaveBeenCalledTimes(1);
+      });
+      const call = mockPromptSession.mock.calls[0];
+      expect(call[1]).toEqual([
+        { type: "text", text: "Check these files" },
+        { type: "text", text: "Repository files:\n- src/foo.ts" },
+      ]);
+    });
+
+    it("clears the full draft only after the prompt was accepted", async () => {
+      let acceptPrompt: () => void = () => {};
+      mockPromptSession.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            acceptPrompt = resolve;
+          }),
+      );
+
+      render(<TeamRunPageClient />);
+      await waitFor(() => {
+        expect(mockTiptapProps.current).not.toBeNull();
+      });
+
+      addFilesFromComposer([makeTextFile(), makePngFile()]);
+      mockTimelineControls.sendText = "Ship the follow-up";
+      sendFromComposer();
+
+      // While the delivery is in flight the draft stays intact and the
+      // composer is locked.
+      expect(screen.getByTestId("tiptap-draft-notes.txt")).toBeTruthy();
+      expect(screen.getByTestId("tiptap-draft-screenshot.png")).toBeTruthy();
+      expect(mockTiptapProps.current?.attachmentsDisabled).toBe(true);
+
+      await waitFor(() => {
+        expect(mockPromptSession).toHaveBeenCalledTimes(1);
+      });
+      expect(screen.getByTestId("tiptap-draft-notes.txt")).toBeTruthy();
+
+      await act(async () => {
+        acceptPrompt();
+      });
+
+      // Backend accepted: the complete draft (text + every attachment) clears.
+      await waitFor(() => {
+        expect(screen.queryByTestId("tiptap-draft-notes.txt")).toBeNull();
+        expect(screen.queryByTestId("tiptap-draft-screenshot.png")).toBeNull();
+      });
+      expect(screen.queryByTestId("tiptap-attachment-error")).toBeNull();
+    });
+
+    it("keeps the draft and skips the ACP call when strict validation fails", async () => {
+      render(<TeamRunPageClient />);
+      await waitFor(() => {
+        expect(mockTiptapProps.current).not.toBeNull();
+      });
+
+      // Preflight accepts the .png extension; the strict normalizer rejects
+      // the content because the image signature does not match.
+      addFilesFromComposer([new File(["this is not an image"], "fake.png", { type: "image/png" })]);
+      mockTimelineControls.sendText = "Send with a broken image";
+      sendFromComposer();
+
+      await waitFor(() => {
+        expect(screen.getByTestId("tiptap-attachment-error")).toBeTruthy();
+      });
+      expect(screen.getByTestId("tiptap-attachment-error").textContent).toBe("Invalid file content.");
+      // No partial prompt was sent.
+      expect(mockPromptSession).not.toHaveBeenCalled();
+      // The complete draft is preserved for correction.
+      expect(screen.getByTestId("tiptap-draft-fake.png")).toBeTruthy();
+      // The composer text cleared by the send action is prefilled back.
+      await waitFor(() => {
+        expect(mockPrefillHistory).toContain("Send with a broken image");
+      });
+    });
+
+    it("keeps text and draft when attachment serialization fails", async () => {
+      render(<TeamRunPageClient />);
+      await waitFor(() => {
+        expect(mockTiptapProps.current).not.toBeNull();
+      });
+
+      // A draft whose bytes cannot be read fails at serialization time,
+      // before any ACP call is attempted.
+      const broken = new File(["unreadable"], "broken.txt", { type: "text/plain" });
+      broken.arrayBuffer = async () => {
+        throw new Error("read failed");
+      };
+      addFilesFromComposer([broken]);
+      mockTimelineControls.sendText = "Send with unreadable file";
+      sendFromComposer();
+
+      await waitFor(() => {
+        expect(screen.getByTestId("tiptap-attachment-error")).toBeTruthy();
+      });
+      expect(screen.getByTestId("tiptap-attachment-error").textContent).toBe(
+        "Attachment preparation failed. Your files are kept — please try again.",
+      );
+      expect(mockPromptSession).not.toHaveBeenCalled();
+      expect(screen.getByTestId("tiptap-draft-broken.txt")).toBeTruthy();
+      await waitFor(() => {
+        expect(mockPrefillHistory).toContain("Send with unreadable file");
+      });
+    });
+
+    it("keeps text and attachments when the ACP delivery fails", async () => {
+      mockPromptSession.mockRejectedValueOnce(new Error("delivery interrupted"));
+
+      render(<TeamRunPageClient />);
+      await waitFor(() => {
+        expect(mockTiptapProps.current).not.toBeNull();
+      });
+
+      addFilesFromComposer([makePngFile()]);
+      mockTimelineControls.sendText = "Follow up please";
+      sendFromComposer();
+
+      await waitFor(() => {
+        expect(screen.getByText(/delivery interrupted/)).toBeTruthy();
+      });
+      // Attachments survive the failure; the failed text is prefilled back
+      // into the composer (proven below by the retry snapshot staying valid,
+      // which requires the visible text to match the failed submission).
+      expect(screen.getByTestId("tiptap-draft-screenshot.png")).toBeTruthy();
+      // The unchanged draft keeps the retry snapshot valid.
+      const retryButton = screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
+      await waitFor(() => {
+        expect(retryButton.disabled).toBe(false);
+      });
+    });
+
+    it("retries a failed delivery with the same promptId and identical content", async () => {
+      mockPromptSession.mockRejectedValueOnce(new Error("delivery interrupted"));
+
+      render(<TeamRunPageClient />);
+      await waitFor(() => {
+        expect(mockTiptapProps.current).not.toBeNull();
+      });
+
+      addFilesFromComposer([makeTextFile(), makePngFile()]);
+      mockTimelineControls.sendText = "Retry me";
+      sendFromComposer();
+
+      await waitFor(() => {
+        expect(screen.getByText(/delivery interrupted/)).toBeTruthy();
+      });
+      await waitFor(() => {
+        expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(false);
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+      await waitFor(() => {
+        expect(mockPromptSession).toHaveBeenCalledTimes(2);
+      });
+      // SAME promptId and byte-identical content blocks: an already-accepted
+      // delivery can never be duplicated as a second provider turn.
+      expect(mockPromptSession.mock.calls[1]).toEqual(mockPromptSession.mock.calls[0]);
+
+      await waitFor(() => {
+        expect(screen.queryByTestId("tiptap-draft-notes.txt")).toBeNull();
+        expect(screen.queryByTestId("tiptap-draft-screenshot.png")).toBeNull();
+      });
+    });
+
+    it("uses a new promptId after the failed draft was edited", async () => {
+      mockPromptSession.mockRejectedValueOnce(new Error("delivery interrupted"));
+
+      render(<TeamRunPageClient />);
+      await waitFor(() => {
+        expect(mockTiptapProps.current).not.toBeNull();
+      });
+
+      addFilesFromComposer([makePngFile()]);
+      mockTimelineControls.sendText = "Original text";
+      sendFromComposer();
+
+      await waitFor(() => {
+        expect(screen.getByText(/delivery interrupted/)).toBeTruthy();
+      });
+      const failedPromptId = mockPromptSession.mock.calls[0][3]!.promptId as string;
+      expect(failedPromptId).toBeTruthy();
+
+      // The prefill restores the failed text first...
+      await waitFor(() => {
+        expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(false);
+      });
+      // ...then the user edits the draft: the old retry snapshot is invalidated.
+      act(() => {
+        mockTiptapProps.current?.onTextChange?.("Edited text");
+      });
+      await waitFor(() => {
+        expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
+      });
+
+      mockTimelineControls.sendText = "Edited text";
+      sendFromComposer();
+
+      await waitFor(() => {
+        expect(mockPromptSession).toHaveBeenCalledTimes(2);
+      });
+      const retryCall = mockPromptSession.mock.calls[1]!;
+      // The edited submission is a NEW delivery with a NEW promptId.
+      expect(retryCall[3]!.promptId).not.toBe(failedPromptId);
+      const blocks = retryCall[1] as Array<Record<string, unknown>>;
+      expect(blocks[0]).toEqual({ type: "text", text: "Edited text" });
+    });
+
+    it("rejects the whole prompt when the provider cannot receive images", async () => {
+      const imagesUnsupportedError = new AcpClientError(
+        "Provider cannot receive images",
+        -32000,
+        undefined,
+        undefined,
+        { reason: "prompt_images_unsupported" },
+      );
+      mockPromptSession.mockRejectedValueOnce(imagesUnsupportedError);
+
+      render(<TeamRunPageClient />);
+      await waitFor(() => {
+        expect(mockTiptapProps.current).not.toBeNull();
+      });
+
+      addFilesFromComposer([makePngFile()]);
+      mockTimelineControls.sendText = "Prompt with an image";
+      sendFromComposer();
+
+      await waitFor(() => {
+        expect(screen.getByText(/Images are not supported here\./)).toBeTruthy();
+      });
+      // Exactly one attempt carrying the FULL prompt (image included): no
+      // silent text-only fallback and no dropped image.
+      expect(mockPromptSession).toHaveBeenCalledTimes(1);
+      const payload = mockPromptSession.mock.calls[0][1] as Array<Record<string, unknown>>;
+      expect(payload.some((block) => block.type === "image")).toBe(true);
+      // The complete draft is preserved so the user can switch provider/retry.
+      expect(screen.getByTestId("tiptap-draft-screenshot.png")).toBeTruthy();
+    });
+
+    it("keeps the initial launch IndexedDB attachment handoff and retry intact", async () => {
+      mockPeekPendingPromptPayload.mockReturnValue({
+        text: "Launch the team",
+        timestamp: Date.now(),
+        promptId: "launch-prompt-1",
+        attachmentTransferId: "transfer-1",
+      });
+      mockReadTeamAttachmentTransfer.mockResolvedValue({
+        attachments: [makeTextFile("launch-notes.txt", "launch notes")],
+        createdAt: new Date().toISOString(),
+      });
+      mockPromptSession.mockRejectedValue(new Error("handoff rejected"));
+
+      render(<TeamRunPageClient />);
+
+      const expectedBlocks = [
+        { type: "text", text: "Launch the team" },
+        {
+          type: "resource",
+          resource: {
+            type: "resource",
+            uri: "routa-team-input://transfer-1/0",
+            mimeType: "text/plain",
+            text: "launch notes",
+          },
+        },
+      ];
+
+      // Every rejected attempt rebuilds the FULL blocks from the IndexedDB
+      // transfer (no partial text-only fallback) and reuses the launch
+      // promptId; the transfer record stays alive for the next attempt.
+      await waitFor(() => {
+        expect(mockPromptSession.mock.calls.length).toBeGreaterThanOrEqual(1);
+        for (const call of mockPromptSession.mock.calls) {
+          expect(call[0]).toBe("session-1");
+          expect(call[1]).toEqual(expectedBlocks);
+          expect(call[3]).toEqual({ throwOnError: true, promptId: "launch-prompt-1" });
+        }
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Attachments are kept for retry\./)).toBeTruthy();
+      });
+      // Nothing is dropped before acceptance.
+      expect(mockDeleteTeamAttachmentTransfer).not.toHaveBeenCalled();
+      expect(mockClearPendingPrompt).not.toHaveBeenCalled();
+
+      // Manual Retry re-enters the same consumption path; this time accepted.
+      // (Grab the button while the failure banner is guaranteed visible.)
+      const retryButton = screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
+      mockPromptSession.mockResolvedValue(undefined);
+      fireEvent.click(retryButton);
+
+      // Only AFTER acceptance are the transfer record and handoff dropped.
+      await waitFor(() => {
+        expect(mockDeleteTeamAttachmentTransfer).toHaveBeenCalledWith("transfer-1");
+        expect(mockClearPendingPrompt).toHaveBeenCalledWith("session-1");
+      });
+      const acceptedCall = mockPromptSession.mock.calls.at(-1)!;
+      expect(acceptedCall[1]).toEqual(expectedBlocks);
+      expect(acceptedCall[3]).toEqual({ throwOnError: true, promptId: "launch-prompt-1" });
+      // Every attempt rebuilt its blocks from the transfer record.
+      expect(mockReadTeamAttachmentTransfer.mock.calls.length).toBeGreaterThanOrEqual(2);
+      for (const call of mockReadTeamAttachmentTransfer.mock.calls) {
+        expect(call[0]).toBe("transfer-1");
+      }
+      // The payload was peeked once and carried across every attempt.
+      expect(mockPeekPendingPromptPayload).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps attachments when recovery ownership fails mid-delivery", async () => {
+      const ownershipError = new AcpClientError(
+        "Session runtime is owned by another Routa instance",
+        -32010,
+        undefined,
+        undefined,
+        { reason: "runtime_owned", retryable: true },
+      );
+      mockPromptSession.mockRejectedValueOnce(ownershipError);
+
+      render(<TeamRunPageClient />);
+      await waitFor(() => {
+        expect(mockTiptapProps.current).not.toBeNull();
+      });
+
+      addFilesFromComposer([makePngFile()]);
+      mockTimelineControls.sendText = "Prompt during ownership conflict";
+      sendFromComposer();
+
+      await waitFor(() => {
+        expect(screen.getByText(/Another Routa instance still owns this runtime\./)).toBeTruthy();
+      });
+      // The complete submission (text + attachments) survives the structured
+      // recovery failure and stays retryable.
+      expect(screen.getByTestId("tiptap-draft-screenshot.png")).toBeTruthy();
+      await waitFor(() => {
+        expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(false);
+      });
+    });
+
+    it("sends text-only follow-ups as plain strings without regressions", async () => {
+      render(<TeamRunPageClient />);
+      await waitFor(() => {
+        expect(mockTiptapProps.current).not.toBeNull();
+      });
+
+      mockTimelineControls.sendText = "Just a follow-up";
+      sendFromComposer();
+
+      await waitFor(() => {
+        expect(mockPromptSession).toHaveBeenCalledTimes(1);
+      });
+      const call = mockPromptSession.mock.calls[0];
+      // No attachments and no @ references: keep the legacy string payload.
+      expect(call[1]).toBe("Just a follow-up");
+      expect(call[3]).toEqual({ throwOnError: true, promptId: expect.any(String) });
+      expect(screen.queryByTestId("tiptap-attachment-error")).toBeNull();
+    });
+
+    it("drops run A's drafts and retry state when switching to run B", async () => {
+      mockPromptSession.mockRejectedValueOnce(new Error("delivery interrupted"));
+      const { rerender } = render(<TeamRunPageClient />);
+      await waitFor(() => {
+        expect(mockTiptapProps.current).not.toBeNull();
+      });
+
+      // Run A: an attachment plus a failed delivery produce visible retry state.
+      addFilesFromComposer([makeTextFile(), makePngFile()]);
+      mockTimelineControls.sendText = "Run A follow-up";
+      sendFromComposer();
+
+      await waitFor(() => {
+        expect(screen.getByText(/delivery interrupted/)).toBeTruthy();
+      });
+      expect(screen.getByTestId("tiptap-draft-notes.txt")).toBeTruthy();
+      expect(screen.getByTestId("tiptap-draft-screenshot.png")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+
+      // Switch to run B: run A's composer draft must not follow.
+      mockTeamRunParams.sessionId = "session-2";
+      rerender(<TeamRunPageClient />);
+
+      await waitFor(() => {
+        expect(screen.queryByTestId("tiptap-draft-notes.txt")).toBeNull();
+        expect(screen.queryByTestId("tiptap-draft-screenshot.png")).toBeNull();
+      });
+      expect(screen.queryByText(/delivery interrupted/)).toBeNull();
+      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    });
+
+    it("does not clear run B's input when run A's send settles after the switch", async () => {
+      let acceptPrompt: () => void = () => {};
+      mockPromptSession.mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            acceptPrompt = resolve;
+          }),
+      );
+
+      const { rerender } = render(<TeamRunPageClient />);
+      await waitFor(() => {
+        expect(mockTiptapProps.current).not.toBeNull();
+      });
+
+      // Run A starts an attachment delivery that stays in flight.
+      addFilesFromComposer([makeTextFile()]);
+      mockTimelineControls.sendText = "Run A follow-up";
+      sendFromComposer();
+      await waitFor(() => {
+        expect(mockPromptSession).toHaveBeenCalledTimes(1);
+      });
+      expect(mockPromptSession.mock.calls[0]?.[0]).toBe("session-1");
+
+      // Switch to run B while run A's delivery is still in flight; run B's
+      // composer text arrives before run A settles.
+      mockTeamRunParams.sessionId = "session-2";
+      rerender(<TeamRunPageClient />);
+      await waitFor(() => {
+        expect(screen.queryByTestId("tiptap-draft-notes.txt")).toBeNull();
+      });
+      act(() => {
+        mockTiptapProps.current?.onTextChange?.("Run B follow-up");
+      });
+
+      // Run A's delivery settles only now: it belongs to run A's context and
+      // must not clear or overwrite run B's composer state.
+      await act(async () => {
+        acceptPrompt();
+      });
+      expect(screen.queryByText(/delivery interrupted/)).toBeNull();
+      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+      expect(mockTiptapProps.current?.prefillText ?? null).toBeNull();
+
+      // Run B collects its own attachment after the stale delivery settled.
+      addFilesFromComposer([makePngFile()]);
+      expect(screen.getByTestId("tiptap-draft-screenshot.png")).toBeTruthy();
+
+      // Run B's next send is a fresh submission targeting run B; failing it
+      // keeps the draft, and the retry snapshot stays valid only if run B's
+      // text survived run A's stale completion untouched.
+      mockPromptSession.mockRejectedValueOnce(new Error("Run B interrupted"));
+      mockTimelineControls.sendText = "Run B follow-up";
+      sendFromComposer();
+
+      await waitFor(() => {
+        expect(mockPromptSession).toHaveBeenCalledTimes(2);
+      });
+      const runBCall = mockPromptSession.mock.calls[1];
+      expect(runBCall?.[0]).toBe("session-2");
+      expect(runBCall?.[1]).toEqual([
+        { type: "text", text: "Run B follow-up" },
+        { type: "image", data: encodeBytesToBase64(PNG_BYTES), mimeType: "image/png" },
+      ]);
+      expect(runBCall?.[3]?.promptId).not.toBe(mockPromptSession.mock.calls[0]?.[3]?.promptId);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Run B interrupted/)).toBeTruthy();
+      });
+      expect(screen.getByTestId("tiptap-draft-screenshot.png")).toBeTruthy();
+      await waitFor(() => {
+        expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(false);
+      });
+    });
   });
 });

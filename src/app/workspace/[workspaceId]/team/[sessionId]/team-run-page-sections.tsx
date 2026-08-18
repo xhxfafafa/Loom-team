@@ -1,7 +1,7 @@
 "use client";
 
 import { useTranslation } from "@/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageBubble } from "@/client/components/message-bubble";
 import type { ChatMessage } from "@/client/components/chat-panel/types";
 import { AskUserQuestionBubble } from "@/client/components/message-bubble";
@@ -114,6 +114,14 @@ export function ObjectiveSidebarSection({
   );
 }
 
+/**
+ * Bottom-follow threshold for the Team timeline: while the scroll region is
+ * within this distance of the bottom the user is "pinned" and newly rendered
+ * content keeps the viewport at the bottom; scrolling farther away unpins and
+ * automatic updates must not steal the reading position.
+ */
+const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 48;
+
 export function SessionTimelineSection({
   leadMessages,
   memberLaneByToolCallId,
@@ -135,16 +143,68 @@ export function SessionTimelineSection({
 }) {
   const { t } = useTranslation();
   const timelineScrollRef = useRef<HTMLDivElement>(null);
-  const latestMessage = leadMessages.at(-1);
+  const timelineContentRef = useRef<HTMLDivElement>(null);
+  /**
+   * Scroll intent: initial hydration and Team Run switching start pinned (the
+   * parent remounts this section per run). Only user scrolling away from the
+   * bottom unpins; scrolling back within the threshold pins again.
+   */
+  const pinnedToBottomRef = useRef(true);
+  const scrollFrameRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
+  /** Coalesced bottom scroll: one cancellable frame at a time. */
+  const scheduleScrollToBottom = useCallback(() => {
+    if (scrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(scrollFrameRef.current);
+    }
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
       const timeline = timelineScrollRef.current;
       if (!timeline) return;
       timeline.scrollTop = timeline.scrollHeight;
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [latestMessage?.content, latestMessage?.id, leadMessages.length]);
+  }, []);
+
+  // Initial hydration: pinned by default, scroll to the bottom after layout.
+  useEffect(() => {
+    pinnedToBottomRef.current = true;
+    scheduleScrollToBottom();
+  }, [scheduleScrollToBottom]);
+
+  // Track user scroll intent from the rendered distance to the bottom.
+  useEffect(() => {
+    const timeline = timelineScrollRef.current;
+    if (!timeline) return;
+    const handleScroll = () => {
+      const distanceFromBottom = timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight;
+      pinnedToBottomRef.current = distanceFromBottom <= TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX;
+    };
+    timeline.addEventListener("scroll", handleScroll);
+    return () => timeline.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // Observe the actual rendered height of the timeline content. Child lanes,
+  // expanded threads, pending questions, and async Markdown/tool rendering can
+  // grow the timeline without changing any Lead-message field, so rendered
+  // size — not message counts — drives the bottom-follow.
+  useEffect(() => {
+    const content = timelineContentRef.current;
+    if (!content) return;
+    const observer = new ResizeObserver(() => {
+      if (!pinnedToBottomRef.current) return;
+      scheduleScrollToBottom();
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [scheduleScrollToBottom]);
+
+  // Cleanup: cancel any pending follow frame on unmount.
+  useEffect(() => () => {
+    if (scrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = null;
+    }
+  }, []);
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-desktop-bg-primary">
@@ -167,27 +227,29 @@ export function SessionTimelineSection({
       </div>
 
       <div ref={timelineScrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-1.5" data-testid="team-timeline-scroll-region">
-        {leadMessages.length === 0 ? (
-          <EmptyPanel message={t.team.noLeadTimelineYet} />
-        ) : (
-          <div className="space-y-1.5">
-            {leadMessages.map((message, index) => {
-              const lane = message.toolCallId ? memberLaneByToolCallId.get(message.toolCallId) : undefined;
-              return (
-                <LeadMessageThread
-                  key={`${message.id}-${index}`}
-                  message={message}
-                  lane={lane}
-                  activeSessionId={selectedSessionId}
-                  sessionBlockRef={lane ? (node) => sessionBlockRef(lane.sessionId, node) : undefined}
-                  onSelectSession={lane ? () => onSelectSession(lane.sessionId) : undefined}
-                  onOpenViewer={lane ? () => onOpenViewer(lane.sessionId) : undefined}
-                  onSubmitQuestion={onSubmitQuestion}
-                />
-              );
-            })}
-          </div>
-        )}
+        <div ref={timelineContentRef} data-testid="team-timeline-content">
+          {leadMessages.length === 0 ? (
+            <EmptyPanel message={t.team.noLeadTimelineYet} />
+          ) : (
+            <div className="space-y-1.5">
+              {leadMessages.map((message, index) => {
+                const lane = message.toolCallId ? memberLaneByToolCallId.get(message.toolCallId) : undefined;
+                return (
+                  <LeadMessageThread
+                    key={`${message.id}-${index}`}
+                    message={message}
+                    lane={lane}
+                    activeSessionId={selectedSessionId}
+                    sessionBlockRef={lane ? (node) => sessionBlockRef(lane.sessionId, node) : undefined}
+                    onSelectSession={lane ? () => onSelectSession(lane.sessionId) : undefined}
+                    onOpenViewer={lane ? () => onOpenViewer(lane.sessionId) : undefined}
+                    onSubmitQuestion={onSubmitQuestion}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </section >
   );

@@ -1,6 +1,6 @@
 import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import * as React from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AcpClientError } from "@/client/acp-client";
 import { encodeBytesToBase64 } from "@/core/kanban/task-attachments";
@@ -28,6 +28,11 @@ interface MockTiptapInputProps {
   repoSelection?: MockRepoSelection | null;
 }
 
+interface MockTimelineSectionProps {
+  leadMessages?: Array<{ id: string; role: string; content: string }>;
+  sessionLanes?: unknown[];
+}
+
 const {
   mockDesktopAwareFetch,
   mockSelectSession,
@@ -39,6 +44,7 @@ const {
   mockEnsurePendingPromptDeliveryId,
   mockHeaderProps,
   mockTiptapProps,
+  mockTimelineSectionProps,
   mockTeamRunParams,
   mockTimelineControls,
   mockPrefillHistory,
@@ -62,6 +68,8 @@ const {
   mockEnsurePendingPromptDeliveryId: vi.fn((): string | null => "test-delivery-id"),
   mockHeaderProps: [] as Array<{ teamRuns: Array<{ sessionId: string; name?: string }> }>,
   mockTiptapProps: { current: null as MockTiptapInputProps | null },
+  /** Latest props received by the mocked SessionTimelineSection. */
+  mockTimelineSectionProps: { current: null as MockTimelineSectionProps | null },
   /** Mutable route params so tests can switch between Team Runs. */
   mockTeamRunParams: { workspaceId: "default", sessionId: "session-1" },
   mockTimelineControls: {
@@ -80,6 +88,39 @@ let mockAcpSessionId: string | null = "session-1";
 let mockSessionDetail: Record<string, unknown> | null = null;
 /** Mutable ACP update feed so tests can simulate further session updates. */
 let mockAcpUpdates: Array<Record<string, unknown>> = [];
+/** Workspace session list backing descendant-session discovery. */
+let mockWorkspaceSessions: Array<Record<string, unknown>> = [];
+/** Per-session transcript responders so tests can defer or fail a response. */
+let transcriptResponders = new Map<string, () => Promise<Response>>();
+/** Mutable document visibility backing the polling visibility gate. */
+let documentVisibilityState: "visible" | "hidden" = "visible";
+
+const okJsonResponse = (data: unknown): Response =>
+  ({ ok: true, json: async () => data }) as Response;
+
+function createDeferred<T>() {
+  let resolveDeferred!: (value: T) => void;
+  const promise = new Promise<T>((resolve) => {
+    resolveDeferred = resolve;
+  });
+  return { promise, resolve: resolveDeferred };
+}
+
+const transcriptUrl = (targetSessionId: string) =>
+  `/api/sessions/${targetSessionId}/transcript`;
+
+const transcriptCallCount = (targetSessionId: string) =>
+  mockDesktopAwareFetch.mock.calls.filter(
+    ([url]) => String(url) === transcriptUrl(targetSessionId),
+  ).length;
+
+const currentLeadMessageTexts = (): string[] =>
+  (mockTimelineSectionProps.current?.leadMessages ?? []).map((message) => message.content);
+
+const setDocumentVisibility = (nextState: "visible" | "hidden") => {
+  documentVisibilityState = nextState;
+  document.dispatchEvent(new Event("visibilitychange"));
+};
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -274,7 +315,10 @@ vi.mock("@/client/utils/diagnostics", () => ({
 
 vi.mock("../team-run-page-sections", () => ({
   ObjectiveSidebarSection: () => <div data-testid="objective-sidebar" />,
-  SessionTimelineSection: () => <div data-testid="session-timeline" />,
+  SessionTimelineSection: (props: Record<string, unknown>) => {
+    mockTimelineSectionProps.current = props as unknown as MockTimelineSectionProps;
+    return <div data-testid="session-timeline" />;
+  },
   TeamMembersSection: () => <div data-testid="team-members" />,
 }));
 
@@ -307,6 +351,7 @@ describe("TeamRunPageClient", () => {
     mockDeleteTeamAttachmentTransfer.mockResolvedValue(undefined);
     mockHeaderProps.length = 0;
     mockTiptapProps.current = null;
+    mockTimelineSectionProps.current = null;
     mockTeamRunParams.workspaceId = "default";
     mockTeamRunParams.sessionId = "session-1";
     mockTimelineControls.sendText = "";
@@ -316,6 +361,21 @@ describe("TeamRunPageClient", () => {
     mockAcpSessionId = "session-1";
     mockSessionDetail = null;
     mockAcpUpdates = [{ update: { sessionUpdate: "acp_status", status: "ready" } }];
+    mockWorkspaceSessions = [
+      {
+        sessionId: "session-1",
+        name: "Team - Original run",
+        workspaceId: "default",
+        role: "ROUTA",
+        createdAt: "2026-04-18T00:00:00.000Z",
+      },
+    ];
+    transcriptResponders = new Map();
+    documentVisibilityState = "visible";
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => documentVisibilityState,
+    });
 
     mockDesktopAwareFetch.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -356,15 +416,7 @@ describe("TeamRunPageClient", () => {
         return {
           ok: true,
           json: async () => ({
-            sessions: [
-              {
-                sessionId: "session-1",
-                name: "Team - Original run",
-                workspaceId: "default",
-                role: "ROUTA",
-                createdAt: "2026-04-18T00:00:00.000Z",
-              },
-            ],
+            sessions: mockWorkspaceSessions,
           }),
         } as Response;
       }
@@ -394,8 +446,14 @@ describe("TeamRunPageClient", () => {
       if (url === "/api/agents?workspaceId=default") {
         return { ok: true, json: async () => ({ agents: [] }) } as Response;
       }
-      if (url === "/api/sessions/session-1/transcript") {
-        return { ok: true, json: async () => ({ history: [], messages: [] }) } as Response;
+      const transcriptMatch = url.match(/^\/api\/sessions\/([^/]+)\/transcript$/);
+      if (transcriptMatch) {
+        const targetSessionId = decodeURIComponent(transcriptMatch[1]);
+        const responder = transcriptResponders.get(targetSessionId);
+        if (responder) {
+          return responder();
+        }
+        return okJsonResponse({ history: [], messages: [] });
       }
       return { ok: true, json: async () => ({}) } as Response;
     });
@@ -1277,6 +1335,253 @@ describe("TeamRunPageClient", () => {
       await waitFor(() => {
         expect((screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(false);
       });
+    });
+  });
+
+  describe("team timeline transcript refresh", () => {
+    const CHILD_SESSION_ID = "child-session-1";
+
+    const childWorkspaceSession = {
+      sessionId: CHILD_SESSION_ID,
+      name: "Child crafter session",
+      workspaceId: "default",
+      parentSessionId: "session-1",
+      role: "CRAFTER",
+      createdAt: "2026-04-18T00:05:00.000Z",
+    };
+
+    /**
+     * Advance fake time in small steps until the condition holds. Keeps every
+     * timer-driven state update wrapped in act().
+     */
+    const waitUntil = async (condition: () => boolean, timeoutMs = 4000) => {
+      let elapsed = 0;
+      while (!condition()) {
+        if (elapsed > timeoutMs) {
+          throw new Error("waitUntil timed out while advancing fake timers");
+        }
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(50);
+        });
+        elapsed += 50;
+      }
+    };
+
+    const settle = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+    const withChildSession = () => {
+      mockWorkspaceSessions = [mockWorkspaceSessions[0]!, childWorkspaceSession];
+    };
+    const persistedSnapshotMessages = () => [{
+      id: "root-persisted-1",
+      role: "assistant",
+      content: "persisted snapshot",
+      timestamp: "2026-08-18T00:00:00.000Z",
+    }];
+
+    /** Hold the next root transcript request in flight and return its deferred response. */
+    const holdNextRootTranscript = async (expectedCallCount: number) => {
+      const deferred = createDeferred<Response>();
+      transcriptResponders.set("session-1", () => deferred.promise);
+      window.dispatchEvent(new Event("focus"));
+      await waitUntil(() => transcriptCallCount("session-1") === expectedCallCount);
+      return deferred;
+    };
+
+    /** Push a fresh root SSE chunk through a rerender and wait for it to render. */
+    const pushLiveRootSseChunk = async (rerender: (ui: React.ReactElement) => void) => {
+      mockAcpUpdates = [
+        ...mockAcpUpdates,
+        { update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "live sse chunk" } } },
+      ];
+      rerender(<TeamRunPageClient />);
+      await waitUntil(() => currentLeadMessageTexts().includes("live sse chunk"));
+    };
+
+    const waitForBootstrapTranscripts = async () => {
+      await waitUntil(() => transcriptCallCount("session-1") >= 1);
+      if (mockWorkspaceSessions.some((entry) => entry.parentSessionId)) {
+        await waitUntil(() => transcriptCallCount(CHILD_SESSION_ID) >= 1);
+      }
+      await settle();
+    };
+
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it("refreshes the root and descendant transcripts periodically while the page is visible", async () => {
+      withChildSession();
+      render(<TeamRunPageClient />);
+      await waitForBootstrapTranscripts();
+
+      const rootCallsAtBootstrap = transcriptCallCount("session-1");
+      const childCallsAtBootstrap = transcriptCallCount(CHILD_SESSION_ID);
+
+      // Visible page: the fallback interval refreshes root and descendants,
+      // and keeps doing so on the next interval.
+      await waitUntil(() => transcriptCallCount("session-1") === rootCallsAtBootstrap + 1, 8000);
+      await waitUntil(() => transcriptCallCount(CHILD_SESSION_ID) === childCallsAtBootstrap + 1, 2000);
+      await waitUntil(() => transcriptCallCount("session-1") === rootCallsAtBootstrap + 2, 8000);
+    });
+
+    it("does not issue periodic transcript requests while the page is hidden", async () => {
+      withChildSession();
+      render(<TeamRunPageClient />);
+      await waitForBootstrapTranscripts();
+
+      // Sanity check first: visible-page polling is active.
+      const visibleCalls = transcriptCallCount("session-1");
+      await waitUntil(() => transcriptCallCount("session-1") === visibleCalls + 1, 8000);
+
+      const rootCalls = transcriptCallCount("session-1");
+      const childCalls = transcriptCallCount(CHILD_SESSION_ID);
+
+      setDocumentVisibility("hidden");
+      await advance(16_000);
+
+      expect(transcriptCallCount("session-1")).toBe(rootCalls);
+      expect(transcriptCallCount(CHILD_SESSION_ID)).toBe(childCalls);
+    });
+
+    it("requests an immediate refresh when the page becomes visible or the window is focused", async () => {
+      withChildSession();
+      render(<TeamRunPageClient />);
+      await waitForBootstrapTranscripts();
+
+      // Hidden -> visible: one immediate queued refresh.
+      setDocumentVisibility("hidden");
+      await advance(6_000);
+      const rootCallsBeforeVisible = transcriptCallCount("session-1");
+      setDocumentVisibility("visible");
+      await waitUntil(() => transcriptCallCount("session-1") === rootCallsBeforeVisible + 1, 2000);
+      await waitUntil(() => transcriptCallCount(CHILD_SESSION_ID) >= 2, 2000);
+
+      // Window focus: another immediate queued refresh.
+      const rootCallsBeforeFocus = transcriptCallCount("session-1");
+      window.dispatchEvent(new Event("focus"));
+      await waitUntil(() => transcriptCallCount("session-1") === rootCallsBeforeFocus + 1, 2000);
+    });
+
+    it("coalesces repeated refresh triggers while a transcript request is in flight", async () => {
+      withChildSession();
+      render(<TeamRunPageClient />);
+      await waitForBootstrapTranscripts();
+
+      // Hold the next transcript round in flight.
+      const rootInFlight = createDeferred<Response>();
+      const childInFlight = createDeferred<Response>();
+      transcriptResponders.set("session-1", () => rootInFlight.promise);
+      transcriptResponders.set(CHILD_SESSION_ID, () => childInFlight.promise);
+
+      window.dispatchEvent(new Event("focus"));
+      await waitUntil(() => transcriptCallCount("session-1") === 2);
+      await waitUntil(() => transcriptCallCount(CHILD_SESSION_ID) === 2);
+
+      // More triggers arrive while the request is in flight: interval tick
+      // plus repeated focus events. Nothing new starts in the meantime.
+      window.dispatchEvent(new Event("focus"));
+      await advance(5_500);
+      window.dispatchEvent(new Event("focus"));
+      await settle();
+      expect(transcriptCallCount("session-1")).toBe(2);
+      expect(transcriptCallCount(CHILD_SESSION_ID)).toBe(2);
+
+      rootInFlight.resolve(okJsonResponse({ history: [], messages: [] }));
+      childInFlight.resolve(okJsonResponse({ history: [], messages: [] }));
+
+      // Exactly ONE coalesced follow-up round for the queued duplicates.
+      await waitUntil(() => transcriptCallCount("session-1") === 3, 2000);
+      await waitUntil(() => transcriptCallCount(CHILD_SESSION_ID) === 3, 2000);
+      await advance(3_000);
+      expect(transcriptCallCount("session-1")).toBe(3);
+      expect(transcriptCallCount(CHILD_SESSION_ID)).toBe(3);
+    });
+
+    it("cleans up the previous run's timer and only refreshes the new run after switching Team Runs", async () => {
+      withChildSession();
+      const { rerender } = render(<TeamRunPageClient />);
+      await waitForBootstrapTranscripts();
+
+      mockTeamRunParams.sessionId = "session-2";
+      rerender(<TeamRunPageClient />);
+
+      // Run B bootstraps its own transcript.
+      await waitUntil(() => transcriptCallCount("session-2") >= 1, 6000);
+      await settle();
+
+      const rootACalls = transcriptCallCount("session-1");
+      const childCalls = transcriptCallCount(CHILD_SESSION_ID);
+      const rootBCalls = transcriptCallCount("session-2");
+
+      // Several intervals pass: only run B's session is refreshed.
+      await waitUntil(() => transcriptCallCount("session-2") === rootBCalls + 1, 8000);
+      await advance(6_000);
+
+      expect(transcriptCallCount("session-1")).toBe(rootACalls);
+      expect(transcriptCallCount(CHILD_SESSION_ID)).toBe(childCalls);
+      expect(transcriptCallCount("session-2")).toBeGreaterThanOrEqual(rootBCalls + 1);
+    });
+
+    it("never erases a newer root SSE message with an older transcript response", async () => {
+      transcriptResponders.set(
+        "session-1",
+        () => Promise.resolve(okJsonResponse({ history: [], messages: persistedSnapshotMessages() })),
+      );
+      const { rerender } = render(<TeamRunPageClient />);
+      await waitUntil(() => currentLeadMessageTexts().includes("persisted snapshot"));
+
+      const staleResponse = await holdNextRootTranscript(2);
+      await pushLiveRootSseChunk(rerender);
+
+      // The older snapshot resolves only now; it must not roll back the SSE content.
+      staleResponse.resolve(okJsonResponse({ history: [], messages: persistedSnapshotMessages() }));
+      await settle();
+      await advance(300);
+
+      expect(currentLeadMessageTexts()).toContain("live sse chunk");
+      expect(currentLeadMessageTexts()).not.toContain("persisted snapshot");
+    });
+
+    it("queues a convergence refresh after skipping a stale root snapshot", async () => {
+      transcriptResponders.set(
+        "session-1",
+        () => Promise.resolve(okJsonResponse({ history: [], messages: [] })),
+      );
+      const { rerender } = render(<TeamRunPageClient />);
+      await waitForBootstrapTranscripts();
+
+      const staleResponse = await holdNextRootTranscript(2);
+      await pushLiveRootSseChunk(rerender);
+
+      staleResponse.resolve(okJsonResponse({ history: [], messages: [] }));
+      await settle();
+
+      // The skipped stale snapshot schedules a later root refresh so durable
+      // state can converge after the live burst.
+      await waitUntil(() => transcriptCallCount("session-1") === 3, 6000);
+    });
+
+    it("keeps the last successfully rendered messages when an automatic refresh fails", async () => {
+      transcriptResponders.set(
+        "session-1",
+        () => Promise.resolve(okJsonResponse({ history: [], messages: persistedSnapshotMessages() })),
+      );
+      render(<TeamRunPageClient />);
+      await waitUntil(() => currentLeadMessageTexts().includes("persisted snapshot"));
+
+      // The next automatic refresh fails hard.
+      transcriptResponders.set("session-1", () => Promise.reject(new Error("network down")));
+      window.dispatchEvent(new Event("focus"));
+      await waitUntil(() => transcriptCallCount("session-1") === 2);
+      await settle();
+
+      // Existing messages are preserved — never cleared by a failed refresh.
+      expect(currentLeadMessageTexts()).toContain("persisted snapshot");
+
+      // The following interval retry keeps the last good snapshot too.
+      await waitUntil(() => transcriptCallCount("session-1") === 3, 8000);
+      await settle();
+      expect(currentLeadMessageTexts()).toContain("persisted snapshot");
     });
   });
 });

@@ -184,6 +184,21 @@ function pendingPayloadHasTeamAttachments(payload: PendingPromptPayload): boolea
 const TEAM_PENDING_PROMPT_MAX_AGE_MS = 600_000;
 
 /**
+ * Visible-page transcript fallback cadence. The root Team Lead SSE stream is
+ * the primary live path; this low-frequency interval only converges persisted
+ * root/descendant records the stream may have missed. No requests fire while
+ * the document is hidden.
+ */
+const TRANSCRIPT_FALLBACK_REFRESH_INTERVAL_MS = 5_000;
+
+/**
+ * Wait before re-fetching the root transcript after a stale snapshot was
+ * skipped, giving the live SSE burst time to settle so the convergence fetch
+ * does not race the stream.
+ */
+const TRANSCRIPT_STALE_ROOT_RETRY_DELAY_MS = 1_000;
+
+/**
  * A failed follow-up timeline submission kept for idempotent Retry: the same
  * promptId and the same content snapshot are re-sent so a delivery that was
  * already accepted by the backend is never duplicated as a second provider
@@ -274,6 +289,15 @@ export function TeamRunPageClient() {
   const transcriptRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transcriptRefreshInFlightRef = useRef(false);
   const pendingTranscriptSessionIdsRef = useRef<Set<string>>(new Set());
+  /**
+   * Monotonically increasing live-update generation for the root session.
+   * Bumped every time the root ACP stream applies updates; a transcript
+   * request captures it at start and its root snapshot is skipped when the
+   * generation moved, so polling can never roll back newer SSE content.
+   */
+  const rootLiveGenerationRef = useRef(0);
+  /** Latest root + descendant session IDs for the visible-page fallback poll. */
+  const transcriptPollTargetsRef = useRef<string[]>([]);
 
   useEffect(() => {
     setIsSwitchingTeamRun(true);
@@ -435,36 +459,73 @@ export function TeamRunPageClient() {
     setIsSwitchingTeamRun(false);
   }, [sessionId, workspaceId]);
 
-  const fetchSessionTranscripts = useCallback(async (targetSessionIds: string[]) => {
+  /**
+   * Fetch transcripts for the given sessions and apply them.
+   *
+   * - A session whose request fails (network error, non-ok response, or an
+   *   unparseable body) keeps its last successfully rendered snapshot; the
+   *   next trigger retries it. A failed refresh never clears rendered messages.
+   * - The root session snapshot is protected by the live-update generation:
+   *   if the root ACP stream applied newer updates while this request was in
+   *   flight, the stale root snapshot is skipped (returns `true`) so polling
+   *   can never roll back newer SSE content. Descendant sessions keep plain
+   *   snapshot replacement — they are not appended through the root stream.
+   */
+  const fetchSessionTranscripts = useCallback(async (targetSessionIds: string[]): Promise<boolean> => {
     const uniqueSessionIds = [...new Set(targetSessionIds.filter(Boolean))];
-    if (uniqueSessionIds.length === 0) return;
+    if (uniqueSessionIds.length === 0) return false;
 
     const contextKey = `${workspaceId}:${sessionId}`;
+    const rootGenerationAtStart = rootLiveGenerationRef.current;
+
     const transcriptEntries = await Promise.all(
       uniqueSessionIds.map(async (targetSessionId) => {
         const response = await desktopAwareFetch(
           `/api/sessions/${encodeURIComponent(targetSessionId)}/transcript`,
           { cache: "no-store" },
         );
-        const data = await response.json().catch(() => ({})) as Partial<SessionTranscriptPayload>;
+        if (!response.ok) {
+          return { sessionId: targetSessionId, history: null, messages: null };
+        }
+        const data = await response.json()
+          .then((value) => value as Partial<SessionTranscriptPayload>)
+          .catch(() => null);
+        if (!data) {
+          return { sessionId: targetSessionId, history: null, messages: null };
+        }
         return {
           sessionId: targetSessionId,
-          history: Array.isArray(data?.history) ? data.history as SessionHistoryEntry[] : [],
-          messages: hydrateTranscriptMessages(Array.isArray(data?.messages) ? data.messages : []),
+          history: Array.isArray(data.history) ? data.history as SessionHistoryEntry[] : [],
+          messages: hydrateTranscriptMessages(Array.isArray(data.messages) ? data.messages : []),
         };
       }),
     );
 
-    if (contextKeyRef.current !== contextKey) return;
+    if (contextKeyRef.current !== contextKey) return false;
 
-    setHistoriesBySessionId((prev) => ({
-      ...prev,
-      ...Object.fromEntries(transcriptEntries.map((entry) => [entry.sessionId, entry.history])),
-    }));
-    setMessagesBySessionId((prev) => ({
-      ...prev,
-      ...Object.fromEntries(transcriptEntries.map((entry) => [entry.sessionId, entry.messages])),
-    }));
+    const rootSnapshotStale = uniqueSessionIds.includes(sessionId)
+      && rootLiveGenerationRef.current !== rootGenerationAtStart;
+
+    const applicableEntries = transcriptEntries.flatMap((entry) => {
+      // Failed sessions keep their last good snapshot; a stale root snapshot
+      // never replaces newer SSE-rendered messages.
+      if (entry.history === null || entry.messages === null) return [];
+      if (rootSnapshotStale && entry.sessionId === sessionId) return [];
+      return [{ sessionId: entry.sessionId, history: entry.history, messages: entry.messages }];
+    });
+
+    if (applicableEntries.length > 0) {
+      setHistoriesBySessionId((prev) => ({
+        ...prev,
+        ...Object.fromEntries(applicableEntries.map((entry) => [entry.sessionId, entry.history])),
+      }));
+      setMessagesBySessionId((prev) => ({
+        ...prev,
+        ...Object.fromEntries(applicableEntries.map((entry) => [entry.sessionId, entry.messages])),
+      }));
+    }
+
+    return rootSnapshotStale;
   }, [sessionId, workspaceId]);
 
   const flushMetadataRefresh = useCallback(async () => {
@@ -513,33 +574,35 @@ export function TeamRunPageClient() {
 
     pendingTranscriptSessionIdsRef.current.clear();
     transcriptRefreshInFlightRef.current = true;
+    let skippedStaleRoot = false;
 
     try {
-      await fetchSessionTranscripts(targetSessionIds);
+      skippedStaleRoot = await fetchSessionTranscripts(targetSessionIds);
     } catch {
-      if (contextKeyRef.current === `${workspaceId}:${sessionId}`) {
-        setHistoriesBySessionId((prev) => {
-          const next = { ...prev };
-          for (const targetSessionId of targetSessionIds) {
-            delete next[targetSessionId];
-          }
-          return next;
-        });
-        setMessagesBySessionId((prev) => {
-          const next = { ...prev };
-          for (const targetSessionId of targetSessionIds) {
-            delete next[targetSessionId];
-          }
-          return next;
-        });
-      }
+      // A failed refresh preserves the last successfully rendered transcripts;
+      // the next trigger (interval, visibility/focus, manual) retries.
     } finally {
       transcriptRefreshInFlightRef.current = false;
+      if (skippedStaleRoot) {
+        // Newer root SSE updates landed while the fetch was in flight: re-queue
+        // the root so durable state converges after the live burst settles.
+        pendingTranscriptSessionIdsRef.current.add(sessionId);
+      }
       if (pendingTranscriptSessionIdsRef.current.size > 0) {
-        void flushTranscriptRefresh();
+        if (skippedStaleRoot) {
+          if (transcriptRefreshTimerRef.current) {
+            clearTimeout(transcriptRefreshTimerRef.current);
+          }
+          transcriptRefreshTimerRef.current = setTimeout(() => {
+            transcriptRefreshTimerRef.current = null;
+            void flushTranscriptRefresh();
+          }, TRANSCRIPT_STALE_ROOT_RETRY_DELAY_MS);
+        } else {
+          void flushTranscriptRefresh();
+        }
       }
     }
-  }, [fetchSessionTranscripts, sessionId, workspaceId]);
+  }, [fetchSessionTranscripts, sessionId]);
 
   const requestTranscriptRefresh = useCallback((targetSessionIds: string[], delayMs = 200) => {
     for (const targetSessionId of targetSessionIds) {
@@ -923,6 +986,40 @@ export function TeamRunPageClient() {
     requestTranscriptRefresh(sessionIdsToLoad, 0);
   }, [descendantSessions, requestTranscriptRefresh, session]);
 
+  // Keep the fallback poll targets in sync with the current Team Run: when
+  // descendant membership changes, the next interval tick refreshes the new
+  // session ID set without recreating the timer.
+  useEffect(() => {
+    transcriptPollTargetsRef.current = session
+      ? [session.sessionId, ...descendantSessions.map((entry) => entry.sessionId)]
+      : [];
+  }, [descendantSessions, session]);
+
+  // Visible-page transcript fallback around the root SSE stream. The root
+  // Team Lead ACP updates stay the primary low-latency path; this interval
+  // only converges persisted root and descendant records the stream may have
+  // missed, and it never fires while the document is hidden. Becoming visible
+  // or focused requests one immediate queued refresh.
+  useEffect(() => {
+    if (!sessionId || typeof document === "undefined") return;
+
+    const requestFallbackRefresh = () => {
+      if (document.visibilityState !== "visible") return;
+      const targets = transcriptPollTargetsRef.current;
+      if (targets.length === 0) return;
+      requestTranscriptRefresh(targets);
+    };
+
+    const intervalId = window.setInterval(requestFallbackRefresh, TRANSCRIPT_FALLBACK_REFRESH_INTERVAL_MS);
+    document.addEventListener("visibilitychange", requestFallbackRefresh);
+    window.addEventListener("focus", requestFallbackRefresh);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", requestFallbackRefresh);
+      window.removeEventListener("focus", requestFallbackRefresh);
+    };
+  }, [requestTranscriptRefresh, sessionId]);
+
   useEffect(() => {
     if (!acpUpdates.length) {
       lastUpdateIndexRef.current = 0;
@@ -933,6 +1030,9 @@ export function TeamRunPageClient() {
     const pending = acpUpdates.slice(startIndex);
     if (!pending.length) return;
     lastUpdateIndexRef.current = acpUpdates.length;
+    // Live root updates landed: an in-flight root transcript snapshot taken
+    // before this moment is stale and must not replace what renders next.
+    rootLiveGenerationRef.current += 1;
 
     const normalizedPending = pending.map((entry) => ({
       sessionId,
@@ -1765,6 +1865,7 @@ export function TeamRunPageClient() {
 
           <div className="flex min-h-0 flex-col">
             <SessionTimelineSection
+              key={sessionId}
               leadMessages={displayedLeadMessages}
               memberLaneByToolCallId={displayedMemberLaneByToolCallId}
               sessionLanes={sessionLanes}

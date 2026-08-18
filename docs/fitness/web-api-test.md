@@ -48,7 +48,8 @@ Status markers:
 | workspace | `DELETE /api/workspaces/:id` | delete | Post-delete 404 | VERIFIED | `src/app/api/workspaces/[workspaceId]/__tests__/route.test.ts` |
 | note | `GET /api/notes` | success chain | list/get/get-by-id consistency | VERIFIED | `src/app/api/notes/__tests__/route.test.ts` |
 | note | `POST /api/notes` | success | Create success path | VERIFIED | `src/app/api/notes/__tests__/route.test.ts` |
-| note | `POST /api/notes` | validation | Validation failure scenario | TODO | `src/app/api/notes/__tests__/route.test.ts` |
+| note | `POST /api/notes` | validation | Validation failure scenario | VERIFIED | `src/app/api/notes/__tests__/route.test.ts` |
+| note | `POST /api/notes` | task-note classification | Bare `type: "task"` rejected 400; structured task metadata (linkedTaskId/taskStatus/assignedAgentIds) accepted | VERIFIED | `src/app/api/notes/__tests__/route.test.ts` |
 | note | `DELETE /api/notes` | delete | Delete success and reference cleanup | VERIFIED | `src/app/api/notes/__tests__/route.test.ts` |
 | note | `GET /api/notes` | query by workspaceId/noteId | workspace and noteId parameter coverage | VERIFIED | `src/app/api/notes/__tests__/route.test.ts` |
 | task | `GET /api/tasks` | list/filter | Filter parameters and sort boundaries | VERIFIED | `src/app/api/tasks/__tests__/route.test.ts` |

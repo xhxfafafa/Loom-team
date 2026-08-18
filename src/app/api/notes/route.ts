@@ -11,7 +11,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRoutaSystem } from "@/core/routa-system";
 import { getHttpSessionStore } from "@/core/acp/http-session-store";
-import { createNote, Note } from "@/core/models/note";
+import { createNote, hasTaskSemanticMetadata, Note } from "@/core/models/note";
+
+/**
+ * Task Notes are structured task mirrors. Creation through this API must
+ * carry at least one explicit task-semantic field (linkedTaskId, taskStatus,
+ * parentNoteId, or a non-empty assignment); a bare `type: "task"` Note is a
+ * misclassified document and is rejected with guidance to use `general`.
+ * Updates of existing Notes stay permissive so historical records remain
+ * readable and editable.
+ */
+function validateTaskNoteCreation(type: string, metadata: Record<string, unknown> | undefined): NextResponse | null {
+  if (type !== "task") return null;
+  if (hasTaskSemanticMetadata(metadata as Parameters<typeof hasTaskSemanticMetadata>[0])) return null;
+  return NextResponse.json(
+    {
+      error:
+        "Task notes require task metadata such as linkedTaskId or taskStatus. Use type 'general' for reports.",
+    },
+    { status: 400 },
+  );
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -147,6 +167,9 @@ export async function POST(request: NextRequest) {
   }
 
   // Create new note
+  const invalidTaskNote = validateTaskNoteCreation(type, metadata);
+  if (invalidTaskNote) return invalidTaskNote;
+
   const note = createNote({
     id: noteId ?? `note-${Date.now()}`,
     title: title ?? "Untitled",

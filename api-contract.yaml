@@ -2071,6 +2071,19 @@ paths:
                 properties:
                   note:
                     $ref: "#/components/schemas/Note"
+        "400":
+          description: >-
+            Invalid request: missing workspaceId, or a new note with type
+            "task" that carries no task-semantic metadata (linkedTaskId,
+            taskStatus, parentNoteId, or assignedAgentIds). Reports must use
+            type "general".
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
     delete:
       operationId: deleteNoteByQuery
       summary: Delete note by query params

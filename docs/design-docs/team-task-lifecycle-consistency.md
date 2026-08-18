@@ -46,7 +46,9 @@ crash recovery are separate problems and are not part of this fix.
 
 The Team page loads Tasks using `GET /api/tasks?workspaceId=...&teamRunId=...` and renders those
 persisted Tasks as the primary task tree. Task-shaped Notes remain a read-only compatibility source
-for historical runs and are deduplicated by `linkedTaskId`.
+for historical runs and are deduplicated by `linkedTaskId`. A later classification refinement
+requires explicit task-semantic metadata before an unlinked Note may enter this compatibility path;
+see [Team Report Note and Task Tree Classification](./team-report-note-task-tree-classification.md).
 
 Delegation transcript parsing prefers structured `taskId`, `sessionId`, and `status` fields, while
 retaining a bounded compatibility parser for JSON/string/MCP wrappers.

@@ -175,6 +175,7 @@ Team 子 Agent 已创建 Task/Agent/子 Session 时，Team 任务树与看板卡
   - 锁定卡片 Run 门禁矩阵：终态任务（含空/过期 columnId）隐藏 Run；排队任务隐藏 Run；真实存活 Session 隐藏 Run；记录会话已死提供 Rerun；done-stage 列即使 status 滞后也按终态处理。
 - `src/app/workspace/[workspaceId]/team/[sessionId]/__tests__/team-run-page-model.test.ts`
   - 锁定 Team 任务树以持久化 Task 为主源（不再依赖 task-shaped Note）：`buildTeamTaskTree` 每个持久化 Task 成为节点、重复 Note 去重、legacy Note 保留层级；`delegated` 归一为 in-progress；delegation 结果解析（结构化字段 / JSON envelope / MCP content / 纯文本 / 正则兜底）。
+  - 锁定 report Note 分类：仅带显式任务语义字段（linkedTaskId/taskStatus/parentNoteId/非空 assignedAgentIds）的 task Note 才进入 legacy 分支；裸 `{type:"task"}` 完成报告一律排除且不修改原数组；linkedTaskId 与持久化 Task 去重；历史 linked/unlinked task Note 兼容渲染。
 
 ## Session Persistence / Recovery Characterization
 
@@ -216,3 +217,12 @@ Team 子 Agent 已创建 Task/Agent/子 Session 时，Team 任务树与看板卡
   - 锁定 MCP schema enum：`list_artifacts.type` 含 attachment；`provide_artifact.type` / `request_artifact.artifactType` 保持四个 agent 可写类型。
 - `src/core/kanban/__tests__/task-derived-summary.test.ts`、`completion-fallback-artifact.test.ts`、`agent-trigger.test.ts`
   - 锁定证据隔离：证据摘要/总数排除附件、附件不能满足 transition 必需 artifact、仅附件任务仍生成 completion fallback、prompt 的 Input Attachments section 有/无附件两种形态。
+
+## Team Report Note Classification (write boundary + repair)
+
+- `src/core/tools/__tests__/note-tools.test.ts`
+  - 锁定 NoteTools 写边界：`createNote` 默认 `general`；显式 `type: "task"` 返回结构化失败并提示 create_task/convert_task_blocks 且零持久化；`spec` 仍允许；`convertTaskBlocks` 仍创建带 linkedTaskId/taskStatus/parentNoteId 的完整 task Note。
+- `src/core/mcp/__tests__/mcp-tool-executor.test.ts`、`src/core/mcp/__tests__/routa-mcp-tool-manager.test.ts`
+  - 锁定两个 MCP 表面（executor 定义数组 + McpServer.tool 注册）的 `create_note` 分类引导一致：描述声明报告/研究/验证/交接用 `general`；裸 task 创建经真实 NoteTools 返回 isError 引导且不落库；`convert_task_blocks` 注册不受影响。
+- `src/core/notes/__tests__/repair-bare-task-notes.test.ts`
+  - 锁定裸 task Note 修复：默认 dry-run 零写入并输出候选身份（noteId/title/workspace/session）；apply 仅重分类裸记录且保留 title/content/sessionId/workspaceId/createdAt；带任一语义字段的 task Note 与 general Note 不受影响；重复执行幂等；workspace/session 双重作用域隔离。

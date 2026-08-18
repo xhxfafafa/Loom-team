@@ -42,6 +42,32 @@ export interface Note {
 /** The fixed ID for the workspace spec note */
 export const SPEC_NOTE_ID = "spec";
 
+/**
+ * Structural probe for the explicit task-semantic fields a task Note must
+ * carry to be treated as a task at all (invariant I3 in
+ * `docs/design-docs/team-report-note-task-tree-classification.md`).
+ *
+ * A Note whose only task signal is `metadata.type === "task"` is malformed:
+ * the generic creation paths cannot write task semantics, so such Notes are
+ * documents (reports) and must not enter task projections.
+ */
+export interface TaskSemanticFields {
+  linkedTaskId?: string;
+  taskStatus?: string;
+  parentNoteId?: string;
+  assignedAgentIds?: string[];
+}
+
+export function hasTaskSemanticMetadata(metadata: TaskSemanticFields | null | undefined): boolean {
+  if (!metadata) return false;
+  return Boolean(
+    metadata.linkedTaskId
+    || metadata.taskStatus
+    || metadata.parentNoteId
+    || (metadata.assignedAgentIds && metadata.assignedAgentIds.length > 0),
+  );
+}
+
 export function createNote(params: {
   id: string;
   title: string;

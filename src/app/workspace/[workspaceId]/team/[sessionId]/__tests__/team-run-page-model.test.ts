@@ -6,6 +6,7 @@ import {
   buildTeamTaskTree,
   extractDelegationResult,
   extractDelegationSessionId,
+  isLegacyTaskNote,
   normalizeTaskStatus,
   resolveDelegationRosterSpecialistId,
   resolveDelegationTarget,
@@ -120,7 +121,7 @@ describe("team-run-page-model", () => {
 
     it("keeps unmatched task notes as read-only legacy nodes with hierarchy", () => {
       const tree = buildTeamTaskTree([], [
-        makeNote({ id: "root", title: "Plan", metadata: { type: "task" } }),
+        makeNote({ id: "root", title: "Plan", metadata: { type: "task", taskStatus: "PENDING" } }),
         makeNote({ id: "child", title: "Subtask", metadata: { type: "task", parentNoteId: "root" } }),
         makeNote({ id: "spec", title: "Spec note", metadata: { type: "spec" } }),
       ]);
@@ -141,6 +142,152 @@ describe("team-run-page-model", () => {
       );
 
       expect(tree.map((node) => node.title)).toEqual(["Persisted card", "Orphaned child"]);
+    });
+  });
+
+  // ── Report-Note classification regression ────────────────────────────────
+  // Confirmed failure (issue 2026-08-18): completion-report Notes whose only
+  // metadata was `{ type: "task" }` rendered as extra NOT STARTED rows next to
+  // the already-COMPLETED persisted Tasks.
+  describe("buildTeamTaskTree report-note classification", () => {
+    it("renders a COMPLETED task exactly once as done when bare task report notes exist", () => {
+      const tree = buildTeamTaskTree(
+        [
+          makeTask({ id: "task-a", title: "P0-1 dependency security", status: "COMPLETED" }),
+          makeTask({ id: "task-b", title: "P0-2 contact form", status: "COMPLETED" }),
+        ],
+        [
+          makeNote({
+            id: "report-code-quality-architecture",
+            title: "优化分析报告",
+            metadata: { type: "task" },
+          }),
+          makeNote({
+            id: "task-p0-1-dep-security-report",
+            title: "P0-1 完成报告",
+            metadata: { type: "task" },
+          }),
+          makeNote({
+            id: "task-p0-2-contact-form-report",
+            title: "P0-2 完成报告",
+            metadata: { type: "task" },
+          }),
+        ],
+      );
+
+      expect(tree).toHaveLength(2);
+      expect(tree.map((node) => node.title)).toEqual([
+        "P0-1 dependency security",
+        "P0-2 contact form",
+      ]);
+      for (const node of tree) {
+        expect(node.status).toBe("done");
+        expect(node.legacy).toBeUndefined();
+      }
+    });
+
+    it("excludes bare task-typed notes from the task tree", () => {
+      const tree = buildTeamTaskTree([], [
+        makeNote({ id: "bare-report", title: "Completion report", metadata: { type: "task" } }),
+      ]);
+
+      expect(tree).toEqual([]);
+    });
+
+    it("does not mutate notes so the deliverables projection keeps every report", () => {
+      const notes = [
+        makeNote({ id: "bare-report", title: "Completion report", metadata: { type: "task" } }),
+        makeNote({ id: "general-note", title: "Research", metadata: { type: "general" } }),
+      ];
+
+      buildTeamTaskTree([], notes);
+
+      // Deliverables read the raw notes list; classification must only filter
+      // the task-tree projection, never rewrite or drop source notes.
+      expect(notes).toHaveLength(2);
+      expect(notes[0]?.metadata).toEqual({ type: "task" });
+      expect(notes[1]?.metadata).toEqual({ type: "general" });
+    });
+
+    it("dedupes linked task notes against loaded persisted tasks", () => {
+      const tree = buildTeamTaskTree(
+        [makeTask({ id: "task-1", title: "Persisted card", status: "COMPLETED" })],
+        [
+          makeNote({
+            id: "note-1",
+            title: "Linked mirror",
+            metadata: { type: "task", linkedTaskId: "task-1", taskStatus: "COMPLETED" },
+          }),
+        ],
+      );
+
+      expect(tree).toHaveLength(1);
+      expect(tree[0]).toMatchObject({ linkedTaskId: "task-1", status: "done" });
+      expect(tree[0]?.legacy).toBeUndefined();
+    });
+
+    it("renders a note linked to a missing historical task as legacy", () => {
+      const tree = buildTeamTaskTree([], [
+        makeNote({
+          id: "note-old",
+          title: "Historical mirror",
+          metadata: { type: "task", linkedTaskId: "task-gone", taskStatus: "IN_PROGRESS" },
+        }),
+      ]);
+
+      expect(tree).toHaveLength(1);
+      expect(tree[0]).toMatchObject({ id: "note-old", legacy: true, status: "in-progress" });
+    });
+
+    it("renders an unlinked note with explicit taskStatus as legacy not-started", () => {
+      const tree = buildTeamTaskTree([], [
+        makeNote({ id: "note-pending", title: "Pending", metadata: { type: "task", taskStatus: "PENDING" } }),
+      ]);
+
+      expect(tree).toHaveLength(1);
+      expect(tree[0]).toMatchObject({ legacy: true, status: "not-started" });
+    });
+
+    it("keeps unlinked notes with parentNoteId or assignment metadata eligible", () => {
+      const tree = buildTeamTaskTree([], [
+        makeNote({ id: "note-parented", title: "Child", metadata: { type: "task", parentNoteId: "somewhere-else" } }),
+        makeNote({ id: "note-assigned", title: "Assigned", metadata: { type: "task", assignedAgentIds: ["agent-1"] } }),
+        makeNote({ id: "note-empty-assign", title: "Empty assignment", metadata: { type: "task", assignedAgentIds: [] } }),
+      ]);
+
+      expect(tree.map((node) => node.id)).toEqual(["note-parented", "note-assigned"]);
+    });
+  });
+
+  describe("isLegacyTaskNote", () => {
+    it("accepts task notes with at least one explicit task-semantic field", () => {
+      expect(isLegacyTaskNote(makeNote({ id: "n1", title: "t", metadata: { type: "task", linkedTaskId: "task-1" } }))).toBe(true);
+      expect(isLegacyTaskNote(makeNote({ id: "n2", title: "t", metadata: { type: "task", taskStatus: "PENDING" } }))).toBe(true);
+      expect(isLegacyTaskNote(makeNote({ id: "n3", title: "t", metadata: { type: "task", parentNoteId: "spec" } }))).toBe(true);
+      expect(isLegacyTaskNote(makeNote({ id: "n4", title: "t", metadata: { type: "task", assignedAgentIds: ["agent-1"] } }))).toBe(true);
+    });
+
+    it("rejects bare task notes and non-task notes", () => {
+      expect(isLegacyTaskNote(makeNote({ id: "n5", title: "t", metadata: { type: "task" } }))).toBe(false);
+      expect(isLegacyTaskNote(makeNote({ id: "n6", title: "t", metadata: { type: "task", assignedAgentIds: [] } }))).toBe(false);
+      expect(isLegacyTaskNote(makeNote({ id: "n7", title: "t", metadata: { type: "general", taskStatus: "PENDING" } }))).toBe(false);
+      expect(isLegacyTaskNote(makeNote({ id: "n8", title: "t", metadata: { type: "spec" } }))).toBe(false);
+    });
+
+    it("does not inspect note id, title, or content", () => {
+      // Report-looking ids/titles/content must not qualify a bare note.
+      expect(isLegacyTaskNote(makeNote({
+        id: "task-p0-1-dep-security-report",
+        title: "P0-1 完成报告",
+        content: "task taskStatus linkedTaskId parentNoteId assignedAgentIds",
+        metadata: { type: "task" },
+      }))).toBe(false);
+      // Conversely, a neutral title with real semantics still qualifies.
+      expect(isLegacyTaskNote(makeNote({
+        id: "note-plain",
+        title: "Untitled",
+        metadata: { type: "task", taskStatus: "COMPLETED" },
+      }))).toBe(true);
     });
   });
 

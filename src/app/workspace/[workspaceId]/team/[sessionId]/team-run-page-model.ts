@@ -1,6 +1,7 @@
 import type { ChatMessage } from "@/client/components/chat-panel/types";
 import { getToolEventLabel } from "@/client/components/chat-panel/tool-call-name";
 import type { NoteData } from "@/client/hooks/use-notes";
+import { hasTaskSemanticMetadata } from "@/core/models/note";
 import type { SessionInfo } from "../../types";
 
 export interface SpecialistSummary {
@@ -651,6 +652,22 @@ export function extractDelegationSessionId(update?: SessionHistoryEntry["update"
 }
 
 /**
+ * Centralized legacy task-Note eligibility (invariant I3 in
+ * `docs/design-docs/team-report-note-task-tree-classification.md`).
+ *
+ * A Note only enters the Team task-tree compatibility path when it is typed
+ * `task` AND carries at least one explicit task-semantic field
+ * (`linkedTaskId`, `taskStatus`, `parentNoteId`, or a non-empty assignment).
+ * A bare `metadata.type === "task"` discriminator is insufficient — reports
+ * and other documents must never project as tasks. Never inspects Note ID,
+ * title, or content.
+ */
+export function isLegacyTaskNote(note: NoteData): boolean {
+  if (note.metadata.type !== "task") return false;
+  return hasTaskSemanticMetadata(note.metadata);
+}
+
+/**
  * Build the Team task tree with persisted Tasks as the primary source.
  *
  * - Every persisted Task becomes a node (they are the cards the Kanban board
@@ -659,7 +676,9 @@ export function extractDelegationSessionId(update?: SessionHistoryEntry["update"
  * - Task-shaped Notes whose `linkedTaskId` matches a persisted Task are
  *   deduplicated away — the persisted node replaces them.
  * - Remaining task-shaped Notes stay as read-only legacy nodes, preserving
- *   their `parentNoteId` hierarchy for historical runs.
+ *   their `parentNoteId` hierarchy for historical runs. Bare task-typed Notes
+ *   (e.g. completion reports) are excluded from projection entirely; they
+ *   remain visible through the deliverables projection.
  */
 export function buildTeamTaskTree(
   tasks: PersistedTeamTask[],
@@ -677,7 +696,7 @@ export function buildTeamTaskTree(
 
   const linkedTaskIds = new Set(tasks.map((task) => task.id).filter(Boolean));
   const legacyNotes = notes.filter((note) => {
-    if (note.metadata.type !== "task") return false;
+    if (!isLegacyTaskNote(note)) return false;
     const linkedTaskId = note.metadata.linkedTaskId;
     return !linkedTaskId || !linkedTaskIds.has(linkedTaskId);
   });

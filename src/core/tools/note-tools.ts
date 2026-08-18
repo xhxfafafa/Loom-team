@@ -14,6 +14,7 @@ import { createTask as createTaskModel, TaskStatus } from "../models/task";
 import { extractTaskBlocks, hasTaskBlocks } from "../orchestration/task-block-parser";
 import { ToolResult, successResult, errorResult } from "./tool-result";
 import { NoteEventBroadcaster } from "../notes/note-event-broadcaster";
+import { BARE_TASK_NOTE_REJECTION } from "./note-classification";
 
 export class NoteTools {
   constructor(
@@ -38,6 +39,15 @@ export class NoteTools {
     /** Session ID to scope this note to a specific session */
     sessionId?: string;
   }): Promise<ToolResult> {
+    // Generic creation must never persist a bare task Note: this path cannot
+    // write task semantics (linkedTaskId/taskStatus/parentNoteId/assignment),
+    // so such Notes would be structurally incomplete and misprojected as
+    // unfinished tasks. Structured task Notes only come from
+    // convertTaskBlocks(); canonical work comes from Task tools.
+    if (params.type === "task") {
+      return errorResult(BARE_TASK_NOTE_REJECTION);
+    }
+
     const noteId = params.noteId ?? uuidv4();
 
     const existing = await this.noteStore.get(noteId, params.workspaceId);

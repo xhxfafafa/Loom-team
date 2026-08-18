@@ -7,6 +7,7 @@
 
 import { AgentTools } from "@/core/tools/agent-tools";
 import { NoteTools } from "@/core/tools/note-tools";
+import { NOTE_CLASSIFICATION_GUIDANCE } from "@/core/tools/note-classification";
 import { WorkspaceTools } from "@/core/tools/workspace-tools";
 import { KanbanTools } from "@/core/tools/kanban-tools";
 import { getRoutaOrchestrator } from "@/core/orchestration/orchestrator-singleton";
@@ -1088,14 +1089,22 @@ export function getMcpToolDefinitions(
     // ── Note tools ──────────────────────────────────────────────────
     {
       name: "create_note",
-      description: "Create a new note in the workspace for agent collaboration.",
+      description:
+        "Create a new note in the workspace for agent collaboration. "
+        + NOTE_CLASSIFICATION_GUIDANCE,
       inputSchema: {
         type: "object",
         properties: {
           title: { type: "string", description: "Note title" },
           content: { type: "string", description: "Initial note content" },
           noteId: { type: "string", description: "Custom note ID (auto-generated if omitted)" },
-          type: { type: "string", enum: ["spec", "task", "general"], description: "Note type" },
+          type: {
+            type: "string",
+            enum: ["spec", "task", "general"],
+            description:
+              "Note type (default: general). Do not use task here — generic task note creation is rejected; "
+              + "use create_task or convert_task_blocks instead.",
+          },
           workspaceId: { type: "string" },
         },
         required: ["title"],

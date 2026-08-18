@@ -759,3 +759,59 @@ describe("RoutaMcpToolManager", () => {
     });
   });
 });
+
+describe("create_note classification boundary", () => {
+  function createNoteRegistrations(createNote: ReturnType<typeof vi.fn>) {
+    const tools = createToolsMock();
+    const manager = new RoutaMcpToolManager(tools as never, "ws-1");
+    manager.setToolMode("full");
+    manager.setSessionId("session-123");
+    manager.setNoteTools({
+      createNote,
+      readNote: vi.fn(async () => ({ success: true, data: {} })),
+      listNotes: vi.fn(async () => ({ success: true, data: [] })),
+      setNoteContent: vi.fn(async () => ({ success: true, data: {} })),
+      appendToNote: vi.fn(async () => ({ success: true, data: {} })),
+      getMyTask: vi.fn(async () => ({ success: true, data: {} })),
+      convertTaskBlocks: vi.fn(async () => ({ success: true, data: {} })),
+    } as never);
+
+    const { registrations, server } = createServerRecorder();
+    manager.registerTools(server as never);
+    return registrations;
+  }
+
+  it("carries report classification guidance in the create_note registration", () => {
+    const registrations = createNoteRegistrations(vi.fn(async (params) => ({ success: true, data: params })));
+    const noteTool = registrations.find((entry) => entry.name === "create_note");
+
+    expect(noteTool).toBeDefined();
+    expect(noteTool!.description).toContain("general");
+    expect(noteTool!.description).toContain("create_task");
+    expect(noteTool!.description).toContain("convert_task_blocks");
+  });
+
+  it("surfaces the domain rejection for create_note(type=task)", async () => {
+    const rejection = 'create_note cannot create type "task" notes. Use type "general" for reports. '
+      + "Use create_task or convert_task_blocks for tasks.";
+    const createNote = vi.fn(async () => ({ success: false, error: rejection }));
+    const registrations = createNoteRegistrations(createNote);
+    const noteTool = registrations.find((entry) => entry.name === "create_note");
+
+    const result = await noteTool!.handler({ title: "P0 verification report", type: "task" });
+
+    expect(createNote).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "task", workspaceId: "ws-1", sessionId: "session-123" }),
+    );
+    expect(result).toMatchObject({ isError: true });
+    expect((result as { content: Array<{ text: string }> }).content[0]?.text).toContain("convert_task_blocks");
+  });
+
+  it("keeps convert_task_blocks registration intact for structured task mirrors", () => {
+    const registrations = createNoteRegistrations(vi.fn(async (params) => ({ success: true, data: params })));
+    const convertTool = registrations.find((entry) => entry.name === "convert_task_blocks");
+
+    expect(convertTool).toBeDefined();
+    expect(convertTool!.description).toContain("Task Notes");
+  });
+});

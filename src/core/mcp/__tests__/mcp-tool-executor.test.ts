@@ -193,6 +193,9 @@ vi.mock("@/core/acp/http-session-store", () => ({
 }));
 
 import { executeMcpTool, getMcpToolDefinitions } from "../mcp-tool-executor";
+import { NoteTools } from "@/core/tools/note-tools";
+import { InMemoryNoteStore } from "@/core/store/note-store";
+import { InMemoryTaskStore } from "@/core/store/task-store";
 
 describe("executeMcpTool", () => {
   it("reads specialist spec resources without requiring workspaceId", async () => {
@@ -768,5 +771,57 @@ describe("executeMcpTool team-run card ownership", () => {
 
     expect(createTask).toHaveBeenCalledTimes(2);
     expect(createTask).toHaveBeenLastCalledWith(expect.objectContaining({ teamRunId: undefined }));
+  });
+});
+
+describe("create_note classification boundary", () => {
+  function createRealNoteTools() {
+    const noteStore = new InMemoryNoteStore();
+    return {
+      noteStore,
+      noteTools: new NoteTools(noteStore, new InMemoryTaskStore()),
+    };
+  }
+
+  it("carries report classification guidance in the create_note definition", () => {
+    const tool = getMcpToolDefinitions("full").find((definition) => definition.name === "create_note");
+    expect(tool).toBeDefined();
+    expect(tool?.description).toContain("general");
+    expect(tool?.description).toContain("create_task");
+    expect(tool?.description).toContain("convert_task_blocks");
+  });
+
+  it("defaults create_note to general", async () => {
+    const { noteStore, noteTools } = createRealNoteTools();
+
+    const result = await executeMcpTool(
+      {} as never,
+      "create_note",
+      { title: "Completion summary", content: "Done.", workspaceId: "workspace-1" },
+      noteTools,
+    );
+
+    expect(result).toMatchObject({ isError: false });
+    const notes = await noteStore.listByWorkspace("workspace-1");
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.metadata.type).toBe("general");
+  });
+
+  it("rejects create_note(type=task) with actionable guidance", async () => {
+    const { noteStore, noteTools } = createRealNoteTools();
+
+    const result = await executeMcpTool(
+      {} as never,
+      "create_note",
+      { title: "P0 verification report", content: "Report", workspaceId: "workspace-1", type: "task" },
+      noteTools,
+    );
+
+    expect(result).toMatchObject({ isError: true });
+    const text = (result as { content: Array<{ text: string }> }).content[0]?.text ?? "";
+    expect(text).toContain("general");
+    expect(text).toContain("create_task");
+    expect(text).toContain("convert_task_blocks");
+    expect(await noteStore.listByWorkspace("workspace-1")).toEqual([]);
   });
 });

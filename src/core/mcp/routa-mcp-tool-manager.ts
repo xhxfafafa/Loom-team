@@ -10,6 +10,7 @@ import { z } from "zod";
 import { AgentTools } from "../tools/agent-tools";
 import { KanbanTools } from "../tools/kanban-tools";
 import { NoteTools } from "../tools/note-tools";
+import { NOTE_CLASSIFICATION_GUIDANCE } from "../tools/note-classification";
 import { WorkspaceTools } from "../tools/workspace-tools";
 import { ToolResult } from "../tools/tool-result";
 import {
@@ -796,12 +797,16 @@ Note: taskId must be a UUID from create_task, not a task name.`,
   private registerCreateNote(server: McpServer) {
     server.tool(
       "create_note",
-      "Create a new note in the workspace. Notes are shared documents for agent collaboration.",
+      "Create a new note in the workspace. Notes are shared documents for agent collaboration. "
+        + NOTE_CLASSIFICATION_GUIDANCE,
       {
         title: z.string().describe("Note title"),
         content: z.string().optional().describe("Initial note content"),
         noteId: z.string().optional().describe("Custom note ID (auto-generated if omitted)"),
-        type: z.enum(["spec", "task", "general"]).optional().describe("Note type (default: general)"),
+        type: z.enum(["spec", "task", "general"]).optional().describe(
+          "Note type (default: general). Do not use task here — generic task note creation is rejected; "
+            + "use create_task or convert_task_blocks instead.",
+        ),
         workspaceId: z.string().optional().describe("Workspace ID (uses default if omitted)"),
         sessionId: z.string().optional().describe("Session ID to scope this note to a specific session"),
       },

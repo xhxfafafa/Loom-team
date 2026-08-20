@@ -18,3 +18,4 @@ When the work lands or is abandoned, move or rewrite the plan instead of leaving
 | [workspace-centric-normalization.md](./workspace-centric-normalization.md) | Workspace-centric redesign documentation migration and transition cleanup |
 | [development-memory-boundaries.md](./development-memory-boundaries.md) | P0 development memory boundaries: bundler, cache, and ACP runtime reclamation |
 | [team-execution-chain-presets.md](./team-execution-chain-presets.md) | Proposed Team Run execution-chain presets from investigation through full delivery |
+| [loom-product-ui-rebrand.md](./loom-product-ui-rebrand.md) | Loom 品牌统一、核心导航、背景个性化及 Kanban/Team 体验改造 |

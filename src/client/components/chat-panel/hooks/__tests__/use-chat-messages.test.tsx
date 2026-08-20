@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useChatMessages } from "../use-chat-messages";
@@ -20,6 +20,121 @@ describe("useChatMessages", () => {
   beforeEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it("periodically synchronizes the active transcript without a page refresh", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.mocked(desktopAwareFetch);
+    fetchMock
+      .mockResolvedValueOnce(okJson({
+        history: [],
+        messages: [
+          {
+            id: "msg-initial",
+            role: "assistant",
+            content: "initial",
+            timestamp: "2026-08-16T01:00:00.000Z",
+          },
+        ],
+        latestEventKind: "turn_complete",
+      }))
+      .mockResolvedValueOnce(okJson({
+        history: [],
+        messages: [
+          {
+            id: "msg-latest",
+            role: "assistant",
+            content: "arrived without SSE",
+            timestamp: "2026-08-16T01:00:05.000Z",
+          },
+        ],
+        latestEventKind: "turn_complete",
+      }));
+
+    const { result } = renderHook(() => useChatMessages({
+      activeSessionId: "session-1",
+      updates: [],
+    }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.current.visibleMessages[0]?.content).toBe("arrived without SSE");
+  });
+
+  it("synchronizes immediately when the page becomes visible again", async () => {
+    const fetchMock = vi.mocked(desktopAwareFetch);
+    fetchMock.mockResolvedValue(okJson({
+      history: [],
+      messages: [
+        {
+          id: "msg-1",
+          role: "assistant",
+          content: "latest",
+          timestamp: "2026-08-16T01:00:00.000Z",
+        },
+      ],
+      latestEventKind: "turn_complete",
+    }));
+
+    renderHook(() => useChatMessages({
+      activeSessionId: "session-1",
+      updates: [],
+    }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("processes new live updates after the ACP update buffer is reset", async () => {
+    const fetchMock = vi.mocked(desktopAwareFetch);
+    fetchMock.mockResolvedValue(okJson({
+      history: [],
+      messages: [],
+      latestEventKind: "turn_complete",
+    }));
+    const firstUpdate = {
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "first session" },
+      },
+    };
+    const nextUpdate = {
+      sessionId: "session-2",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "next session" },
+      },
+    };
+
+    const { result, rerender } = renderHook(
+      ({ activeSessionId, incomingUpdates }) => useChatMessages({
+        activeSessionId,
+        updates: incomingUpdates,
+      }),
+      {
+        initialProps: {
+          activeSessionId: "session-1",
+          incomingUpdates: [firstUpdate],
+        },
+      },
+    );
+
+    await waitFor(() => expect(result.current.visibleMessages[0]?.content).toBe("first session"));
+
+    rerender({ activeSessionId: "session-2", incomingUpdates: [] });
+    rerender({ activeSessionId: "session-2", incomingUpdates: [nextUpdate] });
+
+    await waitFor(() => expect(result.current.visibleMessages[0]?.content).toBe("next session"));
   });
 
   it("retries transcript hydration for an active session until messages become available", async () => {

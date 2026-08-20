@@ -10,6 +10,8 @@ import { extractTaskBlocks, hasTaskBlocks, type ParsedTask } from "../../../util
 import { hydrateTranscriptMessages, type SessionTranscriptPayload } from "@/core/session-transcript";
 import { processUpdate } from "./message-processor";
 
+const CHAT_TRANSCRIPT_SYNC_INTERVAL_MS = 5_000;
+
 export interface UseChatMessagesOptions {
   activeSessionId: string | null;
   updates: AcpSessionNotification[];
@@ -57,6 +59,8 @@ export function useChatMessages({
   const loadedHistoryRef = useRef<Set<string>>(new Set());
   const processedMessageIdsRef = useRef<Set<string>>(new Set());
   const transcriptRetryCountRef = useRef<Record<string, number>>({});
+  const transcriptRequestInFlightRef = useRef<Set<string>>(new Set());
+  const lastLiveUpdateAtRef = useRef(0);
 
   const resetStreamingRefs = useCallback((sessionId: string) => {
     streamingMsgIdRef.current[sessionId] = null;
@@ -90,7 +94,9 @@ export function useChatMessages({
     const force = options?.force === true;
     if (!force && loadedHistoryRef.current.has(sessionId)) return;
     if (sessionId === "__placeholder__") return;
+    if (transcriptRequestInFlightRef.current.has(sessionId)) return;
 
+    transcriptRequestInFlightRef.current.add(sessionId);
     try {
       const response = await desktopAwareFetch(`/api/sessions/${sessionId}/transcript`, { cache: "no-store" });
       const data = await response.json().catch(() => ({})) as Partial<SessionTranscriptPayload>;
@@ -139,6 +145,8 @@ export function useChatMessages({
       }
     } catch {
       // ignore errors
+    } finally {
+      transcriptRequestInFlightRef.current.delete(sessionId);
     }
   }, [onTasksDetected]);
 
@@ -149,7 +157,6 @@ export function useChatMessages({
     }
     transcriptRetryCountRef.current[activeSessionId] = 0;
     processedMessageIdsRef.current.clear();
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset running state on session change
     setIsSessionRunning(false);
     void fetchSessionHistory(activeSessionId);
   }, [activeSessionId, fetchSessionHistory]);
@@ -168,12 +175,47 @@ export function useChatMessages({
     return () => window.clearTimeout(retry);
   }, [activeSessionId, messagesBySession, fetchSessionHistory]);
 
+  // SSE remains the primary live-update path. Periodically re-read the durable
+  // transcript as a low-frequency fallback so a missed/disconnected SSE event
+  // never leaves the current conversation stale until a full page refresh.
+  useEffect(() => {
+    if (!activeSessionId || activeSessionId === "__placeholder__") return;
+
+    const syncTranscript = () => {
+      if (document.visibilityState === "hidden") return;
+      void fetchSessionHistory(activeSessionId, { force: true });
+    };
+    const syncAfterLiveSilence = () => {
+      if (Date.now() - lastLiveUpdateAtRef.current < CHAT_TRANSCRIPT_SYNC_INTERVAL_MS) return;
+      syncTranscript();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") syncTranscript();
+    };
+
+    const intervalId = window.setInterval(syncAfterLiveSilence, CHAT_TRANSCRIPT_SYNC_INTERVAL_MS);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", syncTranscript);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", syncTranscript);
+    };
+  }, [activeSessionId, fetchSessionHistory]);
+
   // Process SSE updates
   useEffect(() => {
-    if (updates.length === 0) return;
+    if (updates.length === 0) {
+      lastProcessedUpdateIndexRef.current = 0;
+      return;
+    }
+    if (lastProcessedUpdateIndexRef.current > updates.length) {
+      lastProcessedUpdateIndexRef.current = 0;
+    }
     const pending = updates.slice(lastProcessedUpdateIndexRef.current);
     if (pending.length === 0) return;
     lastProcessedUpdateIndexRef.current = updates.length;
+    lastLiveUpdateAtRef.current = Date.now();
 
     const modeUpdates: Record<string, string> = {};
 

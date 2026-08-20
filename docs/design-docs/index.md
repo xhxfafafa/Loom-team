@@ -16,8 +16,11 @@ If you are still trying to get Loom-team running, go back to [Quick Start](/quic
 <div className="routa-doc-map">
   <a href="/Loom-team/ARCHITECTURE">
     <strong>Architecture</strong>
-    Start here when you need system boundaries, runtime topology, and the web/desktop parity
-    model.
+    Start here when you need canonical system boundaries and the Web-only runtime topology.
+  </a>
+  <a href="/Loom-team/architecture/">
+    <strong>Detailed Architecture</strong>
+    Follow end-to-end domain, session, Team, Kanban, workflow, consistency, security, and deployment chains.
   </a>
   <a href="/Loom-team/adr">
     <strong>Architecture Decisions</strong>
@@ -46,7 +49,7 @@ If you are still trying to get Loom-team running, go back to [Quick Start](/quic
   <div className="routa-start-card">
     <span className="routa-start-card__badge">Boundaries</span>
     <h3>System Shape</h3>
-    <p>Learn which responsibilities belong to the web app, desktop runtime, server, and ACP layer.</p>
+    <p>Learn which responsibilities belong to the Web runtime, domain core, provider runtime, and ACP layer.</p>
   </div>
   <div className="routa-start-card">
     <span className="routa-start-card__badge">Product Model</span>
@@ -102,6 +105,7 @@ the source of truth.
 ## Related Docs
 
 - [Architecture](/ARCHITECTURE)
+- [Detailed Architecture](/architecture/)
 - [Architecture Decision Records](/adr)
 - [Product Specs](/product-specs/FEATURE_TREE)
 - [Developer Guide](/developer-guide)

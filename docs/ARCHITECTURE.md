@@ -243,6 +243,7 @@ Current ADRs:
 
 ## Related Documents
 
+- Detailed current/target architecture: [docs/architecture/](./architecture/README.md)
 - Product/API index: [docs/product-specs/FEATURE_TREE.md](./product-specs/FEATURE_TREE.md)
 - Architecture decisions: [docs/adr/](./adr/)
 - Design intent: [docs/design-docs/](./design-docs/)
